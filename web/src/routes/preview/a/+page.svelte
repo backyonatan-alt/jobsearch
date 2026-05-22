@@ -1,168 +1,210 @@
 <script>
-  // Design A — Minimal (Linear/Notion style). Light background, tiny status
-  // dots, dense table, almost no chrome.
+  // Atelier — editorial / magazine. Serif body, oxblood ink, cream paper.
+  // Layout is asymmetric: each application is a numbered entry with the
+  // company set in display serif, role as deck, status as small caps.
   import { PREVIEW_APPS, FUNNEL, fmtDate } from '$lib/preview-data.js';
 
-  const STATUS_DOT = {
-    wishlist: '#94a3b8',
-    applied: '#3b82f6',
-    screen: '#0ea5e9',
-    interview: '#a855f7',
-    offer: '#10b981',
-    rejected: '#ef4444',
-    withdrawn: '#64748b'
+  const STATUS_TONE = {
+    wishlist:  '#8a8275',
+    applied:   '#1d1a14',
+    screen:    '#5a3d1a',
+    interview: '#7a1f2f',
+    offer:     '#2e5b3a',
+    rejected:  '#6b6058',
+    withdrawn: '#a39d92'
   };
+
+  const issue = String(new Date().getFullYear() - 2000).padStart(2, '0');
+  const month = new Date().toLocaleString('en-US', { month: 'long' });
 </script>
 
 <svelte:head>
-  <title>Preview A — Minimal</title>
+  <title>Atelier — Pursuit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 </svelte:head>
 
-<div class="root">
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo"></span>
-      Pursuit
+<div class="paper">
+  <header class="masthead">
+    <div class="row">
+      <span class="vol">Vol. {issue} · {month}</span>
+      <span class="me">back.yonatan@gmail.com</span>
     </div>
+    <h1>Pursuit</h1>
+    <p class="subhead">A quarterly index of applications, conversations, and outcomes</p>
     <nav>
-      <button class="navlink active">Applications</button>
-      <button class="navlink">Funnel</button>
-      <button class="navlink">Dossiers</button>
+      <a href="#" class="navlink current">Applications</a>
+      <span class="sep">·</span>
+      <a href="#" class="navlink">Funnel</a>
+      <span class="sep">·</span>
+      <a href="#" class="navlink">Dossiers</a>
+      <span class="sep">·</span>
+      <a href="#" class="navlink">Archive</a>
     </nav>
-    <div class="me">back.yonatan@gmail.com</div>
   </header>
 
-  <main>
-    <div class="page-head">
-      <div>
-        <h1>Applications</h1>
-        <p class="sub">{PREVIEW_APPS.length} tracked · {FUNNEL.interview + FUNNEL.offer} in active loop</p>
-      </div>
-      <div class="actions">
-        <button class="btn-ghost">⌘N New</button>
-      </div>
-    </div>
+  <section class="lede">
+    <p>
+      <span class="dropcap">S</span>ix entries this season. <em>One offer outstanding</em>; one
+      interview loop in progress; three further conversations pending review.
+      A note on the screening process appears overleaf.
+    </p>
+  </section>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Company</th>
-          <th>Role</th>
-          <th>Status</th>
-          <th>Applied</th>
-          <th>CV</th>
-          <th>Source</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each PREVIEW_APPS as a}
-          <tr>
-            <td class="company">{a.company}</td>
-            <td>{a.role}</td>
-            <td>
-              <span class="status">
-                <span class="dot" style="background: {STATUS_DOT[a.status]}"></span>
-                {a.status}
-              </span>
-            </td>
-            <td class="muted">{fmtDate(a.applied_at)}</td>
-            <td class="muted">{a.cv_variant ?? '—'}</td>
-            <td class="muted">{a.source}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+  <ol class="entries">
+    {#each PREVIEW_APPS as a, i}
+      <li class="entry">
+        <div class="folio">№ {String(i + 1).padStart(2, '0')}</div>
+        <div class="body">
+          <h2 class="company">{a.company}</h2>
+          <p class="deck">{a.role} <span class="loc">· {a.location}</span></p>
+          <div class="meta">
+            <span class="status" style="color: {STATUS_TONE[a.status]}">{a.status}</span>
+            <span class="rule"></span>
+            <span class="when">{fmtDate(a.applied_at)}</span>
+            {#if a.cv_variant}
+              <span class="rule"></span>
+              <span class="cv">CV / {a.cv_variant}</span>
+            {/if}
+            <span class="rule"></span>
+            <span class="src">via {a.source}</span>
+          </div>
+        </div>
+      </li>
+    {/each}
+  </ol>
 
-    <a class="back" href="/preview">← back to directions</a>
-  </main>
+  <footer class="colophon">
+    <p>
+      Set in <span class="oldstyle">Cormorant Garamond</span> and Inter. Composed in private.
+      <a href="/preview">‹ return to directions</a>
+    </p>
+  </footer>
 </div>
 
 <style>
   :global(html, body) {
-    background: #fafafa;
-    color: #1a1a1a;
-    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-    font-size: 13px;
+    background: #efe6d4;
+    color: #1d1a14;
+    font-family: 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
   }
-  .root { min-height: 100vh; }
 
-  .topbar {
-    display: flex; align-items: center; gap: 1.5rem;
-    padding: .65rem 1.5rem;
-    border-bottom: 1px solid #ececec;
-    background: #fff;
-  }
-  .brand {
-    display: flex; align-items: center; gap: .5rem;
-    font-weight: 600; font-size: 13px;
-  }
-  .logo {
-    width: 14px; height: 14px;
-    background: #1a1a1a;
-    border-radius: 3px;
-  }
-  nav { display: flex; gap: .25rem; margin-left: 1rem; }
-  .navlink {
-    background: transparent; border: 0;
-    padding: .35rem .65rem;
-    color: #6b7280; font-size: 13px;
-    border-radius: 5px; cursor: pointer;
-  }
-  .navlink:hover { background: #f3f3f3; color: #1a1a1a; }
-  .navlink.active { color: #1a1a1a; background: #f3f3f3; }
-  .me {
-    margin-left: auto;
-    color: #6b7280; font-size: 12px;
+  .paper {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 4rem 2rem 6rem;
+    background:
+      radial-gradient(circle at 20% 10%, rgba(122,31,47,.02), transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(28,58,114,.02), transparent 40%),
+      #f6f0e4;
+    min-height: 100vh;
+    box-shadow: 0 0 80px rgba(0,0,0,.06);
   }
 
-  main { max-width: 1080px; margin: 0 auto; padding: 1.5rem; }
-
-  .page-head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 1rem; }
-  .page-head h1 { font-size: 1.15rem; font-weight: 600; margin: 0; }
-  .sub { color: #6b7280; font-size: 12px; margin: .15rem 0 0; }
-  .btn-ghost {
-    background: #fff; border: 1px solid #e5e5e5;
-    padding: .35rem .65rem; border-radius: 5px;
-    color: #1a1a1a; font-size: 12px; cursor: pointer;
+  .masthead { text-align: center; border-bottom: 1px solid #1d1a14; padding-bottom: 1.5rem; }
+  .row {
+    display: flex; justify-content: space-between;
+    font-family: 'Inter', sans-serif; font-size: 11px;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: #6b6358;
+    margin-bottom: 2rem;
   }
-  .btn-ghost:hover { background: #f6f6f6; }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    background: #fff;
-    border: 1px solid #ececec;
-    border-radius: 6px;
-    overflow: hidden;
-  }
-  th, td {
-    padding: .55rem .85rem;
-    text-align: left;
-    border-bottom: 1px solid #f3f3f3;
-  }
-  th {
+  .masthead h1 {
+    font-size: 4rem;
     font-weight: 500;
-    color: #6b7280;
+    font-style: italic;
+    margin: 0;
+    line-height: 1;
+    letter-spacing: -.02em;
+  }
+  .subhead {
+    font-size: 1rem;
+    color: #6b6358;
+    margin: .75rem 0 1.5rem;
+    font-style: italic;
+  }
+  nav { display: flex; justify-content: center; align-items: center; gap: .75rem; font-family: 'Inter', sans-serif; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+  .navlink { color: #6b6358; text-decoration: none; }
+  .navlink.current { color: #7a1f2f; font-weight: 600; }
+  .navlink:hover { color: #1d1a14; }
+  .sep { color: #cdc4b3; }
+
+  .lede {
+    margin: 2.5rem 0 3rem;
+    font-size: 1.15rem;
+    font-style: italic;
+    color: #2c2820;
+    border-bottom: 1px solid #d9cfb9;
+    padding-bottom: 2rem;
+  }
+  .lede em { color: #7a1f2f; font-style: italic; }
+  .dropcap {
+    float: left;
+    font-size: 3.5rem;
+    line-height: .85;
+    font-weight: 600;
+    margin: .15rem .35rem 0 0;
+    color: #7a1f2f;
+    font-style: normal;
+  }
+
+  .entries { list-style: none; padding: 0; margin: 0; }
+  .entry {
+    display: grid;
+    grid-template-columns: 4rem 1fr;
+    gap: 1.25rem;
+    padding: 1.5rem 0;
+    border-bottom: 1px solid #d9cfb9;
+  }
+  .entry:last-child { border-bottom: 0; }
+  .folio {
+    font-family: 'Inter', sans-serif;
     font-size: 11px;
+    letter-spacing: .12em;
+    color: #a39d92;
+    padding-top: .5rem;
+  }
+  .company {
+    font-size: 1.8rem;
+    font-weight: 500;
+    margin: 0;
+    line-height: 1.15;
+    letter-spacing: -.01em;
+  }
+  .deck {
+    margin: .35rem 0 .85rem;
+    font-style: italic;
+    color: #3d3830;
+    font-size: 1.05rem;
+  }
+  .deck .loc { color: #8a8275; font-style: normal; }
+  .meta {
+    display: flex; align-items: center; gap: .65rem; flex-wrap: wrap;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    letter-spacing: .08em;
     text-transform: uppercase;
-    letter-spacing: .04em;
-    background: #fbfbfb;
   }
-  tbody tr:hover { background: #fbfbfb; }
-  tbody tr:last-child td { border-bottom: 0; }
-  td.company { font-weight: 500; }
-  td.muted { color: #6b7280; }
+  .meta .status { font-weight: 600; }
+  .meta .when, .meta .cv, .meta .src { color: #6b6358; }
+  .rule { width: 14px; height: 1px; background: #c9bfa8; display: inline-block; }
 
-  .status { display: inline-flex; align-items: center; gap: .4rem; }
-  .dot { width: 7px; height: 7px; border-radius: 999px; }
-
-  .back {
-    display: inline-block;
-    margin-top: 1.5rem;
-    color: #6b7280;
-    font-size: 12px;
-    text-decoration: none;
+  .colophon {
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #1d1a14;
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #6b6358;
   }
-  .back:hover { color: #1a1a1a; }
+  .colophon a { color: #7a1f2f; text-decoration: none; margin-left: .5rem; }
+  .colophon a:hover { text-decoration: underline; }
+  .oldstyle { font-family: 'Cormorant Garamond', serif; font-style: italic; text-transform: none; letter-spacing: 0; font-size: 13px; }
 </style>

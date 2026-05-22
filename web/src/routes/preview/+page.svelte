@@ -2,33 +2,33 @@
   const directions = [
     {
       slug: 'a',
-      name: 'Minimal',
-      tagline: 'Linear / Notion style — gets out of the way',
+      name: 'Atelier',
+      tagline: 'Editorial — your job search as a curated index',
       blurb:
-        'Monochrome, dense, subtle borders. Almost no chrome. The data is the product; the app is just a window into it.',
-      bg: '#fafafa',
-      fg: '#1a1a1a',
-      accent: '#2563eb'
+        'Cream paper, serif headlines, oxblood ink. Each application reads like an entry in a hand-set publication. Slow, considered, design-forward.',
+      bg: '#f6f0e4',
+      fg: '#1d1a14',
+      accent: '#7a1f2f'
     },
     {
       slug: 'b',
-      name: 'Soft',
-      tagline: 'Airtable / Notion colorful — pleasant to open daily',
+      name: 'Garden',
+      tagline: 'Botanical — soft, dreamy, plant-energy',
       blurb:
-        'Warm whites, pastel status tags, generous whitespace, rounded corners. Friendly and inviting. Makes the job search feel less grim.',
-      bg: '#faf9f7',
-      fg: '#37352f',
-      accent: '#1f7ae0'
+        'Blush + sage + plum, soft gradient washes, rounded type, leaf-curl ornaments at the page edges. Makes opening the app feel like a Sunday morning.',
+      bg: '#f4ece2',
+      fg: '#33302d',
+      accent: '#6b3d5f'
     },
     {
       slug: 'c',
-      name: 'Terminal',
-      tagline: 'Bloomberg style — for people who like dense data',
+      name: 'Letter',
+      tagline: 'Correspondence — like a hand-written journal',
       blurb:
-        'Pure black, monospace data, bright accent. Treats the funnel like a trading dashboard. Distinctive and a little intense.',
-      bg: '#000',
-      fg: '#d9d9d9',
-      accent: '#00ff66'
+        'Ruled cream paper, fountain-pen blue ink, status as wax seals. Serif body for the content, monospace for meta. Quiet, intimate, almost analogue.',
+      bg: '#efe7d4',
+      fg: '#1f1c17',
+      accent: '#1c3a72'
     }
   ];
 </script>
@@ -41,8 +41,9 @@
   <header>
     <h1>Pick a direction</h1>
     <p>
-      Three takes on Pursuit. Click each, walk through it for 30 seconds, then come back and pick one.
-      The chosen direction becomes the design system.
+      Round two — all three lean soft, but each has a distinct personality.
+      Click through, sit with each for a moment, then pick one. The chosen direction
+      becomes the design system across the whole app.
     </p>
   </header>
 
@@ -63,8 +64,8 @@
   </ul>
 
   <footer>
-    These are mockups with fake data — no sign-in needed.
-    The real app stays where it is at <a href="/">/</a>.
+    Mockups with the same six fake applications — only the styling changes.
+    The real app stays at <a href="/">/</a>.
   </footer>
 </main>
 
@@ -74,24 +75,11 @@
     color: #e6e8ee;
   }
 
-  .wrap {
-    max-width: 1100px;
-    margin: 6vh auto;
-    padding: 0 2rem;
-  }
-  header h1 {
-    font-size: 2rem;
-    margin: 0 0 .5rem;
-  }
-  header p {
-    color: #8b91a0;
-    max-width: 60ch;
-    margin: 0 0 2.5rem;
-  }
+  .wrap { max-width: 1100px; margin: 6vh auto; padding: 0 2rem; }
+  header h1 { font-size: 2rem; margin: 0 0 .5rem; }
+  header p { color: #8b91a0; max-width: 60ch; margin: 0 0 2.5rem; }
   .grid {
-    list-style: none;
-    padding: 0;
-    margin: 0;
+    list-style: none; padding: 0; margin: 0;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 1rem;
@@ -112,38 +100,15 @@
     border-color: var(--card-accent);
   }
   .swatch {
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-    font-size: .8rem;
-    font-weight: 600;
-    letter-spacing: .02em;
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .8rem; font-weight: 600; letter-spacing: .04em;
     text-transform: uppercase;
-    opacity: .7;
+    opacity: .75;
   }
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-  }
-  .card h2 {
-    font-size: 1.1rem;
-    margin: 1rem 0 .5rem;
-  }
-  .card p {
-    font-size: .9rem;
-    opacity: .8;
-    margin: 0 0 1.5rem;
-  }
-  .cta {
-    color: var(--card-accent);
-    font-weight: 500;
-    font-size: .9rem;
-  }
-  footer {
-    margin-top: 3rem;
-    color: #8b91a0;
-    font-size: .85rem;
-  }
+  .dot { width: 10px; height: 10px; border-radius: 999px; }
+  .card h2 { font-size: 1.15rem; margin: 1rem 0 .5rem; font-weight: 600; }
+  .card p { font-size: .9rem; opacity: .85; margin: 0 0 1.5rem; line-height: 1.5; }
+  .cta { color: var(--card-accent); font-weight: 500; font-size: .9rem; }
+  footer { margin-top: 3rem; color: #8b91a0; font-size: .85rem; }
   footer a { color: #4f8cff; }
 </style>
