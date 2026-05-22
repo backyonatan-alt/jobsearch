@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pursuit</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="app">
+  <header class="app-header">
+    <h1>Pursuit</h1>
+    <nav>
+      <button data-view="list" class="active">List</button>
+      <button data-view="kanban">Board</button>
+      <span class="who" id="who"></span>
+      <button id="logout" class="link">Sign out</button>
+    </nav>
+  </header>
+
+  <section class="app-body">
+    <form id="new-app" class="card row">
+      <input name="company" placeholder="Company" required />
+      <input name="role" placeholder="Role" required />
+      <select name="status">
+        <option value="wishlist">wishlist</option>
+        <option value="applied" selected>applied</option>
+        <option value="screen">screen</option>
+        <option value="interview">interview</option>
+        <option value="offer">offer</option>
+        <option value="rejected">rejected</option>
+        <option value="withdrawn">withdrawn</option>
+      </select>
+      <input name="jd_url" placeholder="JD URL (optional)" />
+      <input name="cv_variant" placeholder="CV variant (optional)" />
+      <button type="submit">Add</button>
+    </form>
+
+    <div id="list-view" class="view">
+      <table id="apps-table">
+        <thead>
+          <tr>
+            <th>Company</th><th>Role</th><th>Status</th><th>Applied</th><th>CV</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div id="kanban-view" class="view hidden">
+      <div class="kanban"></div>
+    </div>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>

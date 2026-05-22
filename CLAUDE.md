@@ -1,6 +1,41 @@
 # Job Search Management — Handoff Notes for the New Project
 
-> **How to use this file:** Copy it to the root of the new repo as `CLAUDE.md` (or merge into an existing one). It carries the lessons learned about *how the user works* from Aegis / StrikeRadar / LayoffRadar so the next agent doesn't have to relearn them.
+> **How to use this file:** Codebase root. Carries handoff context from Aegis / StrikeRadar / LayoffRadar, plus the live roadmap. Re-confirm and check items off as they complete.
+
+---
+
+## Decisions locked at kickoff (May 22 2026)
+
+- **Audience:** closed beta, invite-only friends. Multi-tenant data model from day 1, but no public signup.
+- **Stack:** Go + Postgres + static frontend on a user-owned Hetzner VM. systemd + nginx + GitHub Actions deploy. Same shape as Aegis but without the black-box constraint — `ssh` and `psql` are fair game on this project.
+- **LLM provider:** Anthropic (Claude).
+- **MVP wedge:** application tracker + LinkedIn/calendar ingest (spine) + AI interviewer dossier (the AI-native moment).
+- **Working brand name:** **Pursuit** — repo stays `jobsearch`, brand is a single config string (`BRAND_NAME` env var) so we can swap it before public launch.
+- **Deferred (v1.5+):** post-interview recording analysis (privacy/consent story first), CV A/B testing (needs application volume to show signal).
+
+## Roadmap
+
+### v0.1 — Spine (current)
+1. Repo scaffold: Go backend, Postgres, static frontend, GH Actions deploy, nginx + systemd
+2. Magic-link email auth (no passwords)
+3. Applications CRUD: company, role, source, status, applied_at, JD url, notes, CV variant ref
+4. Per-user data isolation (multi-tenant schema, not bolted on)
+5. Kanban + list views on the frontend
+
+### v0.2 — Ingest + Dossier
+6. LinkedIn job paste → parse title/company/location/JD → prefill new application
+7. Calendar `.ics` upload or paste → create interview event linked to application
+8. AI interviewer dossier: name + company (or LinkedIn URL) → Claude brief on background, recent posts/talks, likely style, watch-fors
+
+### v0.3 — Insight
+9. Funnel view: applied → screen → onsite → offer, with conversion rates
+10. AI weekly review: "what's working, where you're stalling"
+11. Reminders (follow-ups, prep tasks) — email + browser
+
+### v1.5+ — Parked, needs decisions
+- Post-interview review + recording analysis (privacy/consent first)
+- CV A/B with per-variant tracking link or unique submission email
+- Public signup, payments
 
 ---
 

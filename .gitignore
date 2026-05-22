@@ -1,0 +1,11 @@
+.env
+.env.local
+*.log
+/bin/
+/tmp/
+/dist/
+*.test
+*.out
+.DS_Store
+.idea/
+.vscode/

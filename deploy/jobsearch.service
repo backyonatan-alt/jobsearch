@@ -1,0 +1,23 @@
+[Unit]
+Description=Pursuit (jobsearch) HTTP server
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=jobsearch
+Group=jobsearch
+WorkingDirectory=/opt/jobsearch
+EnvironmentFile=/opt/jobsearch/.env
+ExecStart=/opt/jobsearch/bin/server
+Restart=always
+RestartSec=2
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/jobsearch
+
+[Install]
+WantedBy=multi-user.target

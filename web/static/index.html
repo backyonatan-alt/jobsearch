@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pursuit — sign in</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="auth-shell">
+    <h1 id="brand">Pursuit</h1>
+    <p class="tagline">Track your job search. Beat the funnel.</p>
+
+    <form id="login" class="card">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" required placeholder="you@example.com" />
+      <button type="submit">Send me a magic link</button>
+      <p id="status" class="status" role="status"></p>
+    </form>
+
+    <p class="footnote">Closed beta. By invite only.</p>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
