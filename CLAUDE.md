@@ -12,17 +12,18 @@
 - **MVP wedge:** application tracker + LinkedIn/calendar ingest (spine) + AI interviewer dossier (the AI-native moment).
 - **Working brand name:** **Pursuit** — repo stays `jobsearch`, brand is a single config string (`BRAND_NAME` env var) so we can swap it before public launch.
 - **Domain:** none for the beta. Running on `<public-ip>.nip.io` with a real Let's-Encrypt cert. Real domain decision deferred until after beta validates demand.
-- **Mail:** `log` driver until invites go out; Postmark wired in just before the first invite.
+- **Auth:** Google OAuth only (decision changed from magic-link on May 22 2026). All closed-beta users have Gmail anyway, one-click is better UX, and it removes the "where's my email" friction. Magic-link code removed.
+- **Mail (post-OAuth):** no longer required for auth. Deferred until we need outbound notifications (reminders, weekly review).
 - **Deferred (v1.5+):** post-interview recording analysis (privacy/consent story first), CV A/B testing (needs application volume to show signal).
 
 ## Roadmap
 
 ### v0.1 — Spine (current)
 1. Repo scaffold: Go backend, Postgres, static frontend, GH Actions deploy, nginx + systemd
-2. Magic-link email auth (no passwords)
+2. Google OAuth sign-in (was magic-link in initial scope; switched May 22 2026)
 3. Applications CRUD: company, role, source, status, applied_at, JD url, notes, CV variant ref
 4. Per-user data isolation (multi-tenant schema, not bolted on)
-5. Kanban + list views on the frontend
+5. Kanban + list views on the frontend (placeholder UI — full design pass scheduled before v0.2 features)
 
 ### v0.2 — Ingest + Dossier
 6. LinkedIn job paste → parse title/company/location/JD → prefill new application

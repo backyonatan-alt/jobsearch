@@ -4,60 +4,80 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/backyonatan-alt/jobsearch/internal/auth"
 )
 
-type authRequest struct {
-	Email string `json:"email"`
+const oauthStateCookie = "pursuit_oauth_state"
+
+func (s *Server) handleGoogleStart(w http.ResponseWriter, r *http.Request) {
+	state, err := auth.RandomToken(24)
+	if err != nil {
+		s.Logger.Error("oauth state", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthStateCookie,
+		Value:    state,
+		Path:     "/auth/google/",
+		Expires:  time.Now().Add(10 * time.Minute),
+		HttpOnly: true,
+		Secure:   strings.HasPrefix(s.Cfg.BaseURL, "https://"),
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, s.Google.AuthCodeURL(state), http.StatusFound)
 }
 
-func (s *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request) {
-	var req authRequest
-	if err := readJSON(r, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "bad json")
-		return
-	}
-	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if email == "" || !strings.Contains(email, "@") {
-		writeJSONError(w, http.StatusBadRequest, "invalid email")
+func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if oauthErr := q.Get("error"); oauthErr != "" {
+		s.Logger.Info("google oauth error", "err", oauthErr)
+		http.Redirect(w, r, "/?err=oauth_denied", http.StatusFound)
 		return
 	}
 
-	// Closed-beta gate. Respond with the same body either way so we don't leak
-	// who's on the list.
+	stateCookie, err := r.Cookie(oauthStateCookie)
+	if err != nil || stateCookie.Value == "" || stateCookie.Value != q.Get("state") {
+		s.Logger.Info("oauth state mismatch")
+		http.Redirect(w, r, "/?err=oauth_state", http.StatusFound)
+		return
+	}
+	// State cookie consumed — clear it.
+	http.SetCookie(w, &http.Cookie{
+		Name:    oauthStateCookie,
+		Value:   "",
+		Path:    "/auth/google/",
+		Expires: time.Unix(0, 0),
+		MaxAge:  -1,
+	})
+
+	code := q.Get("code")
+	if code == "" {
+		http.Redirect(w, r, "/?err=oauth_no_code", http.StatusFound)
+		return
+	}
+
+	email, err := s.Google.ExchangeAndVerify(r.Context(), code)
+	if err != nil {
+		s.Logger.Info("google exchange failed", "err", err)
+		http.Redirect(w, r, "/?err=oauth_failed", http.StatusFound)
+		return
+	}
+
 	if !s.Cfg.EmailAllowed(email) {
-		s.Logger.Info("auth.request blocked (not on allow-list)", "email", email)
-		writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+		s.Logger.Info("oauth blocked (not on allow-list)", "email", email)
+		http.Redirect(w, r, "/?err=not_invited", http.StatusFound)
 		return
 	}
 
-	token, _, err := s.Auth.CreateMagicLink(r.Context(), email)
+	session, u, err := s.Auth.UpsertUserAndSession(r.Context(), email, r.UserAgent(), clientIP(r))
 	if err != nil {
-		s.Logger.Error("create magic link", "err", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal")
+		s.Logger.Error("upsert user", "err", err)
+		http.Redirect(w, r, "/?err=internal", http.StatusFound)
 		return
 	}
-	link := s.Cfg.BaseURL + "/api/auth/verify?token=" + token
-	if err := s.Mail.SendMagicLink(r.Context(), email, link); err != nil {
-		s.Logger.Error("send magic link", "err", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
-}
 
-func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		writeJSONError(w, http.StatusBadRequest, "missing token")
-		return
-	}
-	session, u, err := s.Auth.ConsumeMagicLink(r.Context(), token, r.UserAgent(), clientIP(r))
-	if err != nil {
-		s.Logger.Info("magic link rejected", "err", err)
-		// Redirect to login with an error flag so the UI can surface it.
-		http.Redirect(w, r, "/?err=invalid_link", http.StatusFound)
-		return
-	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.Cfg.SessionCookieName,
 		Value:    session,
@@ -67,7 +87,7 @@ func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 		Secure:   strings.HasPrefix(s.Cfg.BaseURL, "https://"),
 		SameSite: http.SameSiteLaxMode,
 	})
-	s.Logger.Info("user signed in", "user_id", u.ID, "email", u.Email)
+	s.Logger.Info("user signed in via google", "user_id", u.ID, "email", u.Email)
 	http.Redirect(w, r, "/app", http.StatusFound)
 }
 

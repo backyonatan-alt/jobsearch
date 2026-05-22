@@ -15,7 +15,6 @@ import (
 	"github.com/backyonatan-alt/jobsearch/internal/config"
 	"github.com/backyonatan-alt/jobsearch/internal/db"
 	"github.com/backyonatan-alt/jobsearch/internal/httpsrv"
-	"github.com/backyonatan-alt/jobsearch/internal/mail"
 )
 
 func main() {
@@ -51,8 +50,8 @@ func main() {
 	srv := &httpsrv.Server{
 		Cfg:    cfg,
 		Pool:   pool,
-		Auth:   auth.NewService(pool, cfg.SessionTTL, cfg.MagicLinkTTL),
-		Mail:   mail.New(cfg.MailDriver, cfg.MailFrom, logger),
+		Auth:   auth.NewService(pool, cfg.SessionTTL),
+		Google: auth.NewGoogle(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL()),
 		Logger: logger,
 		Static: http.Dir(staticDir),
 	}

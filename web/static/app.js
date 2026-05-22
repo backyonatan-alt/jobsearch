@@ -17,28 +17,22 @@ async function api(path, opts={}) {
 }
 
 // ---------- Login page ----------
-const login = document.getElementById("login");
-if (login) {
-  const status = document.getElementById("status");
+const status = document.getElementById("status");
+if (status && document.querySelector(".google-btn")) {
   const params = new URLSearchParams(window.location.search);
-  if (params.get("err") === "invalid_link") {
-    status.textContent = "That link is invalid or expired. Request a new one.";
+  const messages = {
+    oauth_denied:  "Sign-in was canceled.",
+    oauth_state:   "Your sign-in session expired. Try again.",
+    oauth_no_code: "Sign-in didn't return a code. Try again.",
+    oauth_failed:  "We couldn't verify your Google account. Try again.",
+    not_invited:   "That Google account isn't on the beta invite list yet.",
+    internal:      "Something went wrong on our end. Try again.",
+  };
+  const err = params.get("err");
+  if (err && messages[err]) {
+    status.textContent = messages[err];
     status.className = "status error";
   }
-  login.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    status.textContent = "Sending…";
-    status.className = "status";
-    const email = document.getElementById("email").value;
-    try {
-      await api("/api/auth/request", { method: "POST", body: JSON.stringify({ email }) });
-      status.textContent = "Check your email for a link. (In dev, check the server logs.)";
-      status.className = "status ok";
-    } catch (err) {
-      status.textContent = err.message;
-      status.className = "status error";
-    }
-  });
 }
 
 // ---------- App shell ----------

@@ -11,10 +11,13 @@ Time-bound items. Cross off as completed. Things that don't have a date go in `C
 - [x] Static frontend shell (login → app shell → application list/kanban)
 - [x] systemd unit + nginx config samples in `deploy/`
 - [x] GH Actions CI (build/test) + deploy stub for Hetzner
-- [ ] Provision Hetzner VM (CX22), run `deploy/bootstrap.sh` (uses `<ip>.nip.io` as the hostname — no domain needed for the beta)
-- [ ] Add GH Actions secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`) + var `DEPLOY_ENABLED=true`, push to main → first deploy
-- [ ] First end-to-end: open the URL, request a magic link, grab it from `journalctl -u jobsearch`, add 3 real applications
-- [ ] Wire Postmark mail driver (gated by `MAIL_DRIVER=postmark`) — required before sending invites to friends, not before
+- [x] Provision Hetzner VM (CX22), run `deploy/bootstrap.sh` (uses `<ip>.nip.io` as the hostname — no domain needed for the beta)
+- [x] Add GH Actions secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`) + var `DEPLOY_ENABLED=true`, push to main → first deploy
+- [x] Google Cloud OAuth project + consent screen + Web client; `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` set on the VM
+- [ ] Replace magic-link auth with Google OAuth in the backend + frontend (in progress)
+- [ ] First end-to-end with Google sign-in: open the URL, click Continue with Google, land on /app, add 3 real applications
+- [ ] Frontend design pass: SvelteKit migration + 3 design directions deployed at `/preview/a|b|c`, pick one
+- [ ] Rotate Google OAuth Client Secret (current one was exposed in chat transcript on May 22 2026)
 - [ ] Send invite links to 3 friends for the closed beta
 
 ## Next (v0.2 — ingest + dossier)

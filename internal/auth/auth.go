@@ -14,13 +14,12 @@ import (
 )
 
 type Service struct {
-	pool         *pgxpool.Pool
-	sessionTTL   time.Duration
-	magicTTL     time.Duration
+	pool       *pgxpool.Pool
+	sessionTTL time.Duration
 }
 
-func NewService(pool *pgxpool.Pool, sessionTTL, magicTTL time.Duration) *Service {
-	return &Service{pool: pool, sessionTTL: sessionTTL, magicTTL: magicTTL}
+func NewService(pool *pgxpool.Pool, sessionTTL time.Duration) *Service {
+	return &Service{pool: pool, sessionTTL: sessionTTL}
 }
 
 type User struct {
@@ -28,59 +27,19 @@ type User struct {
 	Email string
 }
 
-// CreateMagicLink issues a single-use token for the given email. The token is
-// returned to the caller (so the mail driver can render the link); it is also
-// stored hashed-by-opacity in the DB until consumed.
-func (s *Service) CreateMagicLink(ctx context.Context, email string) (token string, expiresAt time.Time, err error) {
+// UpsertUserAndSession creates (or updates) the user row for the given email
+// and issues a new session token.
+func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip string) (sessionToken string, u User, err error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || !strings.Contains(email, "@") {
-		return "", time.Time{}, errors.New("invalid email")
+		return "", User{}, errors.New("invalid email")
 	}
-	token, err = randomToken(32)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	expiresAt = time.Now().Add(s.magicTTL)
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO magic_links (token, email, expires_at) VALUES ($1, $2, $3)`,
-		token, email, expiresAt)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("insert magic_link: %w", err)
-	}
-	return token, expiresAt, nil
-}
 
-// ConsumeMagicLink validates the token, marks it consumed, and returns a new
-// session for the associated user (creating the user row if needed).
-func (s *Service) ConsumeMagicLink(ctx context.Context, token, userAgent, ip string) (sessionToken string, u User, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return "", User{}, err
 	}
 	defer tx.Rollback(ctx)
-
-	var email string
-	var expiresAt time.Time
-	var consumedAt *time.Time
-	err = tx.QueryRow(ctx, `
-		SELECT email, expires_at, consumed_at FROM magic_links WHERE token = $1 FOR UPDATE`,
-		token).Scan(&email, &expiresAt, &consumedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", User{}, errors.New("invalid token")
-	}
-	if err != nil {
-		return "", User{}, err
-	}
-	if consumedAt != nil {
-		return "", User{}, errors.New("token already used")
-	}
-	if time.Now().After(expiresAt) {
-		return "", User{}, errors.New("token expired")
-	}
-
-	if _, err := tx.Exec(ctx, `UPDATE magic_links SET consumed_at = now() WHERE token = $1`, token); err != nil {
-		return "", User{}, err
-	}
 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO users (email) VALUES ($1)
@@ -134,6 +93,11 @@ func (s *Service) DestroySession(ctx context.Context, token string) error {
 	}
 	_, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE token = $1`, token)
 	return err
+}
+
+// RandomToken returns a URL-safe random token of nBytes bytes.
+func RandomToken(nBytes int) (string, error) {
+	return randomToken(nBytes)
 }
 
 func randomToken(nBytes int) (string, error) {

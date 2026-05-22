@@ -15,27 +15,31 @@ type Config struct {
 	DatabaseURL       string
 	SessionCookieName string
 	SessionTTL        time.Duration
-	MagicLinkTTL      time.Duration
-	MailDriver        string
-	MailFrom          string
-	AnthropicAPIKey   string
-	AllowedEmails     map[string]struct{} // empty map = allow any
+
+	GoogleClientID     string
+	GoogleClientSecret string
+
+	AnthropicAPIKey string
+	AllowedEmails   map[string]struct{} // empty map = allow any
 }
 
 func FromEnv() (*Config, error) {
 	c := &Config{
-		Port:              getenv("PORT", "8080"),
-		BaseURL:           getenv("BASE_URL", "http://localhost:8080"),
-		BrandName:         getenv("BRAND_NAME", "Pursuit"),
-		DatabaseURL:       getenv("DATABASE_URL", ""),
-		SessionCookieName: getenv("SESSION_COOKIE_NAME", "pursuit_session"),
-		MailDriver:        getenv("MAIL_DRIVER", "log"),
-		MailFrom:          getenv("MAIL_FROM", "no-reply@pursuit.local"),
-		AnthropicAPIKey:   getenv("ANTHROPIC_API_KEY", ""),
+		Port:               getenv("PORT", "8080"),
+		BaseURL:            getenv("BASE_URL", "http://localhost:8080"),
+		BrandName:          getenv("BRAND_NAME", "Pursuit"),
+		DatabaseURL:        getenv("DATABASE_URL", ""),
+		SessionCookieName:  getenv("SESSION_COOKIE_NAME", "pursuit_session"),
+		GoogleClientID:     getenv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret: getenv("GOOGLE_CLIENT_SECRET", ""),
+		AnthropicAPIKey:    getenv("ANTHROPIC_API_KEY", ""),
 	}
 
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	if c.GoogleClientID == "" || c.GoogleClientSecret == "" {
+		return nil, fmt.Errorf("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required")
 	}
 
 	sessionHours, err := strconv.Atoi(getenv("SESSION_TTL_HOURS", "720"))
@@ -43,12 +47,6 @@ func FromEnv() (*Config, error) {
 		return nil, fmt.Errorf("SESSION_TTL_HOURS: %w", err)
 	}
 	c.SessionTTL = time.Duration(sessionHours) * time.Hour
-
-	magicMin, err := strconv.Atoi(getenv("MAGIC_LINK_TTL_MINUTES", "15"))
-	if err != nil {
-		return nil, fmt.Errorf("MAGIC_LINK_TTL_MINUTES: %w", err)
-	}
-	c.MagicLinkTTL = time.Duration(magicMin) * time.Minute
 
 	c.AllowedEmails = map[string]struct{}{}
 	for _, e := range strings.Split(getenv("ALLOWED_EMAILS", ""), ",") {
@@ -58,6 +56,10 @@ func FromEnv() (*Config, error) {
 		}
 	}
 	return c, nil
+}
+
+func (c *Config) GoogleRedirectURL() string {
+	return strings.TrimRight(c.BaseURL, "/") + "/auth/google/callback"
 }
 
 func (c *Config) EmailAllowed(email string) bool {

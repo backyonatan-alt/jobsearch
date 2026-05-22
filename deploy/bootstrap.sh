@@ -84,11 +84,12 @@ DATABASE_URL=postgres://jobsearch:${PG_PASS}@localhost:5432/jobsearch?sslmode=di
 
 SESSION_COOKIE_NAME=pursuit_session
 SESSION_TTL_HOURS=720
-MAGIC_LINK_TTL_MINUTES=15
 
-# Switch to "postmark" or "smtp" before sending invites to real users.
-MAIL_DRIVER=log
-MAIL_FROM=no-reply@${HOSTNAME_NIP}
+# Google OAuth. Fill these in after creating an OAuth Web client at
+# https://console.cloud.google.com/apis/credentials with the authorized
+# redirect URI:  https://${HOSTNAME_NIP}/auth/google/callback
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 
 ANTHROPIC_API_KEY=
 

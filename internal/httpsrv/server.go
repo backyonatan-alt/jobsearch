@@ -6,7 +6,6 @@ import (
 
 	"github.com/backyonatan-alt/jobsearch/internal/auth"
 	"github.com/backyonatan-alt/jobsearch/internal/config"
-	"github.com/backyonatan-alt/jobsearch/internal/mail"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -14,7 +13,7 @@ type Server struct {
 	Cfg    *config.Config
 	Pool   *pgxpool.Pool
 	Auth   *auth.Service
-	Mail   mail.Sender
+	Google *auth.Google
 	Logger *slog.Logger
 	Static http.FileSystem
 }
@@ -27,8 +26,8 @@ func (s *Server) Routes() http.Handler {
 		w.Write([]byte("ok"))
 	})
 
-	mux.HandleFunc("POST /api/auth/request", s.handleAuthRequest)
-	mux.HandleFunc("GET /api/auth/verify", s.handleAuthVerify)
+	mux.HandleFunc("GET /auth/google/start", s.handleGoogleStart)
+	mux.HandleFunc("GET /auth/google/callback", s.handleGoogleCallback)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.requireUser(s.handleMe))
 
