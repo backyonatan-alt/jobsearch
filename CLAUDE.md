@@ -11,6 +11,8 @@
 - **LLM provider:** Anthropic (Claude).
 - **MVP wedge:** application tracker + LinkedIn/calendar ingest (spine) + AI interviewer dossier (the AI-native moment).
 - **Working brand name:** **Pursuit** — repo stays `jobsearch`, brand is a single config string (`BRAND_NAME` env var) so we can swap it before public launch.
+- **Domain:** none for the beta. Running on `<public-ip>.nip.io` with a real Let's-Encrypt cert. Real domain decision deferred until after beta validates demand.
+- **Mail:** `log` driver until invites go out; Postmark wired in just before the first invite.
 - **Deferred (v1.5+):** post-interview recording analysis (privacy/consent story first), CV A/B testing (needs application volume to show signal).
 
 ## Roadmap

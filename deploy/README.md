@@ -2,38 +2,29 @@
 
 Target: a single Hetzner Cloud VM (CX22 is plenty for closed beta).
 
+We use `<public-ip>.nip.io` as the hostname during the beta so we don't have to
+buy a domain. nip.io resolves any `1.2.3.4.nip.io` to `1.2.3.4`, and Let's
+Encrypt happily issues real certs against it. Swap to a real domain later by
+changing `BASE_URL` in `.env`, the nginx `server_name`, and rerunning certbot.
+
 ## One-time server setup
 
 ```bash
-# As root on a fresh Ubuntu 24.04 VM:
-adduser --system --group --home /opt/jobsearch jobsearch
-apt update && apt install -y postgresql nginx certbot python3-certbot-nginx rsync
+# 1. Create a fresh Ubuntu 24.04 VM in the Hetzner console (CX22 is enough).
+#    Note the public IP.
 
-# Postgres
-sudo -u postgres createuser jobsearch
-sudo -u postgres createdb -O jobsearch jobsearch
-sudo -u postgres psql -c "ALTER USER jobsearch WITH PASSWORD '...'"  # use a real one
+# 2. SSH in as root and run the bootstrap script:
+ssh root@<ip> bash -c "'curl -fsSL https://raw.githubusercontent.com/backyonatan-alt/jobsearch/main/deploy/bootstrap.sh | ADMIN_EMAIL=you@example.com bash'"
 
-# App layout
-install -d -o jobsearch -g jobsearch /opt/jobsearch/bin /opt/jobsearch/migrations /opt/jobsearch/web
-
-# Drop in .env (copy from .env.example, fill DATABASE_URL, BASE_URL, ALLOWED_EMAILS)
-$EDITOR /opt/jobsearch/.env
-chown jobsearch:jobsearch /opt/jobsearch/.env
-chmod 640 /opt/jobsearch/.env
-
-# systemd
-cp deploy/jobsearch.service /etc/systemd/system/jobsearch.service
-systemctl daemon-reload
-systemctl enable jobsearch
-
-# nginx
-cp deploy/nginx.conf /etc/nginx/sites-available/pursuit.conf
-ln -s /etc/nginx/sites-available/pursuit.conf /etc/nginx/sites-enabled/
-# Edit server_name, then:
-certbot --nginx -d pursuit.example.com
-nginx -t && systemctl reload nginx
+# Or, if you're on a feature branch and the script isn't on main yet:
+scp deploy/bootstrap.sh root@<ip>:/root/
+ssh root@<ip> "ADMIN_EMAIL=you@example.com bash /root/bootstrap.sh"
 ```
+
+The script installs Postgres + nginx + certbot, creates the `jobsearch` user
+and DB, writes `/opt/jobsearch/.env`, installs the systemd unit, configures
+nginx for `<ip>.nip.io`, and runs certbot to issue a TLS cert. It's
+re-runnable — anything that already exists is left alone.
 
 ## Deploys
 
@@ -45,9 +36,12 @@ The workflow:
 3. `systemctl restart jobsearch`.
 
 Required GH Actions secrets:
-- `DEPLOY_HOST` — `pursuit.example.com`
+- `DEPLOY_HOST` — e.g. `1.2.3.4.nip.io`
 - `DEPLOY_USER` — usually `root` (or a deploy user with sudo for the restart)
 - `DEPLOY_SSH_KEY` — private key authorized on the VM
+
+Required GH Actions variable (not secret):
+- `DEPLOY_ENABLED=true` — gates the deploy workflow until you're ready
 
 Manual deploy from a laptop is also fine:
 

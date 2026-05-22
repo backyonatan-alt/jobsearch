@@ -11,9 +11,10 @@ Time-bound items. Cross off as completed. Things that don't have a date go in `C
 - [x] Static frontend shell (login → app shell → application list/kanban)
 - [x] systemd unit + nginx config samples in `deploy/`
 - [x] GH Actions CI (build/test) + deploy stub for Hetzner
-- [ ] Provision Hetzner VM (CX22 or CX32), install Postgres, point DNS, run first deploy
-- [ ] Wire real magic-link email send (Postmark or AWS SES — pick one)
-- [ ] First end-to-end: invite yourself, log in via magic link, add 3 real applications
+- [ ] Provision Hetzner VM (CX22), run `deploy/bootstrap.sh` (uses `<ip>.nip.io` as the hostname — no domain needed for the beta)
+- [ ] Add GH Actions secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`) + var `DEPLOY_ENABLED=true`, push to main → first deploy
+- [ ] First end-to-end: open the URL, request a magic link, grab it from `journalctl -u jobsearch`, add 3 real applications
+- [ ] Wire Postmark mail driver (gated by `MAIL_DRIVER=postmark`) — required before sending invites to friends, not before
 - [ ] Send invite links to 3 friends for the closed beta
 
 ## Next (v0.2 — ingest + dossier)
@@ -25,13 +26,18 @@ Time-bound items. Cross off as completed. Things that don't have a date go in `C
 
 ## Pre-launch (before sending the first invite)
 
-- [ ] Decide on domain (pursuit.app vs pursuithq.com vs other) and buy it
+- [ ] Postmark account + `MAIL_DRIVER=postmark` wired in
 - [ ] Privacy note: closed beta, what we store, retention policy. Even one paragraph.
 - [ ] Backup story for Postgres: nightly `pg_dump` → off-VM (S3 or Hetzner Storage Box)
-- [ ] A single GA4 (or Plausible) property wired into the frontend
+- [ ] A single Plausible (or GA4) property wired into the frontend
 
-## Parked
+## Parked decisions
+
+- Domain name (pursuit.app etc.) — deferred until after beta validates demand. Running on `<ip>.nip.io` with a real Lets-Encrypt cert until then.
+
+## Parked (post-beta)
 
 - Post-interview recording analysis — privacy/consent decision required first
 - CV A/B with per-variant tracking — needs volume to show signal, build in v2
 - Payments / public signup
+- Custom domain swap (DNS + nginx server_name + cert reissue)
