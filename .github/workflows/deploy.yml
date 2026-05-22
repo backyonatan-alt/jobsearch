@@ -1,8 +1,5 @@
 name: deploy
 
-# Stub. Wire up DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY secrets once the
-# Hetzner VM exists, then enable this workflow by changing the `if` below.
-
 on:
   push:
     branches: [main]
@@ -14,15 +11,32 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Build static linux binary
         run: |
           mkdir -p bin
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
             go build -ldflags='-s -w' -o bin/server ./cmd/server
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Install SSH key
         run: |
@@ -42,10 +56,14 @@ jobs:
             migrations/ \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/jobsearch/migrations/"
           rsync -avz --delete \
-            web/ \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/jobsearch/web/"
+            web/build/ \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/jobsearch/web/build/"
 
-      - name: Restart service + health check
+      - name: Cleanup legacy web/static + restart service + health check
         run: |
-          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            'sudo systemctl restart jobsearch && sleep 2 && curl -fsS http://localhost:8080/healthz'
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            rm -rf /opt/jobsearch/web/static &&
+            sudo systemctl restart jobsearch &&
+            sleep 2 &&
+            curl -fsS http://localhost:8080/healthz
+          '

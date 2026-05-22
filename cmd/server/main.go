@@ -43,7 +43,7 @@ func main() {
 	}
 	logger.Info("migrations applied", "dir", migrationsDir)
 
-	staticDir := getenv("STATIC_DIR", "web/static")
+	staticDir := getenv("STATIC_DIR", "web/build")
 	abs, _ := filepath.Abs(staticDir)
 	logger.Info("serving static", "dir", abs)
 

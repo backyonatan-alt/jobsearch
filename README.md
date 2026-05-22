@@ -13,34 +13,45 @@ Job search management for candidates. Closed beta. See `CLAUDE.md` for vision an
 ## Local dev
 
 ```bash
-# 1. start Postgres locally (or use docker run -e POSTGRES_PASSWORD=dev -p 5432:5432 postgres:16)
+# 1. start Postgres locally
 createdb jobsearch_dev
 
-# 2. copy env
+# 2. copy env, fill DATABASE_URL + GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET
 cp .env.example .env
-# edit DATABASE_URL if needed
 
-# 3. run
+# 3. build the frontend once (Vite outputs to web/build/)
+cd web && pnpm install && pnpm build && cd ..
+
+# 4. run the Go server
 go run ./cmd/server
-# server boots, applies migrations from ./migrations on startup
-# magic-link emails are printed to stdout in dev (MAIL_DRIVER=log)
+
+# server boots, applies migrations from ./migrations, serves web/build/
 ```
 
 Then open http://localhost:8080.
 
+For frontend iteration, run Vite's dev server in a second terminal:
+
+```bash
+cd web && pnpm dev
+```
+
+Vite serves on :5173 with HMR and proxies /api, /auth, /healthz to the Go server on :8080.
+
 ## Layout
 
 ```
-cmd/server/        entrypoint
+cmd/server/        Go entrypoint
 internal/config/   env-driven config
 internal/db/       pgx pool + migration runner
-internal/auth/     sessions + magic-link tokens
-internal/http/     server, middleware, handlers
-internal/mail/     mail driver (log in dev, smtp/postmark later)
-internal/llm/      Anthropic client (stub in v0.1)
+internal/auth/     sessions + Google OAuth
+internal/httpsrv/  server, middleware, handlers
 migrations/        numbered SQL files, applied in order on boot
-web/static/        frontend
-deploy/            systemd unit + nginx sample + deploy notes
+web/               SvelteKit frontend (Vite + adapter-static)
+  src/             pages, components, $lib helpers
+  static/          static assets passed through to build/
+  build/           Vite output (gitignored, served by Go)
+deploy/            bootstrap.sh, systemd unit, nginx sample
 .github/workflows/ ci.yml, deploy.yml
 ```
 

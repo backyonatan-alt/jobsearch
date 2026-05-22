@@ -9,3 +9,8 @@
 .DS_Store
 .idea/
 .vscode/
+
+# Frontend
+web/node_modules/
+web/build/
+web/.svelte-kit/
