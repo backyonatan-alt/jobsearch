@@ -41,9 +41,10 @@
   <header>
     <h1>Pick a direction</h1>
     <p>
-      Round two — all three lean soft, but each has a distinct personality.
-      Click through, sit with each for a moment, then pick one. The chosen direction
-      becomes the design system across the whole app.
+      Round three — each direction is now a full four-screen experience:
+      a dashboard, a board view, a funnel/stats page, and a deep dossier
+      page for the Anthropic application. Click around inside each one
+      before deciding.
     </p>
   </header>
 
