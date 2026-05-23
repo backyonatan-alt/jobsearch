@@ -41,10 +41,10 @@
   <header>
     <h1>Pick a direction</h1>
     <p>
-      Round three — each direction is now a full four-screen experience:
-      a dashboard, a board view, a funnel/stats page, and a deep dossier
-      page for the Anthropic application. Click around inside each one
-      before deciding.
+      Round four — leaning into B as the working direction. Modern SaaS feel
+      (sidebar, search, ⌘K hint, sparklines, real funnel chart, profile-style
+      dossier), keeping the warm soft palette. A and C are still around for
+      comparison but expected to be retired once B locks.
     </p>
   </header>
 

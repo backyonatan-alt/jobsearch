@@ -1,15 +1,18 @@
 <script>
-  import { PREVIEW_APPS, STATUSES } from '$lib/preview-data.js';
+  import { PREVIEW_APPS, STATUSES, fmtDate } from '$lib/preview-data.js';
 
-  const STATUS_STYLE = {
-    wishlist:  { bg: '#efe7d8', fg: '#6b5b3d', label: 'seedlings' },
-    applied:   { bg: '#e2d5f0', fg: '#4a2f6e', label: 'sown' },
-    screen:    { bg: '#f5d8d8', fg: '#8a3a3a', label: 'budding' },
-    interview: { bg: '#f8c89d', fg: '#6e3b14', label: 'flowering' },
-    offer:     { bg: '#c2dbb8', fg: '#2e5b3a', label: 'fruited' },
-    rejected:  { bg: '#d6cfc4', fg: '#5a544a', label: 'fallow' },
-    withdrawn: { bg: '#e8e3da', fg: '#6b6358', label: 'pruned' }
+  const STATUS_COLOR = {
+    wishlist:  '#a39d92',
+    applied:   '#3b82f6',
+    screen:    '#f59e0b',
+    interview: '#c45ba8',
+    offer:     '#10b981',
+    rejected:  '#ef4444',
+    withdrawn: '#71717a'
   };
+
+  const TONES = ['#ff8a5b', '#c45ba8', '#7e6cd6', '#5b8def', '#5bbb8a', '#d6b15b'];
+  const monoTone = (s) => TONES[s.charCodeAt(0) % TONES.length];
 
   const grouped = STATUSES.reduce((acc, s) => {
     acc[s] = PREVIEW_APPS.filter((a) => a.status === s);
@@ -18,62 +21,141 @@
 </script>
 
 <svelte:head>
-  <title>Garden — Board</title>
+  <title>Board — Pursuit</title>
 </svelte:head>
 
-<section class="hero">
-  <p class="eyebrow">By bed</p>
-  <h1>Your beds, this season</h1>
-</section>
+<p class="breadcrumb"><a href="/preview/b">Workspace</a> <span>/</span> Board</p>
+<div class="page-head">
+  <h1>Board</h1>
+  <div class="head-actions">
+    <button class="btn-ghost">Group: status ▾</button>
+    <button class="btn-primary">+ New</button>
+  </div>
+</div>
 
-<div class="beds">
+<div class="board">
   {#each STATUSES as s}
-    <article class="bed" style="--bed-bg: {STATUS_STYLE[s].bg}; --bed-fg: {STATUS_STYLE[s].fg};">
+    <section class="col">
       <header>
-        <span class="badge">{STATUS_STYLE[s].label}</span>
-        <span class="count">{grouped[s].length}</span>
+        <span class="col-title">
+          <span class="col-dot" style="background: {STATUS_COLOR[s]}"></span>
+          {s}
+        </span>
+        <span class="col-count">{grouped[s].length}</span>
       </header>
-      <div class="bed-body">
-        {#if grouped[s].length === 0}
-          <p class="empty">empty bed</p>
-        {:else}
-          {#each grouped[s] as a}
-            <div class="seed">
-              <p class="seed-name">{a.company}</p>
-              <p class="seed-role">{a.role}</p>
+
+      <div class="cards">
+        {#each grouped[s] as a}
+          <a href={a.slug === 'anthropic' ? '/preview/b/anthropic' : '#'} class="card">
+            <div class="card-row">
+              <span class="mono" style="background: {monoTone(a.company)}">{a.company[0]}</span>
+              <p class="co">{a.company}</p>
             </div>
-          {/each}
-        {/if}
+            <p class="role">{a.role}</p>
+            <div class="card-foot">
+              <span class="when">{fmtDate(a.applied_at)}</span>
+              {#if a.cv_variant}
+                <span class="cv">{a.cv_variant}</span>
+              {/if}
+            </div>
+          </a>
+        {/each}
+        <button class="add">+ Add</button>
       </div>
-    </article>
+    </section>
   {/each}
 </div>
 
 <style>
-  .hero { margin: 1rem 0 2rem; }
-  .hero h1 { font-size: 2.25rem; margin: .35rem 0 0; }
-  .beds { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
-  .bed {
-    background: var(--bed-bg);
-    border-radius: 18px;
-    padding: 1rem 1rem 1.25rem;
-    min-height: 220px;
+  .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+  .head-actions { display: flex; gap: .5rem; }
+  .btn-ghost {
+    padding: .4rem .7rem; background: #fbf9f4;
+    border: 1px solid #ebe6dd; border-radius: 6px;
+    font: inherit; font-size: 13px; color: #4a4842; cursor: pointer;
   }
-  .bed header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-  .badge {
-    background: rgba(255,255,255,.5); color: var(--bed-fg);
-    padding: .2rem .6rem; border-radius: 999px;
-    font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 700;
+  .btn-ghost:hover { background: #ece5d4; }
+  .btn-primary {
+    padding: .4rem .9rem;
+    background: linear-gradient(135deg, #18181b 0%, #2c2a32 100%);
+    color: #fbf9f4; border: 0; border-radius: 6px;
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
   }
-  .count { color: var(--bed-fg); font-weight: 700; font-family: 'Fraunces', serif; }
-  .bed-body { display: flex; flex-direction: column; gap: .5rem; }
-  .seed {
-    background: rgba(255,255,255,.6);
-    border-radius: 12px;
-    padding: .65rem .85rem;
-    backdrop-filter: blur(4px);
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(180px, 1fr));
+    gap: .65rem;
+    overflow-x: auto;
+    padding-bottom: 1rem;
   }
-  .seed-name { font-weight: 600; margin: 0; font-size: 14px; color: #2d2a27; }
-  .seed-role { color: #6b6358; font-size: 12px; margin: .15rem 0 0; }
-  .empty { color: var(--bed-fg); opacity: .5; font-style: italic; font-size: 13px; margin: 0; text-align: center; padding-top: 1.5rem; }
+  .col {
+    background: #fbf9f4;
+    border: 1px solid #ebe6dd;
+    border-radius: 10px;
+    padding: .65rem;
+    min-height: 320px;
+    display: flex; flex-direction: column;
+  }
+  .col header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 .25rem .65rem;
+    margin-bottom: .5rem;
+    border-bottom: 1px solid #ebe6dd;
+  }
+  .col-title {
+    display: inline-flex; align-items: center; gap: .4rem;
+    font-size: 12px; color: #18181b;
+    text-transform: capitalize; font-weight: 500;
+  }
+  .col-dot { width: 7px; height: 7px; border-radius: 999px; }
+  .col-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: #71717a;
+    background: #ece5d4;
+    padding: 1px 6px; border-radius: 4px;
+  }
+  .cards { display: flex; flex-direction: column; gap: .5rem; }
+
+  .card {
+    background: #fff;
+    border: 1px solid #ebe6dd;
+    border-radius: 8px;
+    padding: .65rem .75rem;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: #c45ba8;
+    box-shadow: 0 4px 10px rgba(196, 91, 168, .12);
+  }
+  .card-row { display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem; }
+  .mono {
+    width: 22px; height: 22px; border-radius: 6px;
+    color: #fff;
+    display: grid; place-items: center;
+    font-weight: 600; font-size: 11px;
+  }
+  .co { margin: 0; font-weight: 500; font-size: 13px; color: #18181b; }
+  .role { margin: 0; font-size: 11px; color: #71717a; line-height: 1.35; }
+  .card-foot {
+    display: flex; gap: .5rem;
+    margin-top: .5rem;
+    padding-top: .5rem;
+    border-top: 1px dashed #ebe6dd;
+    font-size: 10px; color: #a39d92;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .cv { background: #ece5d4; color: #6f685c; padding: 0 4px; border-radius: 3px; }
+
+  .add {
+    background: transparent; border: 1px dashed #ebe6dd;
+    color: #a39d92; cursor: pointer;
+    padding: .55rem; border-radius: 8px;
+    font: inherit; font-size: 12px;
+    margin-top: .25rem;
+  }
+  .add:hover { background: #fbf9f4; color: #c45ba8; border-color: #c45ba8; }
 </style>

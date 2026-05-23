@@ -1,92 +1,205 @@
 <script>
   import { FUNNEL_VIEW } from '$lib/preview-data.js';
+
+  const stages = FUNNEL_VIEW.stages;
+  const drops = stages.slice(1).map((s, i) => ({
+    from: stages[i].label,
+    to:   s.label,
+    rate: ((s.count / stages[i].count) * 100).toFixed(0)
+  }));
 </script>
 
 <svelte:head>
-  <title>Garden — Funnel</title>
+  <title>Funnel — Pursuit</title>
 </svelte:head>
 
-<section class="hero">
-  <p class="eyebrow">Yield report</p>
-  <h1>The funnel, gently traced</h1>
-  <p class="lede">From sown to fruited — where energy is flowing, where it isn't.</p>
-</section>
-
-<div class="stages">
-  {#each FUNNEL_VIEW.stages as s, i}
-    <article class="stage" style="--w: {s.pct}%;">
-      <div class="bar">
-        <div class="fill"></div>
-        <div class="label">
-          <span class="stage-name">{s.label}</span>
-          <span class="stage-num">{s.count}</span>
-        </div>
-      </div>
-      {#if i > 0}
-        <span class="pct">{s.pct}% carried through</span>
-      {:else}
-        <span class="pct seed">— starting point</span>
-      {/if}
-    </article>
-  {/each}
+<p class="breadcrumb"><a href="/preview/b">Workspace</a> <span>/</span> Funnel</p>
+<div class="page-head">
+  <h1>Funnel</h1>
+  <div class="head-actions">
+    <button class="btn-ghost">Last 30 days ▾</button>
+    <button class="btn-ghost">Export</button>
+  </div>
 </div>
 
-<section class="notes">
-  <h2>Reading the garden</h2>
+<div class="kpis">
+  <div class="kpi">
+    <p class="k-label">Applied → Offer</p>
+    <p class="k-val display">20%</p>
+    <p class="k-sub">+5% vs. last month</p>
+  </div>
+  <div class="kpi">
+    <p class="k-label">Time to first reply</p>
+    <p class="k-val display">3.2d</p>
+    <p class="k-sub">median</p>
+  </div>
+  <div class="kpi">
+    <p class="k-label">Active loops</p>
+    <p class="k-val display">2</p>
+    <p class="k-sub">interview · offer</p>
+  </div>
+  <div class="kpi accent">
+    <p class="k-label">Best CV variant</p>
+    <p class="k-val display">v3‑ai‑focus</p>
+    <p class="k-sub">2× the reply rate</p>
+  </div>
+</div>
+
+<section class="funnel-card">
+  <h2>Stage conversion</h2>
+  <div class="bars">
+    {#each stages as s, i}
+      <div class="bar-row">
+        <div class="bar-label">
+          <span class="b-name">{s.label}</span>
+          <span class="b-count">{s.count}</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {s.pct}%"></div>
+        </div>
+        <div class="bar-pct">
+          {#if i === 0}
+            <span class="muted">baseline</span>
+          {:else}
+            <span class="pct">{s.pct}%</span>
+            <span class="drop">↓ {(100 - s.pct)}%</span>
+          {/if}
+        </div>
+      </div>
+    {/each}
+  </div>
+
+  <div class="drops">
+    {#each drops as d}
+      <div class="drop-card">
+        <p class="d-from">{d.from} <span class="arrow">→</span> {d.to}</p>
+        <p class="d-rate">{d.rate}% advanced</p>
+      </div>
+    {/each}
+  </div>
+</section>
+
+<section class="insights">
+  <h2>What we're noticing</h2>
   <div class="cards">
     {#each FUNNEL_VIEW.insights as note, i}
-      <article class="note" data-tone={i === 0 ? 'good' : i === 1 ? 'warn' : 'go'}>
-        <h3>{note.title}</h3>
-        <p>{note.body}</p>
+      <article class="insight" data-tone={i === 0 ? 'good' : i === 1 ? 'warn' : 'go'}>
+        <span class="tone-dot"></span>
+        <div>
+          <h3>{note.title}</h3>
+          <p>{note.body}</p>
+        </div>
       </article>
     {/each}
   </div>
 </section>
 
 <style>
-  .hero { margin: 1rem 0 2.5rem; }
-  .hero h1 { font-size: 2.5rem; margin: .35rem 0 .75rem; }
-  .hero .lede { color: #5a5550; margin: 0; }
+  .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+  .head-actions { display: flex; gap: .5rem; }
+  .btn-ghost {
+    padding: .4rem .7rem; background: #fbf9f4;
+    border: 1px solid #ebe6dd; border-radius: 6px;
+    font: inherit; font-size: 13px; color: #4a4842; cursor: pointer;
+  }
 
-  .stages { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 3rem; }
-  .stage { display: flex; align-items: center; gap: 1.25rem; }
-  .bar {
-    flex: 1;
-    background: rgba(255,255,255,.5);
-    border-radius: 18px;
-    height: 56px;
-    position: relative;
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin-bottom: 2rem; }
+  @media (max-width: 800px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  .kpi {
+    background: #fbf9f4;
+    border: 1px solid #ebe6dd;
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+  }
+  .kpi.accent {
+    background: linear-gradient(135deg, rgba(255,138,91,.12), rgba(196,91,168,.12));
+    border-color: rgba(196,91,168,.3);
+  }
+  .k-label { margin: 0; font-size: 11px; letter-spacing: .04em; color: #71717a; font-weight: 500; text-transform: uppercase; }
+  .k-val { margin: .35rem 0 .25rem; font-size: 1.65rem; color: #18181b; }
+  .k-sub { margin: 0; font-size: 11px; color: #a39d92; }
+
+  .funnel-card, .insights {
+    background: #fbf9f4;
+    border: 1px solid #ebe6dd;
+    border-radius: 12px;
+    padding: 1.5rem 1.75rem;
+    margin-bottom: 1rem;
+  }
+  .funnel-card h2, .insights h2 { margin: 0 0 1.25rem; }
+
+  .bars { display: flex; flex-direction: column; gap: .75rem; }
+  .bar-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 140px;
+    align-items: center;
+    gap: 1rem;
+  }
+  .bar-label { display: flex; align-items: baseline; gap: .5rem; }
+  .b-name { font-size: 13px; font-weight: 500; color: #18181b; }
+  .b-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #71717a;
+  }
+  .bar-track {
+    background: #f1ede3;
+    height: 26px;
+    border-radius: 6px;
     overflow: hidden;
   }
-  .fill {
-    position: absolute; inset: 0;
-    width: var(--w);
-    background: linear-gradient(90deg, #c2dbb8 0%, #9ec496 80%, #6b3d5f 100%);
-    border-radius: 18px;
-    transition: width .4s ease;
-  }
-  .label {
-    position: relative; z-index: 1;
-    display: flex; align-items: center; justify-content: space-between;
+  .bar-fill {
     height: 100%;
-    padding: 0 1.5rem;
-    color: #2d2a27;
+    background: linear-gradient(90deg, #ff8a5b 0%, #c45ba8 100%);
+    border-radius: 6px;
+    transition: width .3s ease;
   }
-  .stage-name { font-family: 'Fraunces', serif; font-weight: 500; font-size: 1.2rem; }
-  .stage-num { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.4rem; color: #6b3d5f; }
-  .pct { font-size: 12px; color: #837e75; min-width: 12rem; }
-  .pct.seed { color: #b0a8a0; font-style: italic; }
+  .bar-pct {
+    display: flex; align-items: baseline; gap: .5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .bar-pct .pct { font-weight: 600; color: #18181b; }
+  .bar-pct .drop { color: #ef4444; font-size: 10px; }
+  .bar-pct .muted { color: #a39d92; font-size: 11px; }
 
-  .notes h2 { font-size: 1.65rem; margin: 0 0 1rem; }
-  .cards { display: grid; gap: 1rem; }
-  .note {
-    background: rgba(255,255,255,.55);
-    border-radius: 16px;
-    padding: 1.25rem 1.5rem;
-    border-left: 4px solid #c2dbb8;
+  .drops {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: .65rem;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #ebe6dd;
   }
-  .note[data-tone="warn"] { border-left-color: #f8c89d; }
-  .note[data-tone="go"] { border-left-color: #6b3d5f; }
-  .note h3 { font-size: 1.1rem; margin: 0 0 .35rem; font-weight: 500; }
-  .note p { margin: 0; color: #5a5550; line-height: 1.55; }
+  @media (max-width: 800px) { .drops { grid-template-columns: 1fr; } }
+  .drop-card {
+    background: #fff;
+    border: 1px solid #ebe6dd;
+    border-radius: 8px;
+    padding: .65rem .85rem;
+  }
+  .d-from { margin: 0; font-size: 11px; color: #71717a; }
+  .d-from .arrow { color: #c45ba8; margin: 0 .25rem; }
+  .d-rate { margin: .25rem 0 0; font-weight: 600; color: #18181b; font-size: 14px; }
+
+  .insights .cards { display: flex; flex-direction: column; gap: .75rem; }
+  .insight {
+    display: flex; gap: .85rem;
+    background: #fff;
+    border: 1px solid #ebe6dd;
+    border-left-width: 3px;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+  }
+  .insight[data-tone="good"] { border-left-color: #10b981; }
+  .insight[data-tone="warn"] { border-left-color: #f59e0b; }
+  .insight[data-tone="go"]   { border-left-color: #c45ba8; }
+  .tone-dot {
+    width: 8px; height: 8px; border-radius: 999px;
+    margin-top: 7px; flex-shrink: 0;
+  }
+  .insight[data-tone="good"] .tone-dot { background: #10b981; }
+  .insight[data-tone="warn"] .tone-dot { background: #f59e0b; }
+  .insight[data-tone="go"]   .tone-dot { background: #c45ba8; }
+  .insight h3 { margin: 0 0 .35rem; font-size: 14px; font-weight: 600; }
+  .insight p { margin: 0; color: #4a4842; line-height: 1.55; font-size: 13px; }
 </style>
