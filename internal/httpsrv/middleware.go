@@ -63,6 +63,17 @@ func userFromCtx(ctx context.Context) (auth.User, bool) {
 	return u, ok
 }
 
+func (s *Server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
+	return s.requireUser(func(w http.ResponseWriter, r *http.Request) {
+		u, _ := userFromCtx(r.Context())
+		if !u.IsAdmin {
+			writeJSONError(w, http.StatusForbidden, "admin only")
+			return
+		}
+		h(w, r)
+	})
+}
+
 func (s *Server) serveStaticFile(name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		f, err := s.Static.Open("/" + name)

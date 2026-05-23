@@ -65,13 +65,19 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.Cfg.EmailAllowed(email) {
+	invited, err := s.Auth.EmailInvited(r.Context(), email, s.Cfg.AllowedEmails)
+	if err != nil {
+		s.Logger.Error("invite check", "err", err)
+		http.Redirect(w, r, "/?err=internal", http.StatusFound)
+		return
+	}
+	if !invited {
 		s.Logger.Info("oauth blocked (not on allow-list)", "email", email)
 		http.Redirect(w, r, "/?err=not_invited", http.StatusFound)
 		return
 	}
 
-	session, u, err := s.Auth.UpsertUserAndSession(r.Context(), email, r.UserAgent(), clientIP(r))
+	session, u, err := s.Auth.UpsertUserAndSession(r.Context(), email, r.UserAgent(), clientIP(r), s.Cfg.IsAdminEmail(email))
 	if err != nil {
 		s.Logger.Error("upsert user", "err", err)
 		http.Redirect(w, r, "/?err=internal", http.StatusFound)
@@ -109,8 +115,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	u, _ := userFromCtx(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":    u.ID,
-		"email": u.Email,
+		"id":       u.ID,
+		"email":    u.Email,
+		"is_admin": u.IsAdmin,
 	})
 }
 

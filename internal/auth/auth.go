@@ -23,13 +23,16 @@ func NewService(pool *pgxpool.Pool, sessionTTL time.Duration) *Service {
 }
 
 type User struct {
-	ID    int64
-	Email string
+	ID      int64
+	Email   string
+	IsAdmin bool
 }
 
 // UpsertUserAndSession creates (or updates) the user row for the given email
-// and issues a new session token.
-func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip string) (sessionToken string, u User, err error) {
+// and issues a new session token. If `makeAdmin` is true the user's is_admin
+// flag is set to true (used so the configured ADMIN_EMAILS automatically gain
+// admin on sign-in).
+func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip string, makeAdmin bool) (sessionToken string, u User, err error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || !strings.Contains(email, "@") {
 		return "", User{}, errors.New("invalid email")
@@ -42,9 +45,11 @@ func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip
 	defer tx.Rollback(ctx)
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO users (email) VALUES ($1)
-		ON CONFLICT (email) DO UPDATE SET last_login_at = now()
-		RETURNING id, email`, email).Scan(&u.ID, &u.Email)
+		INSERT INTO users (email, is_admin) VALUES ($1, $2)
+		ON CONFLICT (email) DO UPDATE SET
+		    last_login_at = now(),
+		    is_admin = users.is_admin OR EXCLUDED.is_admin
+		RETURNING id, email, is_admin`, email, makeAdmin).Scan(&u.ID, &u.Email, &u.IsAdmin)
 	if err != nil {
 		return "", User{}, fmt.Errorf("upsert user: %w", err)
 	}
@@ -74,10 +79,10 @@ func (s *Service) UserBySession(ctx context.Context, token string) (User, bool, 
 	}
 	var u User
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.email
+		SELECT u.id, u.email, u.is_admin
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token = $1 AND s.expires_at > now()`,
-		token).Scan(&u.ID, &u.Email)
+		token).Scan(&u.ID, &u.Email, &u.IsAdmin)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -85,6 +90,127 @@ func (s *Service) UserBySession(ctx context.Context, token string) (User, bool, 
 		return User{}, false, err
 	}
 	return u, true, nil
+}
+
+// EmailInvited reports whether the given email is allowed to sign in. The
+// invited_emails table is the source of truth; the env-based ALLOWED_EMAILS
+// list is kept as a bootstrap fallback so the first ever sign-in works on a
+// fresh DB.
+func (s *Service) EmailInvited(ctx context.Context, email string, envFallback map[string]struct{}) (bool, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return false, nil
+	}
+	var count int
+	if err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM invited_emails WHERE lower(email) = $1`, email,
+	).Scan(&count); err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+	if _, ok := envFallback[email]; ok {
+		return true, nil
+	}
+	// Empty allow-list means anyone can sign in (used in dev).
+	hasDBList, err := s.invitesAny(ctx)
+	if err != nil {
+		return false, err
+	}
+	return !hasDBList && len(envFallback) == 0, nil
+}
+
+func (s *Service) invitesAny(ctx context.Context) (bool, error) {
+	var any bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM invited_emails)`).Scan(&any)
+	return any, err
+}
+
+// ListInvites returns every invited email plus when it was added and by whom.
+func (s *Service) ListInvites(ctx context.Context) ([]Invite, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT i.email, i.invited_at, i.note, u.email
+		FROM invited_emails i
+		LEFT JOIN users u ON u.id = i.invited_by_user_id
+		ORDER BY i.invited_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Invite{}
+	for rows.Next() {
+		var v Invite
+		var byEmail *string
+		if err := rows.Scan(&v.Email, &v.InvitedAt, &v.Note, &byEmail); err != nil {
+			return nil, err
+		}
+		if byEmail != nil {
+			v.InvitedByEmail = *byEmail
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// AddInvite inserts (or replaces, idempotently) an invited email.
+func (s *Service) AddInvite(ctx context.Context, email, note string, byUserID int64) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" || !strings.Contains(email, "@") {
+		return errors.New("invalid email")
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO invited_emails (email, invited_by_user_id, note) VALUES ($1, $2, NULLIF($3,''))
+		ON CONFLICT (email) DO UPDATE SET note = EXCLUDED.note`,
+		email, byUserID, note)
+	return err
+}
+
+// RemoveInvite deletes an invited email. (Existing sessions are not affected;
+// they remain valid until they expire or the user logs out.)
+func (s *Service) RemoveInvite(ctx context.Context, email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	_, err := s.pool.Exec(ctx, `DELETE FROM invited_emails WHERE lower(email) = $1`, email)
+	return err
+}
+
+// SeedInvitesFromEnv copies any emails in the bootstrap env list into the DB
+// the first time the table is empty. Subsequent runs are no-ops.
+func (s *Service) SeedInvitesFromEnv(ctx context.Context, emails map[string]struct{}) error {
+	if len(emails) == 0 {
+		return nil
+	}
+	has, err := s.invitesAny(ctx)
+	if err != nil || has {
+		return err
+	}
+	for e := range emails {
+		if _, err := s.pool.Exec(ctx,
+			`INSERT INTO invited_emails (email, note) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			e, "seeded from ALLOWED_EMAILS env"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SeedAdminsFromEnv promotes any existing user matching the configured
+// ADMIN_EMAILS list to admin. Idempotent — safe to call on every boot.
+func (s *Service) SeedAdminsFromEnv(ctx context.Context, emails map[string]struct{}) error {
+	for e := range emails {
+		if _, err := s.pool.Exec(ctx,
+			`UPDATE users SET is_admin = true WHERE lower(email) = $1`, e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type Invite struct {
+	Email          string
+	InvitedAt      time.Time
+	Note           *string
+	InvitedByEmail string
 }
 
 func (s *Service) DestroySession(ctx context.Context, token string) error {

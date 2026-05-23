@@ -47,10 +47,18 @@ func main() {
 	abs, _ := filepath.Abs(staticDir)
 	logger.Info("serving static", "dir", abs)
 
+	authSvc := auth.NewService(pool, cfg.SessionTTL)
+	if err := authSvc.SeedInvitesFromEnv(ctx, cfg.AllowedEmails); err != nil {
+		logger.Error("seed invites", "err", err)
+	}
+	if err := authSvc.SeedAdminsFromEnv(ctx, cfg.AdminEmails); err != nil {
+		logger.Error("seed admins", "err", err)
+	}
+
 	srv := &httpsrv.Server{
 		Cfg:    cfg,
 		Pool:   pool,
-		Auth:   auth.NewService(pool, cfg.SessionTTL),
+		Auth:   authSvc,
 		Google: auth.NewGoogle(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL()),
 		Logger: logger,
 		Static: http.Dir(staticDir),

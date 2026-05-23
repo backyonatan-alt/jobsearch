@@ -20,7 +20,8 @@ type Config struct {
 	GoogleClientSecret string
 
 	AnthropicAPIKey string
-	AllowedEmails   map[string]struct{} // empty map = allow any
+	AllowedEmails   map[string]struct{} // bootstrap fallback only; invites live in DB
+	AdminEmails     map[string]struct{} // emails granted is_admin on sign-in
 }
 
 func FromEnv() (*Config, error) {
@@ -48,14 +49,25 @@ func FromEnv() (*Config, error) {
 	}
 	c.SessionTTL = time.Duration(sessionHours) * time.Hour
 
-	c.AllowedEmails = map[string]struct{}{}
-	for _, e := range strings.Split(getenv("ALLOWED_EMAILS", ""), ",") {
+	c.AllowedEmails = parseEmailSet(getenv("ALLOWED_EMAILS", ""))
+	c.AdminEmails = parseEmailSet(getenv("ADMIN_EMAILS", ""))
+	return c, nil
+}
+
+func parseEmailSet(s string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, e := range strings.Split(s, ",") {
 		e = strings.TrimSpace(strings.ToLower(e))
 		if e != "" {
-			c.AllowedEmails[e] = struct{}{}
+			out[e] = struct{}{}
 		}
 	}
-	return c, nil
+	return out
+}
+
+func (c *Config) IsAdminEmail(email string) bool {
+	_, ok := c.AdminEmails[strings.ToLower(strings.TrimSpace(email))]
+	return ok
 }
 
 func (c *Config) GoogleRedirectURL() string {
