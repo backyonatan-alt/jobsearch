@@ -38,12 +38,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/applications/{id}", s.requireUser(s.handleApplicationDelete))
 
 	// SPA fallback: the SvelteKit static build emits a single index.html for
-	// all client-routed pages, so any /app/* or /preview/* URL hits the same
-	// entry file. The Svelte router takes over from there.
+	// all client-routed pages, so any /app/* URL hits the same entry file.
+	// The Svelte router takes over from there.
 	mux.HandleFunc("GET /app", s.serveStaticFile("index.html"))
 	mux.HandleFunc("GET /app/", s.serveStaticFile("index.html"))
-	mux.HandleFunc("GET /preview", s.serveStaticFile("index.html"))
-	mux.HandleFunc("GET /preview/", s.serveStaticFile("index.html"))
 	mux.Handle("/", http.FileServer(s.Static))
 
 	return s.withLogging(mux)
