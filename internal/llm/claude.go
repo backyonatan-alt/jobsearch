@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -136,28 +137,50 @@ Return ONLY a JSON object with these keys (omit any you cannot determine with hi
 Output the JSON object only, no prose, no markdown fences. If the input is clearly not a job listing, return {"error": "not a job listing"}.`
 
 // ParseJob asks Claude Haiku to extract structured job-listing fields from
-// arbitrary text. Errors include the raw model output on parse failure, which
-// is useful for debugging prompt drift.
+// arbitrary text. If the input is a bare URL we fetch it server-side first
+// (LinkedIn is rejected since they block scraping). Errors include the raw
+// model output on parse failure, which is useful for debugging prompt drift.
 func (c *Client) ParseJob(ctx context.Context, text string) (*ParsedJob, error) {
+	text = strings.TrimSpace(text)
+
+	// Bare-URL path: fetch the page server-side so Claude has something to read.
+	if u, ok := isBareURL(text); ok {
+		if isLinkedInURL(u) {
+			return nil, errors.New("LinkedIn blocks page fetching — copy the JD body text from the LinkedIn page and paste that instead")
+		}
+		body, err := c.fetchURL(ctx, u)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't fetch %s (%v) — try pasting the JD text directly", u, err)
+		}
+		text = "Source URL: " + u + "\n\nPage content:\n" + body
+	}
+
 	resp, err := c.CreateMessage(ctx, ModelHaiku, parseSystemPrompt, []Message{
 		{Role: "user", Content: text},
 	}, 600)
 	if err != nil {
 		return nil, err
 	}
-	cleaned := stripFences(strings.TrimSpace(resp))
 
-	// First check for an explicit error reply.
+	raw, err := extractFirstJSONObject(resp)
+	if err != nil {
+		return nil, fmt.Errorf("model didn't return JSON (raw: %.200s)", resp)
+	}
+
+	// Explicit-error reply: surface a friendlier message.
 	var errProbe struct {
 		Error string `json:"error"`
 	}
-	if json.Unmarshal([]byte(cleaned), &errProbe) == nil && errProbe.Error != "" {
+	if json.Unmarshal(raw, &errProbe) == nil && errProbe.Error != "" {
+		if strings.EqualFold(errProbe.Error, "not a job listing") {
+			return nil, errors.New("that doesn't look like a job listing — try pasting the JD body text instead")
+		}
 		return nil, errors.New(errProbe.Error)
 	}
 
 	var job ParsedJob
-	if err := json.Unmarshal([]byte(cleaned), &job); err != nil {
-		return nil, fmt.Errorf("parse model JSON: %w (raw: %s)", err, cleaned)
+	if err := json.Unmarshal(raw, &job); err != nil {
+		return nil, fmt.Errorf("parse model JSON: %w", err)
 	}
 	if job.Company == "" && job.Role == "" {
 		return nil, errors.New("could not extract company or role from the input")
@@ -165,11 +188,78 @@ func (c *Client) ParseJob(ctx context.Context, text string) (*ParsedJob, error) 
 	return &job, nil
 }
 
-// stripFences removes markdown code fences if the model wrapped its JSON in them
-// despite being told not to.
-func stripFences(s string) string {
-	s = strings.TrimPrefix(s, "```json")
-	s = strings.TrimPrefix(s, "```")
-	s = strings.TrimSuffix(s, "```")
+var (
+	bareURLRe = regexp.MustCompile(`^https?://\S+$`)
+	scriptRe  = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	styleRe   = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
+	tagRe     = regexp.MustCompile(`<[^>]+>`)
+	wsRe      = regexp.MustCompile(`\s+`)
+)
+
+func isBareURL(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if !bareURLRe.MatchString(s) || len(s) > 500 {
+		return "", false
+	}
+	return s, true
+}
+
+func isLinkedInURL(u string) bool {
+	lower := strings.ToLower(u)
+	return strings.Contains(lower, "linkedin.com/")
+}
+
+// fetchURL retrieves a public URL and returns visible text content (HTML tags,
+// scripts, and styles stripped). Capped to ~30k chars so we don't blow the
+// token budget on huge pages.
+func (c *Client) fetchURL(ctx context.Context, url string) (string, error) {
+	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Pursuit/0.1)")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 400_000))
+	if err != nil {
+		return "", err
+	}
+	text := stripHTML(string(raw))
+	if len(text) > 30_000 {
+		text = text[:30_000]
+	}
+	return text, nil
+}
+
+func stripHTML(s string) string {
+	s = scriptRe.ReplaceAllString(s, " ")
+	s = styleRe.ReplaceAllString(s, " ")
+	s = tagRe.ReplaceAllString(s, " ")
+	s = wsRe.ReplaceAllString(s, " ")
 	return strings.TrimSpace(s)
+}
+
+// extractFirstJSONObject finds the first top-level JSON object in s and returns
+// it as bytes, ignoring any prose, markdown fences, or trailing text the model
+// may have wrapped it in.
+func extractFirstJSONObject(s string) ([]byte, error) {
+	start := strings.Index(s, "{")
+	if start == -1 {
+		return nil, errors.New("no JSON object found")
+	}
+	dec := json.NewDecoder(strings.NewReader(s[start:]))
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
