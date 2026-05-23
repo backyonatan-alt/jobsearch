@@ -6,6 +6,7 @@ import (
 
 	"github.com/backyonatan-alt/jobsearch/internal/auth"
 	"github.com/backyonatan-alt/jobsearch/internal/config"
+	"github.com/backyonatan-alt/jobsearch/internal/llm"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -14,6 +15,7 @@ type Server struct {
 	Pool   *pgxpool.Pool
 	Auth   *auth.Service
 	Google *auth.Google
+	LLM    *llm.Client // nil when ANTHROPIC_API_KEY isn't set
 	Logger *slog.Logger
 	Static http.FileSystem
 }
@@ -33,6 +35,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /api/applications", s.requireUser(s.handleApplicationsList))
 	mux.HandleFunc("POST /api/applications", s.requireUser(s.handleApplicationCreate))
+	mux.HandleFunc("POST /api/applications/parse", s.requireUser(s.handleApplicationParse))
 	mux.HandleFunc("GET /api/applications/{id}", s.requireUser(s.handleApplicationGet))
 	mux.HandleFunc("PATCH /api/applications/{id}", s.requireUser(s.handleApplicationUpdate))
 	mux.HandleFunc("DELETE /api/applications/{id}", s.requireUser(s.handleApplicationDelete))

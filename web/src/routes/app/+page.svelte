@@ -12,8 +12,49 @@
   let showNewModal = $state(false);
 
   // new-application form state
-  let form = $state({ company: '', role: '', status: 'applied', source: '', jd_url: '', cv_variant: '' });
+  let form = $state({ company: '', role: '', status: 'applied', source: '', jd_url: '', cv_variant: '', location: '', salary_note: '' });
   let saving = $state(false);
+
+  // paste-to-parse state
+  let pasteText = $state('');
+  let parsing = $state(false);
+  let parseError = $state('');
+  let parsedHint = $state('');
+
+  async function parseJD() {
+    const text = pasteText.trim();
+    if (text.length < 5) {
+      parseError = 'Paste a job listing or URL first.';
+      return;
+    }
+    parseError = '';
+    parsing = true;
+    try {
+      const r = await api('/api/applications/parse', { method: 'POST', body: JSON.stringify({ text }) });
+      // Overwrite form fields with whatever the model returned. Leave fields the
+      // model didn't fill alone, so users can mix paste-then-correct.
+      if (r.company)     form.company     = r.company;
+      if (r.role)        form.role        = r.role;
+      if (r.location)    form.location    = r.location;
+      if (r.jd_url)      form.jd_url      = r.jd_url;
+      if (r.source)      form.source      = r.source;
+      if (r.salary_note) form.salary_note = r.salary_note;
+      parsedHint = `Filled${r.seniority ? ` (level: ${r.seniority})` : ''} — review and Save.`;
+      pasteText = '';
+    } catch (e) {
+      parseError = e.message || 'Parse failed.';
+    } finally {
+      parsing = false;
+    }
+  }
+
+  function resetModal() {
+    form = { company: '', role: '', status: 'applied', source: '', jd_url: '', cv_variant: '', location: '', salary_note: '' };
+    pasteText = '';
+    parseError = '';
+    parsedHint = '';
+    showNewModal = false;
+  }
 
   onMount(refresh);
 
@@ -33,10 +74,9 @@
     saving = true;
     try {
       const payload = { ...form };
-      for (const k of ['jd_url', 'cv_variant', 'source']) if (!payload[k]) delete payload[k];
+      for (const k of ['jd_url', 'cv_variant', 'source', 'location', 'salary_note']) if (!payload[k]) delete payload[k];
       await api('/api/applications', { method: 'POST', body: JSON.stringify(payload) });
-      form = { company: '', role: '', status: 'applied', source: '', jd_url: '', cv_variant: '' };
-      showNewModal = false;
+      resetModal();
       await refresh();
     } finally {
       saving = false;
@@ -229,28 +269,59 @@
 </div>
 
 {#if showNewModal}
-  <div class="modal-overlay" onclick={() => (showNewModal = false)} role="presentation">
+  <div class="modal-overlay" onclick={resetModal} role="presentation">
     <form class="modal" onclick={(e) => e.stopPropagation()} onsubmit={createApp}>
       <h2>New application</h2>
-      <label>Company <input bind:value={form.company} required autofocus /></label>
-      <label>Role <input bind:value={form.role} required /></label>
-      <label>Status
-        <select bind:value={form.status}>
-          <option value="wishlist">Wishlist</option>
-          <option value="applied">Applied</option>
-          <option value="screen">Screen</option>
-          <option value="interview">Interview</option>
-          <option value="offer">Offer</option>
-          <option value="rejected">Rejected</option>
-          <option value="withdrawn">Withdrawn</option>
-        </select>
-      </label>
-      <label>Source <input bind:value={form.source} placeholder="LinkedIn / Referral / Cold email" /></label>
-      <label>CV variant <input bind:value={form.cv_variant} placeholder="v3-ai-focus" /></label>
-      <label>JD URL <input bind:value={form.jd_url} placeholder="https://…" /></label>
+
+      <!-- Paste-to-parse row -->
+      <div class="paste-block">
+        <div class="paste-label">
+          <span class="ai-tag">AI</span>
+          Paste a job posting, URL, or recruiter email — we'll fill the fields below.
+        </div>
+        <textarea
+          bind:value={pasteText}
+          placeholder="https://linkedin.com/jobs/… or the JD text…"
+          rows="3"
+          disabled={parsing}
+        ></textarea>
+        <div class="paste-row">
+          <button type="button" class="btn" onclick={parseJD} disabled={parsing || !pasteText.trim()}>
+            {parsing ? 'Parsing…' : 'Parse'}
+          </button>
+          {#if parsedHint}<span class="hint">{parsedHint}</span>{/if}
+          {#if parseError}<span class="hint err">{parseError}</span>{/if}
+        </div>
+      </div>
+
+      <div class="modal-divider"><span>or fill in by hand</span></div>
+
+      <div class="fields">
+        <label>Company <input bind:value={form.company} required /></label>
+        <label>Role <input bind:value={form.role} required /></label>
+        <label>Status
+          <select bind:value={form.status}>
+            <option value="wishlist">Wishlist</option>
+            <option value="applied">Applied</option>
+            <option value="screen">Screen</option>
+            <option value="interview">Interview</option>
+            <option value="offer">Offer</option>
+            <option value="rejected">Rejected</option>
+            <option value="withdrawn">Withdrawn</option>
+          </select>
+        </label>
+        <label>Source <input bind:value={form.source} placeholder="LinkedIn / Referral / Cold email" /></label>
+        <label>Location <input bind:value={form.location} placeholder="Remote / San Francisco" /></label>
+        <label>CV variant <input bind:value={form.cv_variant} placeholder="v3-ai-focus" /></label>
+        <label class="span-2">JD URL <input bind:value={form.jd_url} placeholder="https://…" /></label>
+        <label class="span-2">Salary note <input bind:value={form.salary_note} placeholder="$220k-$280k base" /></label>
+      </div>
+
       <div class="modal-actions">
-        <button type="button" class="btn" onclick={() => (showNewModal = false)}>Cancel</button>
-        <button type="submit" class="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add application'}</button>
+        <button type="button" class="btn" onclick={resetModal}>Cancel</button>
+        <button type="submit" class="btn btn-primary" disabled={saving || !form.company || !form.role}>
+          {saving ? 'Saving…' : 'Add application'}
+        </button>
       </div>
     </form>
   </div>
@@ -274,6 +345,9 @@
     display: flex; flex-direction: column; gap: .75rem;
     box-shadow: var(--sh-pop);
   }
+  .modal {
+    max-width: 560px !important;
+  }
   .modal h2 {
     font-size: 18px; font-weight: 500;
     letter-spacing: -0.018em;
@@ -285,7 +359,7 @@
     color: var(--mute);
     gap: .35rem;
   }
-  .modal input, .modal select {
+  .modal input, .modal select, .modal textarea {
     font: inherit;
     color: var(--ink);
     background: var(--surface);
@@ -296,11 +370,53 @@
     outline: none;
     transition: border-color 100ms ease;
   }
-  .modal input:focus, .modal select:focus {
+  .modal textarea {
+    resize: vertical;
+    min-height: 70px;
+    font-family: var(--sans);
+    line-height: 1.4;
+  }
+  .modal input:focus, .modal select:focus, .modal textarea:focus {
     border-color: var(--accent);
   }
   .modal-actions {
     display: flex; justify-content: flex-end; gap: .5rem;
     margin-top: .75rem;
   }
+
+  .paste-block { display: flex; flex-direction: column; gap: .4rem; }
+  .paste-label {
+    font-size: 12px; color: var(--ink-2);
+    display: flex; align-items: center; gap: .4rem;
+  }
+  .ai-tag {
+    font-weight: 500; font-size: 10px;
+    color: var(--accent-text); background: var(--accent-tint);
+    border-radius: 4px; padding: 1px 6px;
+    letter-spacing: .04em;
+  }
+  .paste-row {
+    display: flex; align-items: center; gap: .65rem;
+  }
+  .paste-row .hint {
+    font-size: 12px; color: var(--positive-text);
+  }
+  .paste-row .hint.err { color: var(--danger-text); }
+
+  .modal-divider {
+    display: flex; align-items: center; gap: .65rem;
+    color: var(--mute-2);
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    margin: .25rem 0 .25rem;
+  }
+  .modal-divider::before, .modal-divider::after {
+    content: ''; flex: 1; height: 1px; background: var(--rule);
+  }
+
+  .fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .65rem;
+  }
+  .fields .span-2 { grid-column: span 2; }
 </style>

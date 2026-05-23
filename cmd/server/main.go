@@ -15,6 +15,7 @@ import (
 	"github.com/backyonatan-alt/jobsearch/internal/config"
 	"github.com/backyonatan-alt/jobsearch/internal/db"
 	"github.com/backyonatan-alt/jobsearch/internal/httpsrv"
+	"github.com/backyonatan-alt/jobsearch/internal/llm"
 )
 
 func main() {
@@ -55,11 +56,17 @@ func main() {
 		logger.Error("seed admins", "err", err)
 	}
 
+	llmClient := llm.New(cfg.AnthropicAPIKey)
+	if llmClient == nil {
+		logger.Warn("ANTHROPIC_API_KEY not set — AI features will return 503")
+	}
+
 	srv := &httpsrv.Server{
 		Cfg:    cfg,
 		Pool:   pool,
 		Auth:   authSvc,
 		Google: auth.NewGoogle(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL()),
+		LLM:    llmClient,
 		Logger: logger,
 		Static: http.Dir(staticDir),
 	}
