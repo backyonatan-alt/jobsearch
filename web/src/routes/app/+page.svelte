@@ -24,9 +24,15 @@
   let parsing = $state(false);
   let parseError = $state('');
   let parsedHint = $state('');
+  let attachedImage = $state(null); // { name, size }
+  let isDraggingFile = $state(false);
 
   async function parseJD() {
     const text = pasteText.trim();
+    if (attachedImage && !text) {
+      parseError = 'Screenshot parsing is coming soon — paste the page text (⌘A ⌘V) for now.';
+      return;
+    }
     if (text.length < 5) {
       parseError = 'Paste a job listing or URL first.';
       return;
@@ -35,8 +41,6 @@
     parsing = true;
     try {
       const r = await api('/api/applications/parse', { method: 'POST', body: JSON.stringify({ text }) });
-      // Overwrite form fields with whatever the model returned. Leave fields the
-      // model didn't fill alone, so users can mix paste-then-correct.
       if (r.company)     form.company     = r.company;
       if (r.role)        form.role        = r.role;
       if (r.location)    form.location    = r.location;
@@ -45,6 +49,7 @@
       if (r.salary_note) form.salary_note = r.salary_note;
       parsedHint = `Filled${r.seniority ? ` (level: ${r.seniority})` : ''} — review and Save.`;
       pasteText = '';
+      attachedImage = null;
     } catch (e) {
       parseError = e.message || 'Parse failed.';
     } finally {
@@ -52,11 +57,38 @@
     }
   }
 
+  function onDropZoneDragOver(e) {
+    if (e.dataTransfer?.types?.includes('Files')) {
+      e.preventDefault();
+      isDraggingFile = true;
+    }
+  }
+  function onDropZoneDragLeave() { isDraggingFile = false; }
+  function onDropZoneDrop(e) {
+    e.preventDefault();
+    isDraggingFile = false;
+    const f = e.dataTransfer?.files?.[0];
+    if (f && f.type.startsWith('image/')) attachedImage = { name: f.name, size: f.size };
+  }
+  function onTextareaPaste(e) {
+    const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+    if (item) {
+      const f = item.getAsFile();
+      if (f) attachedImage = { name: f.name || 'pasted-image.png', size: f.size };
+    }
+  }
+
+  function onModalKeydown(e) {
+    if (e.key === 'Escape') resetModal();
+  }
+
   function resetModal() {
     form = { company: '', role: '', status: 'applied', source: '', jd_url: '', cv_variant: '', location: '', salary_note: '' };
     pasteText = '';
     parseError = '';
     parsedHint = '';
+    attachedImage = null;
+    isDraggingFile = false;
     showNewModal = false;
   }
 
@@ -418,61 +450,112 @@
   </div>
 </div>
 
+<svelte:window onkeydown={(e) => { if (showNewModal) onModalKeydown(e); }} />
+
 {#if showNewModal}
   <div class="modal-overlay" onclick={resetModal} role="presentation">
     <form class="modal" onclick={(e) => e.stopPropagation()} onsubmit={createApp}>
-      <h2>New application</h2>
+      <header class="m-head">
+        <div>
+          <h2>New application</h2>
+          <p class="sub">Drop a JD, paste a URL, or describe the role — we'll fill the fields. Or do it by hand below.</p>
+        </div>
+        <button type="button" class="x-close" onclick={resetModal} aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
+        </button>
+      </header>
 
-      <!-- Paste-to-parse row -->
-      <div class="paste-block">
-        <div class="paste-label">
+      <div class="quick-add">
+        <div class="qa-head">
+          <span class="qa-label">Quick add</span>
           <span class="ai-tag">AI</span>
-          Paste a job posting, URL, or recruiter email — we'll fill the fields below.
         </div>
-        <textarea
-          bind:value={pasteText}
-          placeholder="https://linkedin.com/jobs/… or the JD text…"
-          rows="3"
-          disabled={parsing}
-        ></textarea>
-        <div class="paste-row">
-          <button type="button" class="btn" onclick={parseJD} disabled={parsing || !pasteText.trim()}>
-            {parsing ? 'Parsing…' : 'Parse'}
+
+        <div
+          class={`drop ${isDraggingFile ? 'drag' : ''} ${attachedImage ? 'has-image' : ''}`}
+          ondragover={onDropZoneDragOver}
+          ondragleave={onDropZoneDragLeave}
+          ondrop={onDropZoneDrop}
+        >
+          {#if attachedImage}
+            <div class="attached">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+              <span class="att-name">{attachedImage.name}</span>
+              <span class="att-size">{Math.round(attachedImage.size / 1024)} KB</span>
+              <button type="button" class="att-x" onclick={() => (attachedImage = null)} aria-label="Remove">×</button>
+            </div>
+          {:else}
+            <textarea
+              bind:value={pasteText}
+              onpaste={onTextareaPaste}
+              placeholder="Drop a screenshot here, paste a job URL, or describe the role you're applying to…"
+              rows="3"
+              disabled={parsing}
+            ></textarea>
+          {/if}
+
+          <div class="drop-footer">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+            <span>Drag &amp; drop a screenshot, or paste anything.</span>
+          </div>
+        </div>
+
+        <div class="qa-actions">
+          <span class="kb-hints">
+            <kbd>⌘V</kbd> here · <kbd>⌘⇧4</kbd> to screenshot
+          </span>
+          <button type="button" class="btn btn-accent" onclick={parseJD} disabled={parsing || (!pasteText.trim() && !attachedImage)}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l1.4 3.6L13 7l-3.6 1.4L8 12l-1.4-3.6L3 7l3.6-1.4L8 2z"/></svg>
+            {parsing ? 'Parsing…' : 'Parse with AI'}
           </button>
-          {#if parsedHint}<span class="hint">{parsedHint}</span>{/if}
-          {#if parseError}<span class="hint err">{parseError}</span>{/if}
         </div>
+
+        {#if parsedHint}<div class="qa-msg ok">{parsedHint}</div>{/if}
+        {#if parseError}<div class="qa-msg err">{parseError}</div>{/if}
       </div>
 
-      <div class="modal-divider"><span>or fill in by hand</span></div>
+      <div class="modal-divider"><span>Or enter by hand</span></div>
 
       <div class="fields">
-        <label>Company <input bind:value={form.company} required /></label>
-        <label>Role <input bind:value={form.role} required /></label>
-        <label>Status
-          <select bind:value={form.status}>
-            <option value="wishlist">Wishlist</option>
-            <option value="applied">Applied</option>
-            <option value="screen">Screen</option>
-            <option value="interview">Interview</option>
-            <option value="offer">Offer</option>
-            <option value="rejected">Rejected</option>
-            <option value="withdrawn">Withdrawn</option>
-          </select>
+        <label>
+          <span class="lbl">Company <em class="req">*</em></span>
+          <input bind:value={form.company} placeholder="Anthropic" required />
         </label>
-        <label>Source <input bind:value={form.source} placeholder="LinkedIn / Referral / Cold email" /></label>
-        <label>Location <input bind:value={form.location} placeholder="Remote / San Francisco" /></label>
-        <label>CV variant <input bind:value={form.cv_variant} placeholder="v3-ai-focus" /></label>
-        <label class="span-2">JD URL <input bind:value={form.jd_url} placeholder="https://…" /></label>
-        <label class="span-2">Salary note <input bind:value={form.salary_note} placeholder="$220k-$280k base" /></label>
+        <label>
+          <span class="lbl">Role <em class="req">*</em></span>
+          <input bind:value={form.role} placeholder="Senior Software Engineer" required />
+        </label>
+        <label>
+          <span class="lbl">Status</span>
+          <div class={`status-select ${form.status}`}>
+            <span class="sdot"></span>
+            <select bind:value={form.status}>
+              <option value="wishlist">Wishlist</option>
+              <option value="applied">Applied</option>
+              <option value="screen">Screen</option>
+              <option value="interview">Interview</option>
+              <option value="offer">Offer</option>
+              <option value="rejected">Rejected</option>
+              <option value="withdrawn">Withdrawn</option>
+            </select>
+            <svg class="chev" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </label>
+        <label>
+          <span class="lbl">Source <span class="opt">— optional</span></span>
+          <input bind:value={form.source} placeholder="LinkedIn / Referral / Cold email" />
+        </label>
       </div>
 
-      <div class="modal-actions">
-        <button type="button" class="btn" onclick={resetModal}>Cancel</button>
-        <button type="submit" class="btn btn-primary" disabled={saving || !form.company || !form.role}>
-          {saving ? 'Saving…' : 'Add application'}
-        </button>
-      </div>
+      <footer class="m-foot">
+        <span class="esc-hint"><kbd>Esc</kbd> to cancel</span>
+        <div class="foot-actions">
+          <button type="button" class="btn" onclick={resetModal}>Cancel</button>
+          <button type="submit" class="btn btn-primary" disabled={saving || !form.company || !form.role}>
+            {saving ? 'Saving…' : 'Add application'} <kbd class="dark-kbd">↵</kbd>
+          </button>
+        </div>
+      </footer>
     </form>
   </div>
 {/if}
@@ -480,7 +563,8 @@
 <style>
   .modal-overlay {
     position: fixed; inset: 0;
-    background: rgba(10,10,13,0.4);
+    background: rgba(10,10,13,0.45);
+    backdrop-filter: blur(2px);
     display: grid; place-items: center;
     z-index: 100;
     padding: 2rem;
@@ -488,85 +572,264 @@
   .modal {
     background: var(--card);
     border: 1px solid var(--rule);
-    border-radius: 12px;
-    padding: 1.5rem;
+    border-radius: 14px;
     width: 100%;
-    max-width: 440px;
-    display: flex; flex-direction: column; gap: .75rem;
-    box-shadow: var(--sh-pop);
-  }
-  .modal {
-    max-width: 560px !important;
-  }
-  .modal h2 {
-    font-size: 18px; font-weight: 500;
-    letter-spacing: -0.018em;
-    margin: 0 0 .5rem;
-  }
-  .modal label {
+    max-width: 580px;
     display: flex; flex-direction: column;
-    font-size: 12px;
-    color: var(--mute);
-    gap: .35rem;
-  }
-  .modal input, .modal select, .modal textarea {
-    font: inherit;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 6px;
-    padding: .45rem .6rem;
-    font-size: 13.5px;
-    outline: none;
-    transition: border-color 100ms ease;
-  }
-  .modal textarea {
-    resize: vertical;
-    min-height: 70px;
-    font-family: var(--sans);
-    line-height: 1.4;
-  }
-  .modal input:focus, .modal select:focus, .modal textarea:focus {
-    border-color: var(--accent);
-  }
-  .modal-actions {
-    display: flex; justify-content: flex-end; gap: .5rem;
-    margin-top: .75rem;
+    box-shadow: var(--sh-pop);
+    overflow: hidden;
   }
 
-  .paste-block { display: flex; flex-direction: column; gap: .4rem; }
-  .paste-label {
-    font-size: 12px; color: var(--ink-2);
-    display: flex; align-items: center; gap: .4rem;
+  /* Header */
+  .m-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px;
+    padding: 20px 22px 14px;
+  }
+  .m-head h2 {
+    font-size: 19px; font-weight: 500;
+    letter-spacing: -0.018em;
+    margin: 0;
+    color: var(--ink);
+  }
+  .m-head .sub {
+    margin: 4px 0 0;
+    font-size: 13px; color: var(--mute);
+    line-height: 1.5;
+    max-width: 460px;
+  }
+  .x-close {
+    background: transparent; border: 0; color: var(--mute);
+    width: 28px; height: 28px; border-radius: 6px;
+    display: grid; place-items: center; cursor: pointer;
+    flex-shrink: 0;
+    transition: background 100ms ease, color 100ms ease;
+  }
+  .x-close:hover { background: var(--surface-2); color: var(--ink); }
+
+  /* Quick add zone */
+  .quick-add {
+    padding: 0 22px 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .qa-head {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .qa-label {
+    font-size: 12px; font-weight: 500;
+    color: var(--ink-2);
+    letter-spacing: 0;
   }
   .ai-tag {
     font-weight: 500; font-size: 10px;
     color: var(--accent-text); background: var(--accent-tint);
-    border-radius: 4px; padding: 1px 6px;
+    border-radius: 4px; padding: 2px 7px;
     letter-spacing: .04em;
   }
-  .paste-row {
-    display: flex; align-items: center; gap: .65rem;
-  }
-  .paste-row .hint {
-    font-size: 12px; color: var(--positive-text);
-  }
-  .paste-row .hint.err { color: var(--danger-text); }
 
+  .drop {
+    position: relative;
+    background: var(--surface);
+    border: 1.5px dashed var(--rule-strong);
+    border-radius: 10px;
+    transition: border-color 120ms ease, background 120ms ease;
+    overflow: hidden;
+  }
+  .drop.drag {
+    border-color: var(--accent);
+    background: var(--accent-tint);
+  }
+  .drop textarea {
+    width: 100%;
+    font: inherit; font-family: var(--sans);
+    font-size: 13.5px; color: var(--ink);
+    background: transparent;
+    border: 0;
+    padding: 12px 14px 8px;
+    outline: none; resize: none;
+    min-height: 78px;
+    line-height: 1.5;
+    display: block;
+  }
+  .drop textarea::placeholder { color: var(--mute-2); }
+
+  .attached {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px 8px;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .attached svg { color: var(--accent-text); flex-shrink: 0; }
+  .attached .att-name { font-weight: 500; color: var(--ink); }
+  .attached .att-size { color: var(--mute); font-family: var(--mono); font-size: 11px; }
+  .attached .att-x {
+    margin-left: auto;
+    background: transparent; border: 0; color: var(--mute);
+    font-size: 18px; line-height: 1; cursor: pointer;
+    padding: 0 4px;
+  }
+  .attached .att-x:hover { color: var(--ink); }
+
+  .drop-footer {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px 10px;
+    font-size: 11.5px; color: var(--mute-2);
+    border-top: 1px dashed var(--rule);
+    background: transparent;
+  }
+  .drop-footer svg { color: var(--mute-2); flex-shrink: 0; }
+
+  .qa-actions {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  .kb-hints {
+    font-size: 11.5px; color: var(--mute);
+  }
+  .kb-hints kbd {
+    font-family: var(--mono); font-size: 10.5px;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-bottom-width: 2px; border-radius: 3px;
+    padding: 0 4px; color: var(--ink-2);
+  }
+
+  .btn-accent {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--accent); color: white;
+    border: 1px solid var(--accent);
+    border-radius: 7px;
+    padding: 7px 12px;
+    font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    transition: background 100ms ease, border-color 100ms ease;
+  }
+  .btn-accent:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .btn-accent:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-accent svg { color: white; }
+
+  .qa-msg {
+    font-size: 12px;
+  }
+  .qa-msg.ok  { color: var(--positive-text); }
+  .qa-msg.err { color: var(--danger-text); }
+
+  /* Divider */
   .modal-divider {
-    display: flex; align-items: center; gap: .65rem;
+    display: flex; align-items: center; gap: 12px;
     color: var(--mute-2);
-    font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
-    margin: .25rem 0 .25rem;
+    font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+    padding: 0 22px;
+    margin: 4px 0 14px;
   }
   .modal-divider::before, .modal-divider::after {
     content: ''; flex: 1; height: 1px; background: var(--rule);
   }
 
+  /* Fields */
   .fields {
+    padding: 0 22px 18px;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: .65rem;
+    gap: 12px 14px;
   }
-  .fields .span-2 { grid-column: span 2; }
+  .fields label {
+    display: flex; flex-direction: column;
+    gap: 5px;
+  }
+  .fields .lbl {
+    font-size: 11.5px; color: var(--mute);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .fields .req { color: var(--accent-text); font-style: normal; margin-left: 1px; }
+  .fields .opt { color: var(--mute-2); font-weight: 400; }
+
+  .fields input {
+    font: inherit; font-size: 13.5px;
+    color: var(--ink); background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 0 11px;
+    height: 36px;
+    outline: 0;
+    transition: border-color 100ms ease, box-shadow 100ms ease, background 100ms ease;
+  }
+  .fields input:hover { border-color: var(--rule-strong); }
+  .fields input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-tint);
+  }
+  .fields input::placeholder { color: var(--mute-2); }
+
+  .status-select {
+    position: relative;
+    display: flex; align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    height: 36px;
+    padding: 0 11px;
+    transition: border-color 100ms ease, box-shadow 100ms ease;
+  }
+  .status-select:hover { border-color: var(--rule-strong); }
+  .status-select:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-tint);
+  }
+  .status-select .sdot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--mute);
+    margin-right: 8px;
+    flex-shrink: 0;
+  }
+  .status-select.wishlist  .sdot { background: var(--mute); }
+  .status-select.applied   .sdot { background: var(--ink-2); }
+  .status-select.screen    .sdot { background: var(--accent); }
+  .status-select.interview .sdot { background: var(--warm, oklch(0.7 0.15 60)); }
+  .status-select.offer     .sdot { background: var(--positive); }
+  .status-select.rejected  .sdot { background: var(--mute-2); }
+  .status-select.withdrawn .sdot { background: var(--mute-2); }
+
+  .status-select select {
+    flex: 1;
+    appearance: none; -webkit-appearance: none;
+    background: transparent;
+    border: 0; outline: 0;
+    font: inherit; font-size: 13.5px; color: var(--ink);
+    padding: 0 18px 0 0;
+    cursor: pointer;
+  }
+  .status-select .chev {
+    position: absolute; right: 11px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--mute);
+    pointer-events: none;
+  }
+
+  /* Footer zone */
+  .m-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 22px;
+    background: var(--surface);
+    border-top: 1px solid var(--rule);
+  }
+  .esc-hint {
+    font-size: 11.5px; color: var(--mute);
+  }
+  .esc-hint kbd {
+    font-family: var(--mono); font-size: 10.5px;
+    background: var(--card); border: 1px solid var(--rule);
+    border-bottom-width: 2px; border-radius: 3px;
+    padding: 0 5px; color: var(--ink-2);
+  }
+  .foot-actions { display: flex; gap: 8px; }
+  .foot-actions .btn-primary { display: inline-flex; align-items: center; gap: 6px; }
+  .dark-kbd {
+    font-family: var(--mono); font-size: 10.5px;
+    background: rgba(255,255,255,.18);
+    border: 1px solid rgba(255,255,255,.22);
+    border-radius: 3px;
+    padding: 0 5px;
+    color: rgba(255,255,255,.9);
+  }
 </style>
