@@ -26,6 +26,7 @@
   let parsedHint = $state('');
   let attachedImage = $state(null); // { name, size, mediaType, file }
   let isDraggingFile = $state(false);
+  let parsingStage = $state(''); // user-facing status text while parsing
 
   const ALLOWED_IMG = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   const MAX_IMG_BYTES = 6 * 1024 * 1024; // 6 MB raw — Anthropic caps at 5MB and we leave slack
@@ -65,7 +66,15 @@
       return;
     }
     parseError = '';
+    parsedHint = '';
     parsing = true;
+    parsingStage = attachedImage ? 'Reading your screenshot…' : 'Reading the text…';
+    // Cycle through honest progress messages so the user feels something is
+    // happening. Vision calls take 3-6s; pure-text calls 2-4s.
+    const stageTimers = [
+      setTimeout(() => { if (parsing) parsingStage = 'Pulling out company and role…'; }, 1800),
+      setTimeout(() => { if (parsing) parsingStage = 'Almost there…'; }, 4200)
+    ];
     try {
       const payload = { text };
       if (attachedImage) {
@@ -79,13 +88,21 @@
       if (r.jd_url)      form.jd_url      = r.jd_url;
       if (r.source)      form.source      = r.source;
       if (r.salary_note) form.salary_note = r.salary_note;
-      parsedHint = `Filled${r.seniority ? ` (level: ${r.seniority})` : ''} — review and add.`;
+      const filled = [];
+      if (r.company) filled.push('Company');
+      if (r.role)    filled.push('Role');
+      if (r.source)  filled.push('Source');
+      parsedHint = filled.length
+        ? `Filled ${filled.join(', ')}${r.seniority ? ` · level: ${r.seniority}` : ''} — review below.`
+        : 'Parsed — review below.';
       pasteText = '';
       attachedImage = null;
     } catch (e) {
       parseError = e.message || 'Parse failed.';
     } finally {
+      stageTimers.forEach(clearTimeout);
       parsing = false;
+      parsingStage = '';
     }
   }
 
@@ -509,7 +526,7 @@
         </div>
 
         <div
-          class={`drop ${isDraggingFile ? 'drag' : ''} ${attachedImage ? 'has-image' : ''}`}
+          class={`drop ${isDraggingFile ? 'drag' : ''} ${attachedImage ? 'has-image' : ''} ${parsing ? 'loading' : ''}`}
           ondragover={onDropZoneDragOver}
           ondragleave={onDropZoneDragLeave}
           ondrop={onDropZoneDrop}
@@ -519,7 +536,7 @@
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
               <span class="att-name">{attachedImage.name}</span>
               <span class="att-size">{Math.round(attachedImage.size / 1024)} KB</span>
-              <button type="button" class="att-x" onclick={() => (attachedImage = null)} aria-label="Remove">×</button>
+              <button type="button" class="att-x" onclick={() => (attachedImage = null)} aria-label="Remove" disabled={parsing}>×</button>
             </div>
           {:else}
             <textarea
@@ -535,6 +552,13 @@
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
             <span>Drag &amp; drop a screenshot, or paste anything.</span>
           </div>
+
+          {#if parsing}
+            <div class="drop-loading" role="status" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <span class="loading-text">{parsingStage}</span>
+            </div>
+          {/if}
         </div>
 
         <div class="qa-actions">
@@ -542,12 +566,16 @@
             <kbd>⌘V</kbd> here · <kbd>⌘⇧4</kbd> to screenshot
           </span>
           <button type="button" class="btn btn-accent" onclick={parseJD} disabled={parsing || (!pasteText.trim() && !attachedImage)}>
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l1.4 3.6L13 7l-3.6 1.4L8 12l-1.4-3.6L3 7l3.6-1.4L8 2z"/></svg>
+            {#if parsing}
+              <span class="spinner spinner-sm" aria-hidden="true"></span>
+            {:else}
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l1.4 3.6L13 7l-3.6 1.4L8 12l-1.4-3.6L3 7l3.6-1.4L8 2z"/></svg>
+            {/if}
             {parsing ? 'Parsing…' : 'Parse with AI'}
           </button>
         </div>
 
-        {#if parsedHint}<div class="qa-msg ok">{parsedHint}</div>{/if}
+        {#if parsedHint}<div class="qa-msg ok"><span class="ok-check">✓</span> {parsedHint}</div>{/if}
         {#if parseError}<div class="qa-msg err">{parseError}</div>{/if}
       </div>
 
@@ -675,6 +703,66 @@
   .drop.drag {
     border-color: var(--accent);
     background: var(--accent-tint);
+  }
+  .drop.loading {
+    border-color: var(--accent);
+    border-style: solid;
+  }
+  .drop.loading::before {
+    /* Sweeping accent bar across the top edge — purely cosmetic, gives the
+       zone a "thinking" feel that's distinct from a static disabled state. */
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    background-size: 40% 100%;
+    background-repeat: no-repeat;
+    animation: drop-sweep 1.4s linear infinite;
+  }
+  @keyframes drop-sweep {
+    0%   { background-position: -40% 0; }
+    100% { background-position: 140% 0; }
+  }
+
+  .drop-loading {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: var(--accent-tint);
+    border-top: 1px solid var(--accent-tint-2);
+    font-size: 12.5px;
+    color: var(--accent-text);
+    font-weight: 500;
+  }
+  .loading-text { letter-spacing: 0; }
+
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 1.8px solid var(--accent-tint-2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spinner-rot 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  .spinner-sm {
+    width: 12px; height: 12px;
+    border-color: rgba(255,255,255,.35);
+    border-top-color: white;
+  }
+  @keyframes spinner-rot {
+    to { transform: rotate(360deg); }
+  }
+
+  .ok-check {
+    display: inline-block;
+    width: 14px; height: 14px; line-height: 14px;
+    text-align: center;
+    border-radius: 50%;
+    background: var(--positive-tint);
+    color: var(--positive-text);
+    font-size: 10px; font-weight: 600;
+    margin-right: 4px;
   }
   .drop textarea {
     width: 100%;
