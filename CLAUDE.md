@@ -135,6 +135,29 @@ For a *new* user-owned project this constraint may not apply — but **the habit
 6. Add a GA4 (or equivalent) event for any user interaction worth measuring.
 7. If something ships broken, update this file's checklist so the bug class can't recur.
 
+### QA pattern — Claude for Chrome runs the rendered-UI test (locked May 24 2026)
+
+The user has Claude for Chrome installed and prefers automated browser
+verification over manual click-through. After every shipped feature:
+
+1. Confirm the merge-to-main + deploy is green.
+2. Write a tight QA prompt the user pastes into the Claude-for-Chrome panel.
+3. User pastes results back; I diagnose any ❌.
+
+**Prompt conventions** (use this shape every time):
+- Open with the URL and that the user is already signed in.
+- Number every step 1-N.
+- Each step: a concrete action + a "Confirm: …" assertion.
+- Tell it to report each step ✅ or ❌ with a one-line note.
+- "Stop on the first ❌."
+- For long-running operations (LLM calls, deploys), include the expected
+  latency so the agent doesn't assume it's stuck.
+- Explicit "do NOT delete or rename my real applications" guardrail.
+- Use a fresh test row (e.g. `Anthropic Test`) that the prompt also
+  cleans up at the end.
+
+This applies to every feature from now on — not just the wow ones.
+
 ---
 
 ## Open questions to resolve at kickoff
