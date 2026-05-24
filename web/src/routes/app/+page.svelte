@@ -24,30 +24,62 @@
   let parsing = $state(false);
   let parseError = $state('');
   let parsedHint = $state('');
-  let attachedImage = $state(null); // { name, size }
+  let attachedImage = $state(null); // { name, size, mediaType, file }
   let isDraggingFile = $state(false);
+
+  const ALLOWED_IMG = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  const MAX_IMG_BYTES = 6 * 1024 * 1024; // 6 MB raw — Anthropic caps at 5MB and we leave slack
+
+  function setAttachedFile(f) {
+    if (!f) return;
+    if (!ALLOWED_IMG.includes(f.type)) {
+      parseError = 'Only PNG, JPEG, GIF, or WebP screenshots are supported.';
+      return;
+    }
+    if (f.size > MAX_IMG_BYTES) {
+      parseError = 'Screenshot is too large (6 MB max — try a tighter crop).';
+      return;
+    }
+    parseError = '';
+    attachedImage = { name: f.name || 'pasted-image.png', size: f.size, mediaType: f.type, file: f };
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read screenshot.'));
+      reader.onload = () => {
+        const result = reader.result || '';
+        // result is "data:image/png;base64,XXXXX..." — strip the prefix.
+        const i = String(result).indexOf(',');
+        resolve(i === -1 ? '' : String(result).slice(i + 1));
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
   async function parseJD() {
     const text = pasteText.trim();
-    if (attachedImage && !text) {
-      parseError = 'Screenshot parsing is coming soon — paste the page text (⌘A ⌘V) for now.';
-      return;
-    }
-    if (text.length < 5) {
-      parseError = 'Paste a job listing or URL first.';
+    if (!attachedImage && text.length < 5) {
+      parseError = 'Paste a job listing or URL, or drop a screenshot first.';
       return;
     }
     parseError = '';
     parsing = true;
     try {
-      const r = await api('/api/applications/parse', { method: 'POST', body: JSON.stringify({ text }) });
+      const payload = { text };
+      if (attachedImage) {
+        const data = await fileToBase64(attachedImage.file);
+        payload.image = { media_type: attachedImage.mediaType, data };
+      }
+      const r = await api('/api/applications/parse', { method: 'POST', body: JSON.stringify(payload) });
       if (r.company)     form.company     = r.company;
       if (r.role)        form.role        = r.role;
       if (r.location)    form.location    = r.location;
       if (r.jd_url)      form.jd_url      = r.jd_url;
       if (r.source)      form.source      = r.source;
       if (r.salary_note) form.salary_note = r.salary_note;
-      parsedHint = `Filled${r.seniority ? ` (level: ${r.seniority})` : ''} — review and Save.`;
+      parsedHint = `Filled${r.seniority ? ` (level: ${r.seniority})` : ''} — review and add.`;
       pasteText = '';
       attachedImage = null;
     } catch (e) {
@@ -67,19 +99,21 @@
   function onDropZoneDrop(e) {
     e.preventDefault();
     isDraggingFile = false;
-    const f = e.dataTransfer?.files?.[0];
-    if (f && f.type.startsWith('image/')) attachedImage = { name: f.name, size: f.size };
+    setAttachedFile(e.dataTransfer?.files?.[0]);
   }
   function onTextareaPaste(e) {
     const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
-    if (item) {
-      const f = item.getAsFile();
-      if (f) attachedImage = { name: f.name || 'pasted-image.png', size: f.size };
-    }
+    if (item) setAttachedFile(item.getAsFile());
   }
 
   function onModalKeydown(e) {
     if (e.key === 'Escape') resetModal();
+  }
+  function onModalPaste(e) {
+    // Catch image paste anywhere in the modal, not just inside the textarea.
+    // Text paste falls through to whatever input has focus.
+    const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+    if (item) setAttachedFile(item.getAsFile());
   }
 
   function resetModal() {
@@ -450,7 +484,10 @@
   </div>
 </div>
 
-<svelte:window onkeydown={(e) => { if (showNewModal) onModalKeydown(e); }} />
+<svelte:window
+  onkeydown={(e) => { if (showNewModal) onModalKeydown(e); }}
+  onpaste={(e) => { if (showNewModal) onModalPaste(e); }}
+/>
 
 {#if showNewModal}
   <div class="modal-overlay" onclick={resetModal} role="presentation">

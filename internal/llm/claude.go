@@ -44,9 +44,38 @@ func New(apiKey string) *Client {
 	}
 }
 
+// Message.Content is `any` to accept either a string (the common case) or a
+// []ContentBlock (when sending an image alongside text). Anthropic's API
+// accepts both shapes on the wire.
 type Message struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+// ContentBlock is one element of a multi-part message body. Use TextBlock /
+// ImageBlock helpers to build these — the JSON tags here match Anthropic's
+// expected wire format.
+type ContentBlock struct {
+	Type   string       `json:"type"`
+	Text   string       `json:"text,omitempty"`
+	Source *ImageSource `json:"source,omitempty"`
+}
+
+type ImageSource struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // image/png, image/jpeg, image/gif, image/webp
+	Data      string `json:"data"`       // base64-encoded, no data: prefix
+}
+
+func TextBlock(s string) ContentBlock {
+	return ContentBlock{Type: "text", Text: s}
+}
+
+func ImageBlock(mediaType, base64Data string) ContentBlock {
+	return ContentBlock{
+		Type:   "image",
+		Source: &ImageSource{Type: "base64", MediaType: mediaType, Data: base64Data},
+	}
 }
 
 // Tool is a (subset of) the Anthropic Messages API tool spec. We only need
@@ -141,7 +170,9 @@ type ParsedJob struct {
 	SalaryNote string `json:"salary_note,omitempty"`
 }
 
-const parseSystemPrompt = `You are a precise job-listing parser. The user will paste arbitrary text — a LinkedIn URL, a copied job description, an email forward, a recruiter message, or a description in their own words — and you must extract structured fields.
+const parseSystemPrompt = `You are a precise job-listing parser. The user will paste arbitrary text — a LinkedIn URL, a copied job description, an email forward, a recruiter message, or a description in their own words — OR attach a screenshot of a job page — and you must extract structured fields.
+
+When a screenshot is attached, read the visible text in the image (company name, job title, location, posting source, salary range if shown) and treat it as the primary input. The page is often LinkedIn, Greenhouse, Lever, or a company careers page — set source accordingly. If a URL is visible in the screenshot (browser bar or share link), put it in jd_url.
 
 Be PERMISSIVE: short notes count as long as you can extract a company AND a role. Examples of valid input you should parse, not reject:
 
@@ -167,31 +198,62 @@ Output the JSON object only — no prose, no markdown fences.
 
 Only return {"error": "not a job listing"} if the input genuinely isn't about a job — e.g. a recipe, a chat about the weather, a code snippet, an empty string, or something with no extractable company or role.`
 
+// ParseImage is the optional screenshot/photo input for ParseJob. MediaType
+// must be one of image/png, image/jpeg, image/gif, image/webp. Data is the
+// raw base64 string (no `data:` prefix).
+type ParseImage struct {
+	MediaType string
+	Data      string
+}
+
 // ParseJob asks Claude Haiku to extract structured job-listing fields from
-// arbitrary text. If the input is a bare URL we fetch it server-side first
-// (LinkedIn is rejected since they block scraping). Errors include the raw
-// model output on parse failure, which is useful for debugging prompt drift.
-func (c *Client) ParseJob(ctx context.Context, text string) (*ParsedJob, error) {
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+// arbitrary text and/or a screenshot. If text is a bare URL we fetch it
+// server-side first (LinkedIn is rejected since they block scraping). When an
+// image is supplied we send it as a vision content block alongside the text.
+func (c *Client) ParseJob(ctx context.Context, text string, image *ParseImage) (*ParsedJob, error) {
+	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	ctx = cctx
 	text = strings.TrimSpace(text)
 
 	// Bare-URL path: fetch the page server-side so Claude has something to read.
-	if u, ok := isBareURL(text); ok {
-		if isLinkedInURL(u) {
-			return nil, errors.New("LinkedIn blocks page fetching — copy the JD body text from the LinkedIn page and paste that instead")
+	// Only when there's no image — if the user attached a screenshot, the URL
+	// is likely just the page they screenshotted, not the input we should fetch.
+	if image == nil {
+		if u, ok := isBareURL(text); ok {
+			if isLinkedInURL(u) {
+				return nil, errors.New("LinkedIn blocks page fetching — copy the JD body text from the LinkedIn page and paste that instead")
+			}
+			body, err := c.fetchURL(ctx, u)
+			if err != nil {
+				return nil, fmt.Errorf("couldn't fetch %s (%v) — try pasting the JD text directly", u, err)
+			}
+			text = "Source URL: " + u + "\n\nPage content:\n" + body
 		}
-		body, err := c.fetchURL(ctx, u)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't fetch %s (%v) — try pasting the JD text directly", u, err)
-		}
-		text = "Source URL: " + u + "\n\nPage content:\n" + body
 	}
 
-	resp, err := c.CreateMessage(ctx, ModelHaiku, parseSystemPrompt, []Message{
-		{Role: "user", Content: text},
-	}, 600)
+	var msg Message
+	if image != nil {
+		// User caption defaults to a generic instruction when empty, so the model
+		// always has at least one text block to anchor the image to.
+		caption := text
+		if caption == "" {
+			caption = "Extract company, role, location, seniority, and any JD URL or source visible in this screenshot."
+		} else {
+			caption = "Extract from this screenshot. User added: " + caption
+		}
+		msg = Message{
+			Role: "user",
+			Content: []ContentBlock{
+				ImageBlock(image.MediaType, image.Data),
+				TextBlock(caption),
+			},
+		}
+	} else {
+		msg = Message{Role: "user", Content: text}
+	}
+
+	resp, err := c.CreateMessage(ctx, ModelHaiku, parseSystemPrompt, []Message{msg}, 600)
 	if err != nil {
 		return nil, err
 	}
