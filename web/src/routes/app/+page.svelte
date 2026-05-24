@@ -1,15 +1,19 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { api } from '$lib/api.js';
   import {
     STATUS_LABEL, toDisplayApp, fmtWeekday, countsByStatus
   } from '$lib/app-helpers.js';
+  import Onboarding from '$lib/Onboarding.svelte';
 
   let apps = $state([]);
+  let me = $state(null);
   let loading = $state(true);
   let filter = $state('active');
   let showNewModal = $state(false);
+  let showOnboarding = $state(false);
 
   // new-application form state
   let form = $state({ company: '', role: '', status: 'applied', source: '', jd_url: '', cv_variant: '', location: '', salary_note: '' });
@@ -60,13 +64,30 @@
 
   async function refresh() {
     try {
-      const raw = await api('/api/applications');
+      const [meRes, raw] = await Promise.all([
+        api('/api/me'),
+        api('/api/applications')
+      ]);
+      me = meRes;
       apps = raw.map(toDisplayApp);
+      maybeShowOnboarding();
     } catch (e) {
       if (e.message !== 'unauthorized') console.error(e);
     } finally {
       loading = false;
     }
+  }
+
+  function maybeShowOnboarding() {
+    const forced = page.url.searchParams.get('onboarding') === '1';
+    const fresh = !me?.onboarded_at && apps.length === 0;
+    showOnboarding = forced || fresh;
+  }
+
+  function finishOnboarding() {
+    showOnboarding = false;
+    // Re-fetch in case applications were created during onboarding.
+    refresh();
   }
 
   async function createApp(e) {
@@ -133,6 +154,10 @@
 <svelte:head>
   <title>Today — Pursuit</title>
 </svelte:head>
+
+{#if showOnboarding}
+  <Onboarding onDone={finishOnboarding} />
+{/if}
 
 <div class="topbar">
   <div class="crumb"><span class="here">Today</span></div>

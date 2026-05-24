@@ -32,6 +32,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /auth/google/callback", s.handleGoogleCallback)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.requireUser(s.handleMe))
+	mux.HandleFunc("POST /api/me/onboarded", s.requireUser(s.handleMarkOnboarded))
 
 	mux.HandleFunc("GET /api/applications", s.requireUser(s.handleApplicationsList))
 	mux.HandleFunc("POST /api/applications", s.requireUser(s.handleApplicationCreate))

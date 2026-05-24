@@ -115,10 +115,21 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	u, _ := userFromCtx(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":       u.ID,
-		"email":    u.Email,
-		"is_admin": u.IsAdmin,
+		"id":           u.ID,
+		"email":        u.Email,
+		"is_admin":     u.IsAdmin,
+		"onboarded_at": u.OnboardedAt,
 	})
+}
+
+func (s *Server) handleMarkOnboarded(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFromCtx(r.Context())
+	if err := s.Auth.MarkOnboarded(r.Context(), u.ID); err != nil {
+		s.Logger.Error("mark onboarded", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func clientIP(r *http.Request) string {

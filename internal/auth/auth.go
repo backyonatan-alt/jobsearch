@@ -23,9 +23,10 @@ func NewService(pool *pgxpool.Pool, sessionTTL time.Duration) *Service {
 }
 
 type User struct {
-	ID      int64
-	Email   string
-	IsAdmin bool
+	ID          int64
+	Email       string
+	IsAdmin     bool
+	OnboardedAt *time.Time
 }
 
 // UpsertUserAndSession creates (or updates) the user row for the given email
@@ -49,7 +50,8 @@ func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip
 		ON CONFLICT (email) DO UPDATE SET
 		    last_login_at = now(),
 		    is_admin = users.is_admin OR EXCLUDED.is_admin
-		RETURNING id, email, is_admin`, email, makeAdmin).Scan(&u.ID, &u.Email, &u.IsAdmin)
+		RETURNING id, email, is_admin, onboarded_at`,
+		email, makeAdmin).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt)
 	if err != nil {
 		return "", User{}, fmt.Errorf("upsert user: %w", err)
 	}
@@ -79,10 +81,10 @@ func (s *Service) UserBySession(ctx context.Context, token string) (User, bool, 
 	}
 	var u User
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.email, u.is_admin
+		SELECT u.id, u.email, u.is_admin, u.onboarded_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token = $1 AND s.expires_at > now()`,
-		token).Scan(&u.ID, &u.Email, &u.IsAdmin)
+		token).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -211,6 +213,15 @@ type Invite struct {
 	InvitedAt      time.Time
 	Note           *string
 	InvitedByEmail string
+}
+
+// MarkOnboarded sets onboarded_at = now() for the user (idempotent — if
+// already set, the row is left alone).
+func (s *Service) MarkOnboarded(ctx context.Context, userID int64) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE users SET onboarded_at = COALESCE(onboarded_at, now()) WHERE id = $1`,
+		userID)
+	return err
 }
 
 func (s *Service) DestroySession(ctx context.Context, token string) error {
