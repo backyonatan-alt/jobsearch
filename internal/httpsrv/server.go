@@ -48,12 +48,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/admin/invites/{email}", s.requireAdmin(s.handleAdminInvitesDelete))
 
 	// SPA fallback: the SvelteKit static build emits a single index.html for
-	// all client-routed pages, so any /app/* or /admin/* URL hits the same
-	// entry file. The Svelte router takes over from there.
+	// all client-routed pages, so any /app/* or /admin/* or /preview/* URL
+	// hits the same entry file. The Svelte router takes over from there.
 	mux.HandleFunc("GET /app", s.serveStaticFile("index.html"))
 	mux.HandleFunc("GET /app/", s.serveStaticFile("index.html"))
 	mux.HandleFunc("GET /admin", s.serveStaticFile("index.html"))
 	mux.HandleFunc("GET /admin/", s.serveStaticFile("index.html"))
+	mux.HandleFunc("GET /preview", s.serveStaticFile("index.html"))
+	mux.HandleFunc("GET /preview/", s.serveStaticFile("index.html"))
 	mux.Handle("/", http.FileServer(s.Static))
 
 	return s.withLogging(mux)
