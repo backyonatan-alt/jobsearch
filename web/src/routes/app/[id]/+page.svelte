@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { toDisplayApp, STATUS_LABEL, STATUSES, fmtLongDate } from '$lib/app-helpers.js';
-  import { SAMPLE_DOSSIER, buildTimelineFromApplication } from '$lib/dossier-sample.js';
+  import { buildTimelineFromApplication } from '$lib/dossier-sample.js';
 
   let app = $state(null);
   let loading = $state(true);
@@ -17,11 +17,19 @@
   let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', salary_note: '' });
   let saving = $state(false);
 
+  // Dossier state
+  let dossier = $state(null);          // { content, meeting, generatedAgo, interviewer_name, ... } | null
+  let dossierLoading = $state(false);
+  let dossierError = $state('');
+  let interviewerInput = $state('');
+  let generating = $state(false);
+
   const id = $derived(page.params.id);
 
   $effect(() => {
     void id; // re-fetch when the path param changes
     loadApp();
+    loadDossier();
   });
 
   async function loadApp() {
@@ -36,6 +44,42 @@
       else console.error(e);
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadDossier() {
+    dossierLoading = true;
+    dossierError = '';
+    try {
+      const d = await api(`/api/applications/${id}/dossier`);
+      dossier = d;
+      interviewerInput = d.interviewer_name ?? '';
+    } catch (e) {
+      // 404 = no dossier yet, that's normal — keep dossier = null
+      if (!String(e.message).toLowerCase().includes('no dossier') && e.message !== 'unauthorized') {
+        console.error(e);
+      }
+      dossier = null;
+    } finally {
+      dossierLoading = false;
+    }
+  }
+
+  async function generateDossier() {
+    if (generating) return;
+    generating = true;
+    dossierError = '';
+    try {
+      const d = await api(`/api/applications/${id}/dossier/refresh`, {
+        method: 'POST',
+        body: JSON.stringify({ interviewer_name: interviewerInput.trim() })
+      });
+      dossier = d;
+      interviewerInput = d.interviewer_name ?? '';
+    } catch (e) {
+      dossierError = e.message || 'Could not generate dossier.';
+    } finally {
+      generating = false;
     }
   }
 
@@ -88,14 +132,12 @@
 
   function back() { goto('/app'); }
 
-  // For the v0.1 demo, we render the rich SAMPLE_DOSSIER on any application
-  // whose status indicates the interview loop is live. Otherwise show empty.
-  const dossierAvailable = $derived(app && ['interview', 'screen', 'offer'].includes(app.status));
-  const dossier = SAMPLE_DOSSIER;
+  // The dossier feature only makes sense for live interview-loop apps.
+  const dossierEligible = $derived(app && ['screen', 'interview', 'offer'].includes(app.status));
+  const dossierAvailable = $derived(!!dossier);
 
   const timeline = $derived.by(() => {
     if (!app) return [];
-    if (dossierAvailable && app.co === 'Anthropic') return dossier.timeline;
     return buildTimelineFromApplication(app.raw);
   });
 </script>
@@ -232,124 +274,173 @@
             <div class="gen">
               <span class="ai-tag">AI generated</span>
               <span>Refreshed {dossier.generatedAgo}</span>
-              <a>
+              <a class="regen" onclick={generateDossier} class:busy={generating}>
                 <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
-                Regenerate
+                {generating ? 'Regenerating…' : 'Regenerate'}
               </a>
             </div>
           </div>
 
+          {#if dossierError}
+            <p class="dossier-err">{dossierError}</p>
+          {/if}
+
           <!-- Interviewer card -->
-          <div class="interviewer">
-            <div class="photo">{dossier.interviewer.initials}</div>
-            <div class="who">
-              <h4>{dossier.interviewer.name}</h4>
-              <div class="role">{dossier.interviewer.role}</div>
-              <div class="prior">
-                <b>Prior:</b> {dossier.interviewer.prior.join(' · ')}
+          {#if dossier.content.interviewer}
+            <div class="interviewer">
+              <div class="photo">{dossier.content.interviewer.initials ?? ''}</div>
+              <div class="who">
+                <h4>{dossier.content.interviewer.name ?? ''}</h4>
+                <div class="role">{dossier.content.interviewer.role ?? ''}</div>
+                {#if dossier.content.interviewer.prior?.length}
+                  <div class="prior">
+                    <b>Prior:</b> {dossier.content.interviewer.prior.join(' · ')}
+                  </div>
+                {/if}
+              </div>
+              <div class="links">
+                {#each dossier.content.interviewer.links ?? [] as l}
+                  <a href={l.href} target="_blank" rel="noopener">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.55">
+                      <rect x="2" y="2" width="12" height="12" rx="3"/>
+                    </svg>
+                    {l.label}
+                    <span class="ext">↗</span>
+                  </a>
+                {/each}
               </div>
             </div>
-            <div class="links">
-              {#each dossier.interviewer.links as l}
-                <a href={l.href}>
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.55">
-                    <rect x="2" y="2" width="12" height="12" rx="3"/>
-                  </svg>
-                  {l.label}
-                  <span class="ext">↗</span>
-                </a>
-              {/each}
-            </div>
-          </div>
+          {/if}
 
           <!-- Snapshot -->
-          <p class="snapshot">{@html dossier.snapshot}</p>
+          {#if dossier.content.snapshot}
+            <p class="snapshot">{@html dossier.content.snapshot}</p>
+          {/if}
 
           <!-- Background + signals -->
           <div class="grid-2">
-            <div class="section">
-              <h3>Background</h3>
-              <p>{dossier.background}</p>
-            </div>
-            <div class="section">
-              <h3>Recent signals <span class="num">last 90 days</span></h3>
-              <ul class="signals">
-                {#each dossier.signals as s}
-                  <li>
-                    <span class="date">{s.date}</span>
-                    <span class="body">
-                      <span class="kind">{s.kind}</span>
-                      {s.body}
-                      <span class="source">{s.source} ↗</span>
-                    </span>
-                  </li>
-                {/each}
-              </ul>
-            </div>
+            {#if dossier.content.background}
+              <div class="section">
+                <h3>Background</h3>
+                <p>{dossier.content.background}</p>
+              </div>
+            {/if}
+            {#if dossier.content.signals?.length}
+              <div class="section">
+                <h3>Recent signals <span class="num">last 90 days</span></h3>
+                <ul class="signals">
+                  {#each dossier.content.signals as s}
+                    <li>
+                      <span class="date">{s.date}</span>
+                      <span class="body">
+                        {#if s.kind}<span class="kind">{s.kind}</span>{/if}
+                        {s.body}
+                        {#if s.source}<span class="source">{s.source} ↗</span>{/if}
+                      </span>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
           </div>
 
           <!-- Style block -->
-          <div class="style-block">
-            <h3 style="font-size:13px; font-weight:500; color:var(--mute); margin:0 0 12px;">How they likely interview</h3>
-            <p class="lead">{dossier.style.lead}</p>
-            <div class="tells">
-              {#each dossier.style.tells as t}
-                <div class="tell">
-                  <div class="lbl">{t.lbl}</div>
-                  <div class="val">{t.val}</div>
+          {#if dossier.content.style?.lead || dossier.content.style?.tells?.length}
+            <div class="style-block">
+              <h3 style="font-size:13px; font-weight:500; color:var(--mute); margin:0 0 12px;">How they likely interview</h3>
+              {#if dossier.content.style.lead}<p class="lead">{dossier.content.style.lead}</p>{/if}
+              {#if dossier.content.style.tells?.length}
+                <div class="tells">
+                  {#each dossier.content.style.tells as t}
+                    <div class="tell">
+                      <div class="lbl">{t.lbl}</div>
+                      <div class="val">{t.val}</div>
+                    </div>
+                  {/each}
                 </div>
-              {/each}
+              {/if}
             </div>
-          </div>
+          {/if}
 
           <!-- Lands / Avoid -->
-          <div class="la-grid">
-            <div class="la-col lands">
-              <h3><span class="glyph">+</span> What lands well</h3>
-              <ul>
-                {#each dossier.lands as line}
-                  <li><span class="glyph">+</span><span>{line}</span></li>
-                {/each}
-              </ul>
+          {#if dossier.content.lands?.length || dossier.content.avoid?.length}
+            <div class="la-grid">
+              <div class="la-col lands">
+                <h3><span class="glyph">+</span> What lands well</h3>
+                <ul>
+                  {#each dossier.content.lands ?? [] as line}
+                    <li><span class="glyph">+</span><span>{line}</span></li>
+                  {/each}
+                </ul>
+              </div>
+              <div class="la-col avoid">
+                <h3><span class="glyph">−</span> What to avoid</h3>
+                <ul>
+                  {#each dossier.content.avoid ?? [] as line}
+                    <li><span class="glyph">−</span><span>{line}</span></li>
+                  {/each}
+                </ul>
+              </div>
             </div>
-            <div class="la-col avoid">
-              <h3><span class="glyph">−</span> What to avoid</h3>
-              <ul>
-                {#each dossier.avoid as line}
-                  <li><span class="glyph">−</span><span>{line}</span></li>
-                {/each}
-              </ul>
-            </div>
-          </div>
+          {/if}
 
           <!-- Questions -->
-          <div class="questions">
-            <div class="brief-meta" style="margin-bottom:0">
-              <h2 style="font-size:16px; font-weight:500;">Questions worth asking</h2>
-              <span class="gen"><span>Ranked by signal</span></span>
+          {#if dossier.content.questions?.length}
+            <div class="questions">
+              <div class="brief-meta" style="margin-bottom:0">
+                <h2 style="font-size:16px; font-weight:500;">Questions worth asking</h2>
+                <span class="gen"><span>Ranked by signal</span></span>
+              </div>
+              <p class="intro">Saving any of these adds them to your interview prep doc.</p>
+              <ol>
+                {#each dossier.content.questions as q}
+                  <li>
+                    <span></span>
+                    <div>
+                      <div class="q">"{q.q}"</div>
+                      <div class="why">{q.why}</div>
+                    </div>
+                    <span class="save" title="Save to prep doc">＋</span>
+                  </li>
+                {/each}
+              </ol>
             </div>
-            <p class="intro">Saving any of these adds them to your interview prep doc.</p>
-            <ol>
-              {#each dossier.questions as q}
-                <li>
-                  <span></span>
-                  <div>
-                    <div class="q">"{q.q}"</div>
-                    <div class="why">{q.why}</div>
-                  </div>
-                  <span class="save" title="Save to prep doc">＋</span>
-                </li>
-              {/each}
-            </ol>
-          </div>
+          {/if}
 
           <div class="disclaimer">
             Briefing synthesised from public posts, talks, and papers · always verify before you walk in · last refreshed {dossier.generatedAgo}
           </div>
+        {:else if generating}
+          <div class="generating-card">
+            <div class="spinner"></div>
+            <h3>Researching {app.co}{interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
+            <p>Claude is searching the web for recent posts, talks, and the company's current direction. Typically 30–60 seconds.</p>
+          </div>
         {:else}
-          <div class="empty-tab">
-            <h3>No dossier yet</h3>
-            <p>Dossier is generated once an interview is scheduled. Move this application to <b>Screen</b>, <b>Interview</b>, or <b>Offer</b> to unlock it.</p>
+          <div class="generate-card">
+            <h3>Generate the dossier</h3>
+            <p>
+              Claude reads the web — recent essays, talks, papers, company news —
+              and writes you a focused briefing for this interview. Optional: name
+              the interviewer for a person-specific brief.
+            </p>
+            <div class="generate-row">
+              <input
+                type="text"
+                placeholder="Interviewer name (optional) — e.g. Dario Amodei"
+                bind:value={interviewerInput}
+                disabled={generating}
+              />
+              <button class="btn btn-primary" onclick={generateDossier} disabled={generating || !dossierEligible}>
+                Generate
+              </button>
+            </div>
+            {#if !dossierEligible}
+              <p class="muted-note">Move this application to <b>Screen</b>, <b>Interview</b>, or <b>Offer</b> to enable the dossier.</p>
+            {/if}
+            {#if dossierError}
+              <p class="dossier-err">{dossierError}</p>
+            {/if}
           </div>
         {/if}
       {:else if tab === 'timeline'}
@@ -513,4 +604,91 @@
     display: flex; justify-content: flex-end; gap: .5rem;
     margin-top: .75rem;
   }
+
+  /* Dossier — generate / regenerate states */
+  .generate-card {
+    border: 1px dashed var(--rule-strong);
+    border-radius: 12px;
+    padding: 28px 32px;
+    background: var(--card);
+    text-align: center;
+  }
+  .generate-card h3 {
+    font-size: 17px; font-weight: 500;
+    letter-spacing: -0.012em;
+    margin: 0 0 .35rem;
+    color: var(--ink);
+  }
+  .generate-card > p {
+    margin: 0 0 1.25rem;
+    color: var(--mute);
+    font-size: 13.5px;
+    line-height: 1.55;
+    max-width: 56ch;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .generate-row {
+    display: flex;
+    gap: 8px;
+    max-width: 520px;
+    margin: 0 auto;
+  }
+  .generate-row input {
+    flex: 1;
+    font: inherit;
+    font-size: 13.5px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 6px 10px;
+    outline: none;
+  }
+  .generate-row input:focus { border-color: var(--accent); }
+  .muted-note { color: var(--mute); font-size: 12px; margin: .75rem 0 0; }
+  .muted-note b { color: var(--ink-2); font-weight: 500; }
+  .dossier-err {
+    color: var(--danger-text);
+    background: var(--danger-tint);
+    border: 1px solid var(--danger-tint);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    margin: 0 0 16px;
+  }
+
+  .generating-card {
+    border: 1px solid var(--accent-tint-2);
+    background: linear-gradient(180deg, var(--accent-tint), var(--card) 80%);
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+  }
+  .generating-card h3 {
+    font-size: 17px; font-weight: 500;
+    letter-spacing: -0.012em;
+    margin: 16px 0 .5rem;
+    color: var(--ink);
+  }
+  .generating-card p {
+    color: var(--mute);
+    font-size: 13.5px;
+    margin: 0;
+    max-width: 56ch;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .spinner {
+    width: 24px; height: 24px;
+    margin: 0 auto;
+    border: 2px solid var(--accent-tint-2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 800ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .regen { cursor: pointer; user-select: none; }
+  .regen.busy { opacity: 0.6; pointer-events: none; }
 </style>

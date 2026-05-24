@@ -38,7 +38,9 @@ func New(apiKey string) *Client {
 	}
 	return &Client{
 		apiKey: apiKey,
-		http:   &http.Client{Timeout: 60 * time.Second},
+		// Upper-bound timeout. Per-call ctx tightens it (parse=30s,
+		// dossier=150s) — dossier with web search legitimately takes a minute.
+		http: &http.Client{Timeout: 180 * time.Second},
 	}
 }
 
@@ -47,11 +49,25 @@ type Message struct {
 	Content string `json:"content"`
 }
 
+// Tool is a (subset of) the Anthropic Messages API tool spec. We only need
+// the server-side tools (web_search), which Anthropic executes for us — the
+// final assistant turn already contains the synthesized text.
+type Tool struct {
+	Type    string `json:"type"`
+	Name    string `json:"name,omitempty"`
+	MaxUses int    `json:"max_uses,omitempty"`
+}
+
+func WebSearchTool(maxUses int) Tool {
+	return Tool{Type: "web_search_20250305", Name: "web_search", MaxUses: maxUses}
+}
+
 type messagesRequest struct {
 	Model     string    `json:"model"`
 	MaxTokens int       `json:"max_tokens"`
 	System    string    `json:"system,omitempty"`
 	Messages  []Message `json:"messages"`
+	Tools     []Tool    `json:"tools,omitempty"`
 }
 
 type messagesResponse struct {
@@ -67,13 +83,15 @@ type messagesResponse struct {
 }
 
 // CreateMessage hits POST /v1/messages and returns the concatenated text
-// content across all text blocks in the assistant response.
-func (c *Client) CreateMessage(ctx context.Context, model, system string, messages []Message, maxTokens int) (string, error) {
+// content across all text blocks in the assistant response. Pass tools=nil for
+// a vanilla call; pass a tool list (e.g. WebSearchTool) for server-side tools.
+func (c *Client) CreateMessage(ctx context.Context, model, system string, messages []Message, maxTokens int, tools ...Tool) (string, error) {
 	body, err := json.Marshal(messagesRequest{
 		Model:     model,
 		MaxTokens: maxTokens,
 		System:    system,
 		Messages:  messages,
+		Tools:     tools,
 	})
 	if err != nil {
 		return "", err
@@ -141,6 +159,9 @@ Output the JSON object only, no prose, no markdown fences. If the input is clear
 // (LinkedIn is rejected since they block scraping). Errors include the raw
 // model output on parse failure, which is useful for debugging prompt drift.
 func (c *Client) ParseJob(ctx context.Context, text string) (*ParsedJob, error) {
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	ctx = cctx
 	text = strings.TrimSpace(text)
 
 	// Bare-URL path: fetch the page server-side so Claude has something to read.
@@ -246,6 +267,116 @@ func stripHTML(s string) string {
 	s = tagRe.ReplaceAllString(s, " ")
 	s = wsRe.ReplaceAllString(s, " ")
 	return strings.TrimSpace(s)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Dossier generation (Claude Sonnet + web search)
+// ─────────────────────────────────────────────────────────────────────────
+
+const dossierSystemPrompt = `You are an interview-prep researcher with web search. Given a company, role, and (optionally) an interviewer's name, produce a structured briefing the candidate can read in 60 seconds before the interview.
+
+You MUST use web search to ground every claim. Search for things like:
+- The interviewer's recent essays, talks, podcasts, papers (last 12 months)
+- The company's recent news, product launches, leadership statements
+- The team's public engineering or design culture
+- The role's likely scope given company stage and recent direction
+
+Do NOT invent quotes, papers, or events. If you can't find something concrete, omit that field — empty arrays and empty strings are fine.
+
+Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
+
+{
+  "interviewer": {
+    "initials": "DA",
+    "name": "Dario Amodei",
+    "role": "CEO & Co-founder, Anthropic",
+    "prior": ["VP Research, OpenAI", "Princeton PhD (computational neuroscience)"],
+    "links": [
+      {"label": "LinkedIn", "href": "https://linkedin.com/..."},
+      {"label": "Essay: Machines of Loving Grace", "href": "https://..."}
+    ]
+  },
+  "snapshot": "A 2-sentence read of who this person is and how they interview. Use <em>...</em> tags around 2-3 key phrases for emphasis.",
+  "background": "60–80 words. Their professional arc, framed so the candidate can engage thoughtfully.",
+  "signals": [
+    {"date": "Apr 2026", "kind": "Essay", "body": "What it was about and why it matters for this interview.", "source": "domain.com"}
+  ],
+  "style": {
+    "lead": "1–2 sentences on how they interview. What are they testing for?",
+    "tells": [
+      {"lbl": "Format", "val": "..."},
+      {"lbl": "Tempo",  "val": "..."},
+      {"lbl": "Length", "val": "..."}
+    ]
+  },
+  "lands":     ["4 short, specific things that work with this person."],
+  "avoid":     ["4 short, specific things that don't."],
+  "questions": [
+    {"q": "Question for the candidate to ask back.", "why": "Why it lands."}
+  ]
+}
+
+If the interviewer name is empty, write a COMPANY-LEVEL briefing:
+- interviewer.name = "Hiring team"
+- interviewer.role = the company name
+- interviewer.initials = the first letter of the company
+- interviewer.prior = company highlights or recent moves
+- snapshot/background/signals scoped to the company itself
+- style/lands/avoid/questions reflect the company's interview culture
+
+If after searching you genuinely can't find enough information, return: {"error": "could not find enough public information about this person/company"}.
+
+Output JSON only.`
+
+// GenerateDossier asks Claude Sonnet (with web search) to research the
+// interviewer/company and produce a structured briefing. Returns the JSON
+// bytes verbatim so the frontend can render exactly what the model decided
+// to ship — no field-level translation in Go.
+func (c *Client) GenerateDossier(ctx context.Context, company, role, interviewerName string) (json.RawMessage, error) {
+	cctx, cancel := context.WithTimeout(ctx, 150*time.Second)
+	defer cancel()
+
+	var user strings.Builder
+	fmt.Fprintf(&user, "Company: %s\nRole: %s\n", company, role)
+	if strings.TrimSpace(interviewerName) != "" {
+		fmt.Fprintf(&user, "Interviewer: %s\n", strings.TrimSpace(interviewerName))
+	} else {
+		user.WriteString("Interviewer: (not specified — produce a company-level briefing)\n")
+	}
+
+	resp, err := c.CreateMessage(cctx, ModelSonnet, dossierSystemPrompt, []Message{
+		{Role: "user", Content: user.String()},
+	}, 4000, WebSearchTool(5))
+	if err != nil {
+		return nil, err
+	}
+
+	raw, err := extractFirstJSONObject(resp)
+	if err != nil {
+		return nil, fmt.Errorf("model didn't return JSON (raw: %.300s)", resp)
+	}
+
+	var errProbe struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(raw, &errProbe) == nil && errProbe.Error != "" {
+		return nil, errors.New(errProbe.Error)
+	}
+
+	// Light sanity check — confirm we got the shape we expect.
+	var shape struct {
+		Interviewer struct {
+			Name string `json:"name"`
+		} `json:"interviewer"`
+		Snapshot string `json:"snapshot"`
+	}
+	if err := json.Unmarshal(raw, &shape); err != nil {
+		return nil, fmt.Errorf("dossier JSON missing expected fields: %w", err)
+	}
+	if shape.Interviewer.Name == "" && shape.Snapshot == "" {
+		return nil, errors.New("dossier came back empty")
+	}
+	return raw, nil
 }
 
 // extractFirstJSONObject finds the first top-level JSON object in s and returns
