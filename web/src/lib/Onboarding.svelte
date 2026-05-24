@@ -8,6 +8,7 @@
   let progress = $state([]); // [{idx, status: 'pending'|'parsing'|'creating'|'done'|'error', label, error?}]
   let globalError = $state('');
   let finished = $state(false);
+  const added = $derived(progress.filter(p => p.status === 'done').length);
 
   function splitEntries(s) {
     const parts = s.split(/\n{2,}/).map(p => p.trim()).filter(p => p.length > 4);
@@ -134,16 +135,44 @@
       </footer>
     {:else}
       <section class="done">
-        <h2>You're set.</h2>
-        <p>
-          {progress.filter(p => p.status === 'done').length} of {progress.length}
-          {progress.length === 1 ? 'application' : 'applications'} added.
-          {#if progress.some(p => p.status === 'error')}
-            <br/>
-            <span class="muted">Some entries didn't parse — you can add them by hand from the dashboard.</span>
-          {/if}
-        </p>
-        <button class="btn btn-primary" onclick={markOnboarded}>Open the dashboard →</button>
+        {#if added > 0}
+          <h2>You're set.</h2>
+          <p>
+            Added {added} of {progress.length}
+            {progress.length === 1 ? 'application' : 'applications'}.
+          </p>
+        {:else}
+          <h2>Nothing added.</h2>
+          <p>
+            None of the {progress.length} {progress.length === 1 ? 'entry' : 'entries'} could be parsed.
+            See below — you can add them by hand from the dashboard.
+          </p>
+        {/if}
+
+        {#if progress.some(p => p.status === 'done')}
+          <ul class="result-list ok">
+            {#each progress.filter(p => p.status === 'done') as p}
+              <li><span class="r-ic">✓</span><span class="r-lbl">{p.label}</span></li>
+            {/each}
+          </ul>
+        {/if}
+
+        {#if progress.some(p => p.status === 'error')}
+          <p class="failed-head">Didn't parse:</p>
+          <ul class="result-list err">
+            {#each progress.filter(p => p.status === 'error') as p}
+              <li>
+                <span class="r-ic">!</span>
+                <span class="r-lbl">{p.label}</span>
+                <span class="r-err">— {p.error}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+
+        <div class="done-actions">
+          <button class="btn btn-primary" onclick={markOnboarded}>Open the dashboard →</button>
+        </div>
       </section>
     {/if}
   </div>
@@ -276,8 +305,50 @@
   .btn-primary:hover { background: #1a1a1f; }
   .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-  .done { text-align: center; padding: 24px 0; }
-  .done h2 { font-size: 22px; font-weight: 500; letter-spacing: -0.018em; margin: 0 0 .4rem; }
-  .done p { color: var(--mute); margin: 0 0 20px; font-size: 14px; line-height: 1.55; }
-  .done .muted { color: var(--mute-2); font-size: 12.5px; }
+  .done { padding: 8px 0 0; }
+  .done h2 { font-size: 22px; font-weight: 500; letter-spacing: -0.018em; margin: 0 0 .4rem; text-align: center; }
+  .done > p { color: var(--mute); margin: 0 0 20px; font-size: 14px; line-height: 1.55; text-align: center; }
+
+  .failed-head {
+    margin: 16px 0 6px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--danger-text);
+  }
+  .result-list {
+    list-style: none; padding: 0; margin: 0 0 12px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .result-list.err { border-color: var(--danger-tint); background: var(--danger-tint); }
+  .result-list li {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--ink-2);
+    border-top: 1px solid rgba(0,0,0,0.04);
+  }
+  .result-list li:first-child { border-top: none; }
+  .result-list .r-ic {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .result-list.ok .r-ic { color: var(--positive-text); }
+  .result-list.err .r-ic { color: var(--danger-text); }
+  .result-list .r-lbl { overflow: hidden; text-overflow: ellipsis; }
+  .result-list .r-err {
+    grid-column: 2;
+    color: var(--danger-text);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .done-actions { text-align: center; margin-top: 20px; }
 </style>

@@ -143,16 +143,29 @@ type ParsedJob struct {
 
 const parseSystemPrompt = `You are a precise job-listing parser. The user will paste arbitrary text — a LinkedIn URL, a copied job description, an email forward, a recruiter message, or a description in their own words — and you must extract structured fields.
 
+Be PERMISSIVE: short notes count as long as you can extract a company AND a role. Examples of valid input you should parse, not reject:
+
+  "Anthropic / Senior ML Engineer / referred by Sarah"
+    → company=Anthropic, role=Senior ML Engineer, source=Referral
+
+  "Stripe — Staff Backend Engineer · referred by Mia · applied 14 May"
+    → company=Stripe, role=Staff Backend Engineer, source=Referral
+
+  "talked to Vercel about a Frontend Eng role, JD: https://vercel.com/careers/eng-1234"
+    → company=Vercel, role=Frontend Engineer, jd_url=https://vercel.com/careers/eng-1234
+
 Return ONLY a JSON object with these keys (omit any you cannot determine with high confidence; do not invent values):
 - company:    the hiring company name (e.g. "Anthropic")
-- role:       the role title as listed (e.g. "Senior Software Engineer")
+- role:       the role title (e.g. "Senior Software Engineer")
 - location:   location or remote status (e.g. "San Francisco", "Remote", "Remote (US)")
 - seniority:  level if clear (e.g. "Senior", "Staff", "Principal", "Director")
-- jd_url:     the canonical job-description URL if present in the text
-- source:     "LinkedIn" if from a LinkedIn URL or page, else infer (e.g. "Greenhouse", "Lever", "Company site", "Referral", "Email") or omit
-- salary_note: compensation info if mentioned (e.g. "$220k-$280k base", "$160-200k OTE")
+- jd_url:     the canonical job-description URL if present
+- source:     "LinkedIn" if from a LinkedIn URL/page; "Referral" if the input mentions being referred by someone; else infer (e.g. "Greenhouse", "Lever", "Company site", "Email") or omit
+- salary_note: comp info if mentioned (e.g. "$220k-$280k base", "$160-200k OTE")
 
-Output the JSON object only, no prose, no markdown fences. If the input is clearly not a job listing, return {"error": "not a job listing"}.`
+Output the JSON object only — no prose, no markdown fences.
+
+Only return {"error": "not a job listing"} if the input genuinely isn't about a job — e.g. a recipe, a chat about the weather, a code snippet, an empty string, or something with no extractable company or role.`
 
 // ParseJob asks Claude Haiku to extract structured job-listing fields from
 // arbitrary text. If the input is a bare URL we fetch it server-side first
