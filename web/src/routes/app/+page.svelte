@@ -201,8 +201,26 @@
         primary: { label: `Open ${screen.co}`, id: screen.id }
       };
     }
+    // No live loop — fall back to the most recent active application so
+    // there's still a real company name in the message and a real CTA.
+    const applied = apps.filter(a => a.status === 'applied');
+    if (applied.length > 0) {
+      const recent = applied[0]; // /api/applications is sorted applied_at DESC
+      return {
+        msg: `<em>${recent.co}</em> is your most recent application. Nothing has moved yet — worth a gentle follow-up if it has been a few days.`,
+        primary: { label: `Open ${recent.co}`, id: recent.id }
+      };
+    }
+    const wishlist = apps.find(a => a.status === 'wishlist');
+    if (wishlist) {
+      return {
+        msg: `<em>${wishlist.co}</em> is on your wishlist. Move it to <em>Applied</em> when you actually send.`,
+        primary: { label: `Open ${wishlist.co}`, id: wishlist.id }
+      };
+    }
+    // True last resort: everything closed.
     return {
-      msg: `${apps.length} ${apps.length === 1 ? 'application' : 'applications'} in flight. Nothing urgent — keep applying and the funnel will sharpen.`,
+      msg: `${apps.length} ${apps.length === 1 ? 'application' : 'applications'} on file, all closed. Add a new one with <b>⌘N</b>.`,
       primary: null
     };
   });
@@ -217,7 +235,10 @@
     if (counts.interview > 0) parts.push(`<b>${counts.interview}</b> interview ${counts.interview === 1 ? 'loop' : 'loops'}`);
     if (counts.offer > 0)     parts.push(`<b>${counts.offer}</b> open ${counts.offer === 1 ? 'offer' : 'offers'}`);
     if (counts.screen > 0)    parts.push(`<b>${counts.screen}</b> in ${counts.screen === 1 ? 'screen' : 'screens'}`);
-    if (parts.length === 0)   return `<b>${active.length}</b> applications in flight — keep going.`;
+    if (parts.length === 0) {
+      const n = active.length;
+      return `<b>${n}</b> ${n === 1 ? 'application' : 'applications'} in flight — keep going.`;
+    }
     return parts.join(' &middot; ');
   });
 </script>
