@@ -39,7 +39,7 @@ func (s *Server) handleAdminInvitesAdd(w http.ResponseWriter, r *http.Request) {
 	u, _ := userFromCtx(r.Context())
 	var req addInviteRequest
 	if err := readJSON(r, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "bad json")
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.Auth.AddInvite(r.Context(), req.Email, req.Note, u.ID); err != nil {

@@ -2,6 +2,7 @@ package httpsrv
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -18,5 +19,10 @@ func writeJSONError(w http.ResponseWriter, status int, msg string) {
 func readJSON(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	return dec.Decode(dst)
+	if err := dec.Decode(dst); err != nil {
+		// Pass through the underlying message so debugging unknown-field or
+		// shape mismatches doesn't require server-log access.
+		return fmt.Errorf("bad json: %w", err)
+	}
+	return nil
 }

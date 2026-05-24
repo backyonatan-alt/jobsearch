@@ -16,7 +16,7 @@ func (s *Server) handleApplicationParse(w http.ResponseWriter, r *http.Request) 
 	}
 	var req parseRequest
 	if err := readJSON(r, &req); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "bad json")
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	text := strings.TrimSpace(req.Text)

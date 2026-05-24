@@ -78,7 +78,7 @@ func (s *Server) handleApplicationCreate(w http.ResponseWriter, r *http.Request)
 	u, _ := userFromCtx(r.Context())
 	var in applicationInput
 	if err := readJSON(r, &in); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "bad json")
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	in.Company = strings.TrimSpace(in.Company)
@@ -155,7 +155,7 @@ func (s *Server) handleApplicationUpdate(w http.ResponseWriter, r *http.Request)
 	}
 	var in applicationInput
 	if err := readJSON(r, &in); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "bad json")
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if in.Status != "" && !validStatus[in.Status] {

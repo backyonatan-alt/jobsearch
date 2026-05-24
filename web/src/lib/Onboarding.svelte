@@ -34,7 +34,6 @@
       label: e.slice(0, 60) + (e.length > 60 ? '…' : '')
     }));
 
-    let added = 0;
     for (let i = 0; i < entries.length; i++) {
       progress[i] = { ...progress[i], status: 'parsing' };
       try {
@@ -44,12 +43,22 @@
         });
         progress[i] = { ...progress[i], status: 'creating', label: `${parsed.company || '?'} · ${parsed.role || '?'}` };
 
-        const payload = { ...parsed, status: 'applied' };
+        // Map only the fields the create endpoint accepts — don't spread the
+        // parser response blindly. `seniority`, for example, is parsed but not
+        // stored. Backend's DisallowUnknownFields would reject extras.
+        const payload = {
+          company:     parsed.company,
+          role:        parsed.role,
+          status:      'applied',
+          source:      parsed.source,
+          jd_url:      parsed.jd_url,
+          location:    parsed.location,
+          salary_note: parsed.salary_note
+        };
         for (const k of Object.keys(payload)) if (!payload[k]) delete payload[k];
         await api('/api/applications', { method: 'POST', body: JSON.stringify(payload) });
 
         progress[i] = { ...progress[i], status: 'done' };
-        added++;
       } catch (e) {
         progress[i] = { ...progress[i], status: 'error', error: e.message };
       }

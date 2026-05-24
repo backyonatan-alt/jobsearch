@@ -103,7 +103,7 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	var req refreshRequest
 	if r.ContentLength > 0 {
 		if err := readJSON(r, &req); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "bad json")
+			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
