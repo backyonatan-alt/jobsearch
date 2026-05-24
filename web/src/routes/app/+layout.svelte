@@ -68,16 +68,7 @@
       <span>Today</span>
       <span class="nav-count"></span>
     </a>
-    <a class="nav-item" href="#" aria-disabled="true">
-      <span class="nav-icon">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
-          <path d="M2 4h12M2 8h12M2 12h8"/>
-        </svg>
-      </span>
-      <span>Applications</span>
-      <span class="nav-count">{applications.length || ''}</span>
-    </a>
-    <a class="nav-item" href="#" aria-disabled="true">
+    <a class="nav-item" class:active={isCurrent('/app/board')} href="/app/board">
       <span class="nav-icon">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
           <rect x="2" y="3" width="3" height="10" rx="0.5"/>
@@ -86,16 +77,16 @@
         </svg>
       </span>
       <span>Board</span>
-      <span class="nav-count">—</span>
+      <span class="nav-count">{applications.length || ''}</span>
     </a>
-    <a class="nav-item" href="#" aria-disabled="true">
+    <a class="nav-item" class:active={isCurrent('/app/funnel')} href="/app/funnel">
       <span class="nav-icon">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
           <path d="M2 3h12l-5 6v5l-2-1V9z"/>
         </svg>
       </span>
       <span>Funnel</span>
-      <span class="nav-count">—</span>
+      <span class="nav-count"></span>
     </a>
 
     <div class="divider"></div>
