@@ -62,6 +62,12 @@
 
   onMount(refresh);
 
+  // Sidebar Pipeline links pass ?filter=X to jump straight to a filtered table.
+  $effect(() => {
+    const f = page.url.searchParams.get('filter');
+    if (f && filterMap[f]) filter = f;
+  });
+
   async function refresh() {
     try {
       const [meRes, raw] = await Promise.all([
@@ -149,6 +155,71 @@
     { k: 'closed',    lbl: 'Closed',    n: (counts.rejected || 0) + (counts.withdrawn || 0) },
     { k: 'all',       lbl: 'All',       n: apps.length }
   ]);
+
+  // ── Rich page header pieces ────────────────────────────────
+  const firstName = $derived.by(() => {
+    if (!me?.email) return 'there';
+    const local = me.email.split('@')[0].split(/[._]/).pop() || 'there';
+    return local.charAt(0).toUpperCase() + local.slice(1);
+  });
+  const timeOfDayGreeting = $derived.by(() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good morning';
+    if (h < 18) return 'Good afternoon';
+    return 'Good evening';
+  });
+  const dow  = $derived(today.toLocaleDateString('en-US', { weekday: 'long' }));
+  const dnum = $derived(today.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }));
+
+  // ── Briefer copy derived from real pipeline state (no AI yet) ─
+  const briefer = $derived.by(() => {
+    if (apps.length === 0) return null;
+    const offer     = apps.find(a => a.status === 'offer');
+    const interview = apps.find(a => a.status === 'interview');
+    const screen    = apps.find(a => a.status === 'screen');
+    if (offer && interview) {
+      return {
+        msg: `Two threads worth your attention — the <em>${offer.co} offer</em> needs a reply and the <em>${interview.co} loop</em> is live.`,
+        primary: { label: `Open ${offer.co}`, id: offer.id }
+      };
+    }
+    if (offer) {
+      return {
+        msg: `One open offer from <em>${offer.co}</em> — use it as leverage on anything else live.`,
+        primary: { label: `Open ${offer.co}`, id: offer.id }
+      };
+    }
+    if (interview) {
+      return {
+        msg: `<em>${interview.co}</em> is your most active loop. Refresh the dossier before you talk.`,
+        primary: { label: `Open ${interview.co}`, id: interview.id }
+      };
+    }
+    if (screen) {
+      return {
+        msg: `<em>${screen.co}</em> just moved to <em>Screen</em>. Worth thinking about what you want from the conversation.`,
+        primary: { label: `Open ${screen.co}`, id: screen.id }
+      };
+    }
+    return {
+      msg: `${apps.length} ${apps.length === 1 ? 'application' : 'applications'} in flight. Nothing urgent — keep applying and the funnel will sharpen.`,
+      primary: null
+    };
+  });
+  let briefDismissed = $state(false);
+
+  // ── Sub-greeting line ─────────────────────────────────────
+  const subGreeting = $derived.by(() => {
+    if (apps.length === 0) {
+      return `Add your first applications with <b>⌘N</b> to start seeing the patterns.`;
+    }
+    const parts = [];
+    if (counts.interview > 0) parts.push(`<b>${counts.interview}</b> interview ${counts.interview === 1 ? 'loop' : 'loops'}`);
+    if (counts.offer > 0)     parts.push(`<b>${counts.offer}</b> open ${counts.offer === 1 ? 'offer' : 'offers'}`);
+    if (counts.screen > 0)    parts.push(`<b>${counts.screen}</b> in ${counts.screen === 1 ? 'screen' : 'screens'}`);
+    if (parts.length === 0)   return `<b>${active.length}</b> applications in flight — keep going.`;
+    return parts.join(' &middot; ');
+  });
 </script>
 
 <svelte:head>
@@ -178,17 +249,50 @@
 
 <div class="body">
   <div class="body-inner">
-    <div class="page-hd">
+    <div class="page-hd page-hd-rich">
       <div>
-        <div class="date">{todayString}</div>
-        <h1>Today.</h1>
+        <div class="date">
+          <span class="dow">{dow}</span>
+          <span class="sep">/</span>
+          <span class="dnum">{dnum}</span>
+        </div>
+        <h1>{timeOfDayGreeting}, {firstName}.</h1>
+        <div class="sub-greeting">{@html subGreeting}</div>
       </div>
-      <div class="stats">
+      <div class="stats stats-rich">
         {#each stats as s}
-          <span>{s.lbl} <b>{s.n}</b></span>
+          <div class="stat-cell">
+            <div class="lbl">{s.lbl}</div>
+            <div class="n-row">
+              <span class="n">{s.n}</span>
+            </div>
+          </div>
         {/each}
       </div>
     </div>
+
+    {#if briefer && !briefDismissed}
+      <div class="briefer">
+        <span class="glyph">P</span>
+        <div>
+          <div class="who">
+            <span class="label">Pursuit · briefed</span>
+            <span class="tag">derived from your pipeline</span>
+          </div>
+          <p class="msg">{@html briefer.msg}</p>
+          {#if briefer.primary}
+            <div class="chips">
+              <a class="chip-c primary" href="/app/{briefer.primary.id}">
+                {briefer.primary.label} <span class="arrow">→</span>
+              </a>
+            </div>
+          {/if}
+        </div>
+        <button class="dismiss" onclick={() => (briefDismissed = true)} title="Dismiss for now">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+        </button>
+      </div>
+    {/if}
 
     <!-- Today section -->
     <div class="section-hd">
