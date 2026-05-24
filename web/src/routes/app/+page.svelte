@@ -166,7 +166,7 @@
       <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
         <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L13 13"/>
       </svg>
-      Search applications, people…
+      <span>Search applications, people…</span>
       <span class="kbd">⌘K</span>
     </div>
     <button class="btn">Import</button>
