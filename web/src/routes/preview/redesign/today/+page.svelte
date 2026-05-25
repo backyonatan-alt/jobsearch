@@ -149,7 +149,7 @@
           {#each actions as a}
             <div class={`action-card ${a.color}`}>
               <div class="action-top">
-                <img class="action-logo" src={`https://logo.clearbit.com/${a.logo}`} alt="" />
+                <img class="action-logo" src={`https://www.google.com/s2/favicons?sz=128&domain=${a.logo}`} alt="" />
                 <span class={`urgency u-${a.color}`}>{a.urgency}</span>
               </div>
               <h3>{a.title}</h3>
@@ -195,7 +195,7 @@
           {#each apps as a}
             <div class={`tr ${a.stale ? 'stale' : ''}`}>
               <span class="co">
-                <img class="logo" src={`https://logo.clearbit.com/${a.domain}`} alt="" />
+                <img class="logo" src={`https://www.google.com/s2/favicons?sz=128&domain=${a.domain}`} alt="" />
                 <span>{a.co}</span>
               </span>
               <span class="role">{a.role}</span>

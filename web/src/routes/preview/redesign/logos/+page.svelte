@@ -1,7 +1,9 @@
 <script>
   // Standalone logo gallery — every company we use across the demos,
-  // pulled from logo.clearbit.com. This is the stable logo library we'll
-  // ship with. Letter-square is the fallback when Clearbit has no hit.
+  // pulled from Google's favicon service. Clearbit's free Logo API was
+  // deprecated, so we moved to www.google.com/s2/favicons which always
+  // works, takes any domain, needs no API key. Letter-square is the
+  // fallback when nothing comes back.
   const companies = [
     { name: 'Stripe',     domain: 'stripe.com' },
     { name: 'Vercel',     domain: 'vercel.com' },
@@ -39,12 +41,12 @@
 
 <main class="wrap">
   <header>
-    <div class="kicker">Stable library · logo.clearbit.com</div>
+    <div class="kicker">Stable library · google favicon service</div>
     <h1>Company logos for the demo</h1>
     <p>
       Every logo on every Pursuit surface comes from
-      <code>https://logo.clearbit.com/&lt;domain&gt;</code> — free, public, no API key.
-      When Clearbit has no hit we fall back to a coloured letter square (last row below).
+      <code>https://www.google.com/s2/favicons?sz=128&amp;domain=&lt;domain&gt;</code> — free, public, no API key, works for any company.
+      When nothing comes back (very small / brand-new companies) we fall back to a coloured letter square (last row below).
       This page is just so you can eyeball the library before we wire it in.
     </p>
   </header>
@@ -56,7 +58,7 @@
       {#each sizes as s}
         <div class="size-cell">
           <img
-            src="https://logo.clearbit.com/stripe.com"
+            src="https://www.google.com/s2/favicons?sz=128&domain=stripe.com"
             alt="Stripe"
             class="size-img"
             style={`width:${s.px}px;height:${s.px}px;border-radius:${s.radius}px;`}
@@ -78,7 +80,7 @@
         <div class="logo-card">
           <img
             class="logo-img"
-            src={`https://logo.clearbit.com/${c.domain}`}
+            src={`https://www.google.com/s2/favicons?sz=128&domain=${c.domain}`}
             alt={c.name}
             loading="lazy"
           />

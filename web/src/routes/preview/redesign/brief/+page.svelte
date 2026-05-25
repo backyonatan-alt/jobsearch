@@ -126,7 +126,7 @@
         <!-- HERO STRIP: company id + status + JD link + quick facts -->
         <div class="hero">
           <div class="hero-top">
-            <img class="logo-big" src={`https://logo.clearbit.com/${app.domain}`} alt={app.co} />
+            <img class="logo-big" src={`https://www.google.com/s2/favicons?sz=128&domain=${app.domain}`} alt={app.co} />
             <div class="hero-text">
               <div class="co-row">
                 <h1>{app.co}</h1>
@@ -236,7 +236,7 @@
               <span class="ai-tag">AI · refreshed today</span>
             </div>
             <div class="company-id">
-              <img class="company-logo" src={`https://logo.clearbit.com/${app.domain}`} alt="" />
+              <img class="company-logo" src={`https://www.google.com/s2/favicons?sz=128&domain=${app.domain}`} alt="" />
               <div class="company-meta-mini">
                 <a href={`https://${app.domain}`} target="_blank" rel="noopener">{app.domain} ↗</a>
                 <span class="dot">·</span>
@@ -320,7 +320,7 @@
           <div class="signals-row">
             {#each interviewer.signals as s}
               <a class="signal" href="#">
-                <img class="sig-logo" src={`https://logo.clearbit.com/${s.domain}`} alt="" />
+                <img class="sig-logo" src={`https://www.google.com/s2/favicons?sz=128&domain=${s.domain}`} alt="" />
                 <div class="sig-meta">
                   <span class="sig-kind">{s.kind}</span>
                   <span class="sig-date">{s.date}</span>

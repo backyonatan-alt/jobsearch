@@ -88,7 +88,7 @@
                   <button type="button" class={`bcard tone-${s}`} class:stale={a.stale} draggable="true">
                     <span class="card-accent"></span>
                     <div class="top">
-                      <img class="logo" src={`https://logo.clearbit.com/${a.domain}`} alt="" />
+                      <img class="logo" src={`https://www.google.com/s2/favicons?sz=128&domain=${a.domain}`} alt="" />
                       <div class="top-text">
                         <span class="co">{a.co}</span>
                         <span class="role">{a.role}</span>

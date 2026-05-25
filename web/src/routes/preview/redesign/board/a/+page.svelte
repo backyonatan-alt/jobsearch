@@ -91,7 +91,7 @@
                 {#each byStatus[s] as a}
                   <button type="button" class="bcard" class:stale={a.stale} draggable="true">
                     <div class="top">
-                      <img class="logo" src={`https://logo.clearbit.com/${a.domain}`} alt="" />
+                      <img class="logo" src={`https://www.google.com/s2/favicons?sz=128&domain=${a.domain}`} alt="" />
                       <span class="co">{a.co}</span>
                       {#if a.stale}<span class="stale-dot" title="No movement for over a week"></span>{/if}
                     </div>
