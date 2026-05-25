@@ -2,23 +2,33 @@
   const previews = [
     {
       slug: 'today/a',
-      name: 'Today · variant A — Quiet editorial',
-      blurb: 'Same counts you liked, but serif headlines, sentence-case labels (no UPPERCASE, no mono), outline custom icons, and a target-style Pursuit mark in the sidebar. Less utilitarian, more like a written page.'
+      name: 'Today · variant A (locked)',
+      blurb: 'The Today direction we picked. Big narrative count cards, action grid, "What we\'re noticing" with people / pause / moon icons.'
     },
     {
-      slug: 'today/b',
-      name: 'Today · variant B — Warm playful',
-      blurb: 'Sentence-case rounded sans, a tinted greeting card, colored ribbons on the count cards, filled custom icons in tinted circles, and a gradient Pursuit mark. More colorful and friendly.'
+      slug: 'board/a',
+      name: 'Board · variant A — Refined classic',
+      blurb: 'Tight kanban with real company logos, generous gaps between cards, subtle drag lift, and stale cards marked with a red dot + red applied date. The broken list/board toggle is removed.'
     },
     {
-      slug: 'today',
-      name: 'Today · v1 (original)',
-      blurb: 'The first pass you reacted to. Kept here for comparison.'
+      slug: 'board/b',
+      name: 'Board · variant B — Cinematic',
+      blurb: 'Larger cards with a colored status accent strip on top, circular logos, salary/next-interview chips, and stale cards with a pulsing red dot + "needs nudge" tag. Drag tilts the card slightly. Higher visual personality.'
     },
     {
       slug: 'brief',
       name: 'Application Brief (was Dossier)',
-      blurb: 'Renamed "Brief". Company logo, JD link back to source, AI company summary, hiring-manager LinkedIn, plus a tightened layout. The interviewer block stays but is one section of a fuller page about the role.'
+      blurb: 'Renamed "Brief". Company logo, JD link back to source, AI company summary, hiring-manager LinkedIn, plus a tightened layout.'
+    },
+    {
+      slug: 'today/b',
+      name: 'Today · variant B (rejected)',
+      blurb: 'Kept here for reference only.'
+    },
+    {
+      slug: 'today',
+      name: 'Today · v1 (rejected)',
+      blurb: 'Kept here for reference only.'
     }
   ];
 </script>
