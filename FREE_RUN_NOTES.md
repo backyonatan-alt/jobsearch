@@ -123,8 +123,50 @@ the moment you notice something; triage later.
 - **Brand mark**: target-style SVG (concentric circles + offset accent
   dot) paired with sentence-case "Pursuit" wordmark in Geist.
 
+### Wired into the real app (May 25 2026)
+
+- **Sidebar Pipeline section killed** — it was just filtered Today views.
+  Layout now shows Today / Board / Funnel only, plus the target-style
+  brand mark.
+- **Today (/app)**: locked Today A applied. Greeting + 4 count cards
+  with colored ribbons + per-metric subtitles derived from real apps,
+  AI-suggested action grid (prep for next interview, decide on open
+  offer, nudge oldest stale, learn about latest screen), insights row
+  with people/pause/moon icons in tinted squares (referral lift, days
+  since last apply, stale loops), applications table with real
+  favicons + relative dates + stale tag.
+- **Board (/app/board)**: locked Board A applied. Real favicons, 10px
+  card gaps, drag micro-animation (`scale(0.99) rotate(-0.5deg)` on
+  active), stale = red border + red stale-dot + red applied date,
+  six-column layout (rejected + withdrawn collapsed into a single
+  Closed column), broken list/board toggle removed.
+- **Funnel (/app/funnel)**: locked Funnel B applied. 4 KPI cards
+  (overall conversion, best CV variant, avg time to offer, in flight)
+  derived from real apps, monochromatic-blue stepped funnel with
+  numbers inside bars and soft accent-pill conversion %, source
+  breakdown (Referral / LinkedIn / Cold / Other) + CV variant bars
+  side-by-side, time-in-stage cells below. "What we're noticing"
+  removed (now lives on Today).
+- **Application detail (/app/[id])**: locked Brief applied. Hero strip
+  with real logo + status pill + JD link, Up-next card (when dossier
+  has a meeting), 3 at-a-glance stats (days in pipeline / current
+  stage of 4 / match score placeholder), tabs, dossier-driven content
+  rendered through the new Brief layout (interviewer card, snapshot,
+  background, recent posts & talks signals with per-source favicons,
+  "How to approach this interview" with check/cross markers,
+  questions). Generate/regenerate flow preserved.
+
+### Helpers added
+
+- `companyDomain(co, jdUrl)`, `faviconUrl(...)`, `daysSince(iso)`,
+  `isStale(a)`, `fmtRelativeDate(iso)` in `web/src/lib/app-helpers.js`.
+  `toDisplayApp` now also exposes `domain`, `logoSrc`, `appliedRel`,
+  `stale`.
+
 ### Still to design / decide
 
-- Pipeline section in sidebar (kill, since it's just filtered Today, or
-  justify keeping)
-- New application modal — no notes yet, may not need a redesign
+- **Google profile picture on user avatar**: the OAuth `picture` URL
+  isn't stored yet — needs a `users.picture_url` column + capture in
+  the Google callback + return from `/api/me`. Layout still shows
+  initials.
+- **New application modal**: no notes yet, may not need a redesign.
