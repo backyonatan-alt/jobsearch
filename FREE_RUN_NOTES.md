@@ -97,6 +97,10 @@ the moment you notice something; triage later.
 
 ## Shipped (move items here once fixed)
 
+### Bug fixes
+
+- `[bug]` dossier meeting hero rendered start time in the **server's** TZ while the Scheduled list rendered it in the **browser's** TZ — same event showed two different wall-clock times. Fixed by sending raw `starts_at`/`ends_at` from `meetingDTO` and letting the Svelte component format. (May 25 2026)
+
 ### Design decisions locked (May 25 2026 review session)
 
 - **Logo source**: Google favicon service

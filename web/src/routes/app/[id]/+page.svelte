@@ -11,6 +11,15 @@
   let notFound = $state(false);
   let tab = $state('brief');
 
+  // Interviews tab state
+  let interviews = $state([]);
+  let interviewsLoading = $state(false);
+  let icsText = $state('');
+  let icsParsing = $state(false);
+  let icsParseError = $state('');
+  let icsPreview = $state([]);
+  let icsSaving = $state(false);
+
   // Inline-action state
   let showStatusMenu = $state(false);
   let showEditModal = $state(false);
@@ -30,6 +39,7 @@
     void id;
     loadApp();
     loadDossier();
+    loadInterviews();
   });
 
   async function loadApp() {
@@ -80,6 +90,129 @@
     } finally {
       generating = false;
     }
+  }
+
+  async function loadInterviews() {
+    interviewsLoading = true;
+    try {
+      interviews = await api(`/api/applications/${id}/interviews`);
+    } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+      interviews = [];
+    } finally {
+      interviewsLoading = false;
+    }
+  }
+
+  async function onIcsFile(e) {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (f.size > 256 * 1024) {
+      icsParseError = 'File too large (256 KB max).';
+      return;
+    }
+    icsText = await f.text();
+    await parseIcs();
+  }
+
+  async function parseIcs() {
+    if (icsParsing) return;
+    icsParseError = '';
+    icsPreview = [];
+    const body = icsText.trim();
+    if (!body) {
+      icsParseError = 'Paste the .ics contents or pick a file.';
+      return;
+    }
+    icsParsing = true;
+    try {
+      const r = await api(`/api/applications/${id}/interviews/parse`, {
+        method: 'POST',
+        body: JSON.stringify({ ics: body })
+      });
+      icsPreview = r.events ?? [];
+      if (icsPreview.length === 0) icsParseError = 'No events found in that file.';
+    } catch (e) {
+      icsParseError = e.message || 'Could not parse calendar.';
+    } finally {
+      icsParsing = false;
+    }
+  }
+
+  async function saveParsedEvents() {
+    if (icsSaving || icsPreview.length === 0) return;
+    icsSaving = true;
+    try {
+      for (const ev of icsPreview) {
+        await api(`/api/applications/${id}/interviews`, {
+          method: 'POST',
+          body: JSON.stringify(ev)
+        });
+      }
+      icsText = '';
+      icsPreview = [];
+      await loadInterviews();
+      await loadDossier();
+    } catch (e) {
+      icsParseError = e.message || 'Could not save events.';
+    } finally {
+      icsSaving = false;
+    }
+  }
+
+  async function deleteInterview(iv) {
+    if (!confirm(`Delete "${iv.summary}"?`)) return;
+    await api(`/api/applications/${id}/interviews/${iv.id}`, { method: 'DELETE' });
+    await loadInterviews();
+    await loadDossier();
+  }
+
+  function fmtEventWhen(ev) {
+    const d = new Date(ev.starts_at);
+    if (ev.all_day) {
+      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
+    }
+    const date = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    let suffix = '';
+    if (ev.ends_at) {
+      const end = new Date(ev.ends_at);
+      const mins = Math.round((end - d) / 60000);
+      if (mins > 0) suffix = ` · ${mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`}`;
+    }
+    return `${date}, ${time}${suffix}`;
+  }
+
+  function isPast(ev) {
+    return new Date(ev.starts_at) < new Date();
+  }
+
+  // Meeting hero formatters — used when the dossier has a real interview
+  // linked. starts_at/ends_at are ISO timestamps from the server; format in
+  // the viewer's TZ so the hero matches the Scheduled list below.
+  function meetingWhen(meeting) {
+    if (!meeting?.starts_at) return meeting?.when ?? 'Upcoming · time TBD';
+    const d = new Date(meeting.starts_at);
+    if (meeting.all_day) {
+      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
+    }
+    const now = new Date();
+    const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+    const days = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
+    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    if (days === 0) return `Today · ${time}`;
+    if (days === 1) return `Tomorrow · ${time}`;
+    if (days > 1 && days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'long' })} · ${time}`;
+    if (days < 0) return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time} (past)`;
+    return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
+  }
+
+  function meetingDuration(meeting) {
+    if (!meeting?.starts_at || !meeting?.ends_at) return meeting?.duration ?? '—';
+    const mins = Math.round((new Date(meeting.ends_at) - new Date(meeting.starts_at)) / 60000);
+    if (mins <= 0) return meeting.duration ?? '—';
+    return mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`;
   }
 
   async function setStatus(newStatus) {
@@ -242,13 +375,13 @@
       </div>
 
       <!-- UP NEXT (only when we have a dossier with a meeting) -->
-      {#if dossier?.meeting?.when}
+      {#if dossier?.meeting && (dossier.meeting.starts_at || dossier.meeting.when)}
         <div class="upnext">
           <div class="up-left">
             <span class="up-tag"><span class="up-pulse"></span>Up next</span>
-            <h3>{dossier.meeting.when}</h3>
+            <h3>{meetingWhen(dossier.meeting)}</h3>
             <div class="up-meta">
-              {#if dossier.meeting.duration}<span>{dossier.meeting.duration}</span>{/if}
+              <span>{meetingDuration(dossier.meeting)}</span>
               {#if dossier.meeting.medium}<span class="dot">·</span><span>{dossier.meeting.medium}</span>{/if}
               {#if dossier.meeting.panel}<span class="dot">·</span><span>{dossier.meeting.panel}</span>{/if}
             </div>
@@ -287,6 +420,9 @@
       <div class="tabs">
         <button class={`tab ${tab === 'brief' ? 'active' : ''}`} onclick={() => (tab = 'brief')}>
           Brief <span class="t-tag">AI</span>
+        </button>
+        <button class={`tab ${tab === 'interviews' ? 'active' : ''}`} onclick={() => (tab = 'interviews')}>
+          Interviews <span class="t-tag">{interviews.length}</span>
         </button>
         <button class={`tab ${tab === 'timeline' ? 'active' : ''}`} onclick={() => (tab = 'timeline')}>
           Timeline <span class="t-tag">{timeline.length}</span>
@@ -478,6 +614,75 @@
             {/if}
           </div>
         {/if}
+      {:else if tab === 'interviews'}
+        <div class="ics-card">
+          <h3>Add an interview from your calendar</h3>
+          <p class="ics-hint">
+            Drop in a <code>.ics</code> file (calendar export) or paste the raw text.
+            We'll extract the event, link it to this application, and surface it in the brief.
+          </p>
+          <div class="ics-row">
+            <label class="btn ics-file">
+              Choose .ics file
+              <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} style="display:none" />
+            </label>
+            <span class="ics-sep">or paste below</span>
+          </div>
+          <textarea
+            class="ics-textarea"
+            rows="4"
+            placeholder="BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT&#10;…"
+            bind:value={icsText}
+          ></textarea>
+          <div class="ics-actions">
+            <button class="btn btn-primary" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
+              {icsParsing ? 'Parsing…' : 'Parse'}
+            </button>
+            {#if icsPreview.length > 0}
+              <button class="btn" onclick={saveParsedEvents} disabled={icsSaving}>
+                {icsSaving ? 'Saving…' : `Save ${icsPreview.length} event${icsPreview.length === 1 ? '' : 's'}`}
+              </button>
+            {/if}
+          </div>
+          {#if icsParseError}<p class="dossier-err" style="margin-top: 10px">{icsParseError}</p>{/if}
+
+          {#if icsPreview.length > 0}
+            <div class="ics-preview">
+              <h4>Preview</h4>
+              {#each icsPreview as ev}
+                <div class="ics-preview-row">
+                  <div class="iv-when">{fmtEventWhen(ev)}</div>
+                  <div class="iv-summary">{ev.summary || 'Untitled event'}</div>
+                  {#if ev.location}<div class="iv-loc">📍 {ev.location}</div>{/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <div class="iv-list">
+          <h3>Scheduled</h3>
+          {#if interviewsLoading}
+            <p style="color:var(--mute); font-size:13px;">Loading…</p>
+          {:else if interviews.length === 0}
+            <div class="empty-tab">
+              <h3>No interviews on file</h3>
+              <p>Once you add one above, it appears here and the brief picks it up.</p>
+            </div>
+          {:else}
+            {#each interviews as iv (iv.id)}
+              <div class="iv-card" class:past={isPast(iv)}>
+                <div class="iv-card-main">
+                  <div class="iv-when">{fmtEventWhen(iv)}</div>
+                  <div class="iv-summary">{iv.summary || 'Untitled event'}</div>
+                  {#if iv.location}<div class="iv-loc">📍 {iv.location}</div>{/if}
+                  {#if iv.attendees}<div class="iv-att">👥 {iv.attendees}</div>{/if}
+                </div>
+                <button class="btn btn-danger" onclick={() => deleteInterview(iv)} title="Delete">Delete</button>
+              </div>
+            {/each}
+          {/if}
+        </div>
       {:else if tab === 'timeline'}
         {#if timeline.length > 0}
           <div class="timeline">
@@ -794,4 +999,55 @@
   }
   .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
   .empty-tab p { color: var(--mute); margin: 0; font-size: 13.5px; }
+
+  /* Interviews tab */
+  .ics-card {
+    border: 1px dashed var(--rule-strong);
+    border-radius: 12px;
+    padding: 20px 24px;
+    background: var(--card);
+    margin-bottom: 24px;
+  }
+  .ics-card h3 { font-size: 15px; font-weight: 600; letter-spacing: -0.012em; margin: 0 0 .35rem; color: var(--ink); }
+  .ics-hint { font-size: 13px; color: var(--mute); margin: 0 0 1rem; line-height: 1.5; }
+  .ics-hint code { background: var(--surface-2); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .ics-row { display: flex; align-items: center; gap: 12px; margin-bottom: .75rem; }
+  .ics-file { cursor: pointer; }
+  .ics-sep { color: var(--mute); font-size: 12px; }
+  .ics-textarea {
+    width: 100%;
+    font: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 8px 10px;
+    outline: none;
+    resize: vertical;
+    box-sizing: border-box;
+  }
+  .ics-textarea:focus { border-color: var(--accent); }
+  .ics-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .ics-preview { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--rule); }
+  .ics-preview h4 { font-size: 12px; font-weight: 500; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 8px; }
+  .ics-preview-row { padding: 8px 0; border-bottom: 1px solid var(--rule); }
+  .ics-preview-row:last-of-type { border-bottom: none; }
+
+  .iv-list h3 { font-size: 13px; font-weight: 500; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 12px; }
+  .iv-card {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: var(--card);
+    margin-bottom: 8px;
+  }
+  .iv-card.past { opacity: 0.6; }
+  .iv-card-main { flex: 1; min-width: 0; }
+  .iv-when { font-size: 12px; color: var(--accent-text); font-weight: 500; margin-bottom: 2px; }
+  .iv-summary { font-size: 14px; color: var(--ink); margin-bottom: 2px; }
+  .iv-loc, .iv-att { font-size: 12px; color: var(--mute); margin-top: 2px; }
 </style>

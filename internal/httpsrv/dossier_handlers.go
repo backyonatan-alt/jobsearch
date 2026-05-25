@@ -27,10 +27,18 @@ type dossierDTO struct {
 }
 
 type meetingDTO struct {
+	// When/Duration are server-rendered fallbacks for when no real interview
+	// is linked — placeholder strings the dossier hero used before .ics
+	// ingest existed. When StartsAt is set the frontend formats from the raw
+	// timestamps instead so the viewer sees their own timezone.
 	When     string `json:"when"`
 	Duration string `json:"duration"`
 	Medium   string `json:"medium"`
 	Panel    string `json:"panel"`
+
+	StartsAt *time.Time `json:"starts_at,omitempty"`
+	EndsAt   *time.Time `json:"ends_at,omitempty"`
+	AllDay   bool       `json:"all_day,omitempty"`
 }
 
 // GET /api/applications/:id/dossier — returns the cached dossier or 404.
@@ -74,7 +82,7 @@ func (s *Server) handleDossierGet(w http.ResponseWriter, r *http.Request) {
 		GeneratedAgo:    humanAgo(generatedAt),
 		ModelUsed:       modelUsed,
 		Content:         content,
-		Meeting:         meetingPlaceholder(app, deref(interviewerName)),
+		Meeting:         s.meetingForApp(r.Context(), app, deref(interviewerName)),
 	})
 }
 
@@ -150,7 +158,7 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		GeneratedAgo:    "just now",
 		ModelUsed:       modelUsed,
 		Content:         content,
-		Meeting:         meetingPlaceholder(app, req.InterviewerName),
+		Meeting:         s.meetingForApp(r.Context(), app, req.InterviewerName),
 	})
 }
 
@@ -184,6 +192,42 @@ func meetingPlaceholder(app *applicationRow, interviewer string) meetingDTO {
 		Duration: "60 min",
 		Medium:   "Video call",
 		Panel:    panel,
+	}
+}
+
+// meetingForApp prefers a real upcoming interview pulled from the interviews
+// table; if none exists, falls back to the placeholder so the dossier still
+// renders. Logged-and-swallowed errors keep the dossier resilient even if the
+// interviews query fails.
+//
+// When a real interview exists, we emit only the raw timestamps (StartsAt /
+// EndsAt / AllDay) and leave When/Duration empty — the frontend formats both
+// in the viewer's timezone. Server-side formatting renders in the server's
+// zone, which surfaces as a TZ mismatch against the Scheduled list.
+func (s *Server) meetingForApp(ctx context.Context, app *applicationRow, interviewer string) meetingDTO {
+	iv, err := s.nextInterview(ctx, app.ID)
+	if err != nil {
+		s.Logger.Error("next interview lookup", "err", err, "app_id", app.ID)
+	}
+	if iv == nil {
+		return meetingPlaceholder(app, interviewer)
+	}
+
+	panel := interviewer
+	if panel == "" {
+		panel = "(hiring team)"
+	}
+	medium := "Video call"
+	if loc := deref(iv.Location); loc != "" {
+		medium = loc
+	}
+	start := iv.StartsAt
+	return meetingDTO{
+		Panel:    panel,
+		Medium:   medium,
+		StartsAt: &start,
+		EndsAt:   iv.EndsAt,
+		AllDay:   iv.AllDay,
 	}
 }
 
