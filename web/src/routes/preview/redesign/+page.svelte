@@ -3,32 +3,37 @@
     {
       slug: 'today/a',
       name: 'Today · variant A (locked)',
-      blurb: 'The Today direction we picked. Big narrative count cards, action grid, "What we\'re noticing" with people / pause / moon icons.'
+      blurb: 'The Today direction we picked.'
     },
     {
       slug: 'board/a',
-      name: 'Board · variant A — Refined classic',
-      blurb: 'Tight kanban with real company logos, generous gaps between cards, subtle drag lift, and stale cards marked with a red dot + red applied date. The broken list/board toggle is removed.'
-    },
-    {
-      slug: 'board/b',
-      name: 'Board · variant B — Cinematic',
-      blurb: 'Larger cards with a colored status accent strip on top, circular logos, salary/next-interview chips, and stale cards with a pulsing red dot + "needs nudge" tag. Drag tilts the card slightly. Higher visual personality.'
+      name: 'Board · variant A (locked)',
+      blurb: 'Refined kanban with real logos, drag micro-animation, stale red.'
     },
     {
       slug: 'brief',
-      name: 'Application Brief (was Dossier)',
-      blurb: 'Renamed "Brief". Company logo, JD link back to source, AI company summary, hiring-manager LinkedIn, plus a tightened layout.'
+      name: 'Application Brief (current)',
+      blurb: 'Latest pass — flat (no gradients), no salary, neutral chips, redesigned lands/avoid as "How to approach this interview".'
+    },
+    {
+      slug: 'logos',
+      name: 'Logo gallery (Clearbit)',
+      blurb: 'Standalone preview of the company logos the demo will use, at the three sizes the design system needs, plus the letter-square fallback for unknown companies.'
     },
     {
       slug: 'today/b',
       name: 'Today · variant B (rejected)',
-      blurb: 'Kept here for reference only.'
+      blurb: 'Reference only.'
     },
     {
       slug: 'today',
       name: 'Today · v1 (rejected)',
-      blurb: 'Kept here for reference only.'
+      blurb: 'Reference only.'
+    },
+    {
+      slug: 'board/b',
+      name: 'Board · variant B (rejected)',
+      blurb: 'Reference only.'
     }
   ];
 </script>
