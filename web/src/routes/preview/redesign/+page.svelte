@@ -16,14 +16,14 @@
       blurb: 'Latest pass — flat (no gradients), no salary, neutral chips, redesigned lands/avoid as "How to approach this interview".'
     },
     {
-      slug: 'funnel/b-options',
-      name: 'Funnel · 3 chart options (built on B)',
-      blurb: 'Three treatments for the funnel chart\'s colors + number styling. Pick one — that becomes the chart inside the locked B dashboard.'
+      slug: 'funnel/b',
+      name: 'Funnel · variant B (locked)',
+      blurb: 'Dashboard layout B with the monochromatic-blue chart (Option 1).'
     },
     {
-      slug: 'funnel/b',
-      name: 'Funnel · variant B (locked dashboard)',
-      blurb: 'The dashboard layout we picked. The chart inside it is one of the 3 options above.'
+      slug: 'funnel/b-options',
+      name: 'Funnel · the 3 chart options',
+      blurb: 'Reference — the three chart treatments we compared. Option 1 won.'
     },
     {
       slug: 'funnel/a',

@@ -115,12 +115,16 @@ the moment you notice something; triage later.
   `/preview/redesign/brief`. Flat (no gradients), no salary block,
   neutral chips with colored group dots, lands/avoid replaced by
   "How to approach this interview" with check/cross markers.
+- **Funnel page**: variant B dashboard locked, chart Option 1 locked
+  (`/preview/redesign/funnel/b`). 4 KPI cards on top (overall, best
+  CV, avg time-to-offer, in flight), stepped funnel in monochromatic
+  blue with numbers inside bars and soft accent-pill conversion %,
+  source + CV bar charts side-by-side, time-in-stage cells below.
 - **Brand mark**: target-style SVG (concentric circles + offset accent
   dot) paired with sentence-case "Pursuit" wordmark in Geist.
 
 ### Still to design / decide
 
-- Funnel page (Mixpanel-style chart, modernized layout)
 - Pipeline section in sidebar (kill, since it's just filtered Today, or
   justify keeping)
 - New application modal — no notes yet, may not need a redesign

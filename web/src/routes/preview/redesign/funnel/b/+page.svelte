@@ -113,19 +113,17 @@
               {@const stagePct = prev !== null ? pct(s.n, prev) : null}
               <div class="fb-row">
                 <div class="fb-lbl-col">
-                  <span class={`fb-dot d-${s.tone}`}></span>
                   <span class="fb-lbl">{s.label}</span>
                 </div>
                 <div class="fb-track">
-                  <div class={`fb-fill f-${s.tone}`} style="width: {width}%"></div>
+                  <div class="fb-fill" style={`width: ${width}%; background: oklch(${0.78 - i*0.1} 0.16 258);`}></div>
                   <span class="fb-n">{s.n}</span>
                 </div>
                 <div class="fb-pct">
                   {#if stagePct === null}
-                    <span class="fb-base">100%</span>
+                    <span class="fb-base">baseline</span>
                   {:else}
-                    <span class={`fb-rate rate-${stagePct >= 50 ? 'good' : stagePct >= 25 ? 'mid' : 'low'}`}>{stagePct}%</span>
-                    <span class="fb-of">of {stages[i-1].label}</span>
+                    <span class="fb-rate-pill">{stagePct}%</span>
                   {/if}
                 </div>
               </div>
@@ -255,30 +253,25 @@
   .block-hd h2 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
   .ai-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; background: var(--accent-tint); color: var(--accent-text); padding: 3px 10px; border-radius: 99px; font-weight: 500; }
 
-  /* Funnel bars */
+  /* Funnel bars — monochromatic blue (Option 1) */
   .funnel-bars { display: flex; flex-direction: column; gap: 14px; }
   .fb-row { display: grid; grid-template-columns: 130px 1fr 140px; gap: 16px; align-items: center; }
   .fb-lbl-col { display: flex; align-items: center; gap: 8px; }
-  .fb-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--mute-2); }
-  .fb-dot.d-mute     { background: var(--mute-2); }
-  .fb-dot.d-positive { background: var(--positive); }
-  .fb-dot.d-accent   { background: var(--accent); }
-  .fb-dot.d-warm     { background: var(--warm); }
   .fb-lbl { font-size: 13.5px; font-weight: 600; }
-  .fb-track { position: relative; height: 32px; background: var(--surface-2); border-radius: 8px; overflow: hidden; }
-  .fb-fill { height: 100%; border-radius: 8px; transition: width 200ms ease; }
-  .fb-fill.f-mute     { background: oklch(0.82 0.02 258); }
-  .fb-fill.f-positive { background: var(--positive); }
-  .fb-fill.f-accent   { background: var(--accent); }
-  .fb-fill.f-warm     { background: var(--warm); }
-  .fb-n { position: absolute; top: 50%; left: 12px; transform: translateY(-50%); font-size: 13px; font-weight: 600; color: white; mix-blend-mode: difference; font-feature-settings: "tnum"; }
+  .fb-track { position: relative; height: 36px; background: var(--surface-2); border-radius: 10px; overflow: hidden; }
+  .fb-fill { height: 100%; border-radius: 10px; transition: width 240ms ease; }
+  .fb-n {
+    position: absolute; top: 50%; left: 14px; transform: translateY(-50%);
+    font-size: 14px; font-weight: 700; color: white;
+    font-feature-settings: "tnum"; letter-spacing: -0.01em;
+  }
   .fb-pct { display: flex; align-items: baseline; gap: 6px; }
-  .fb-rate { font-size: 20px; font-weight: 600; font-feature-settings: "tnum"; }
-  .rate-good { color: var(--positive-text); }
-  .rate-mid  { color: var(--warm-text); }
-  .rate-low  { color: var(--danger-text); }
-  .fb-base { font-size: 14px; color: var(--mute); font-weight: 500; }
-  .fb-of { font-size: 12px; color: var(--mute); }
+  .fb-rate-pill {
+    font-size: 14px; font-weight: 600; padding: 5px 12px; border-radius: 99px;
+    background: var(--accent-tint); color: var(--accent-text);
+    font-feature-settings: "tnum";
+  }
+  .fb-base { font-size: 12.5px; color: var(--mute); font-style: italic; }
 
   /* Two-column */
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
