@@ -27,13 +27,15 @@ type User struct {
 	Email       string
 	IsAdmin     bool
 	OnboardedAt *time.Time
+	PictureURL  *string
 }
 
 // UpsertUserAndSession creates (or updates) the user row for the given email
 // and issues a new session token. If `makeAdmin` is true the user's is_admin
 // flag is set to true (used so the configured ADMIN_EMAILS automatically gain
-// admin on sign-in).
-func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip string, makeAdmin bool) (sessionToken string, u User, err error) {
+// admin on sign-in). `pictureURL` is the Google profile picture URL from the
+// ID token — refreshed on every sign-in so it stays current.
+func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip, pictureURL string, makeAdmin bool) (sessionToken string, u User, err error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || !strings.Contains(email, "@") {
 		return "", User{}, errors.New("invalid email")
@@ -45,13 +47,15 @@ func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip
 	}
 	defer tx.Rollback(ctx)
 
+	// NULLIF so a missing picture claim doesn't clobber a previously stored one.
 	err = tx.QueryRow(ctx, `
-		INSERT INTO users (email, is_admin) VALUES ($1, $2)
+		INSERT INTO users (email, is_admin, picture_url) VALUES ($1, $2, NULLIF($3, ''))
 		ON CONFLICT (email) DO UPDATE SET
 		    last_login_at = now(),
-		    is_admin = users.is_admin OR EXCLUDED.is_admin
-		RETURNING id, email, is_admin, onboarded_at`,
-		email, makeAdmin).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt)
+		    is_admin = users.is_admin OR EXCLUDED.is_admin,
+		    picture_url = COALESCE(NULLIF($3, ''), users.picture_url)
+		RETURNING id, email, is_admin, onboarded_at, picture_url`,
+		email, makeAdmin, pictureURL).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt, &u.PictureURL)
 	if err != nil {
 		return "", User{}, fmt.Errorf("upsert user: %w", err)
 	}
@@ -81,10 +85,10 @@ func (s *Service) UserBySession(ctx context.Context, token string) (User, bool, 
 	}
 	var u User
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.email, u.is_admin, u.onboarded_at
+		SELECT u.id, u.email, u.is_admin, u.onboarded_at, u.picture_url
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token = $1 AND s.expires_at > now()`,
-		token).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt)
+		token).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt, &u.PictureURL)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
