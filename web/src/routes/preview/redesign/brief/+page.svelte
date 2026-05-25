@@ -70,7 +70,14 @@
 <div class="frame">
   <!-- Compact sidebar -->
   <aside class="sidebar">
-    <div class="brand"><span class="mark"></span><span class="name">Pursuit</span></div>
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" width="24" height="24" fill="none">
+        <circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.4" opacity="0.65"/>
+        <circle cx="12" cy="12" r="5.5" stroke="currentColor" stroke-width="1.4" opacity="0.9"/>
+        <circle cx="17.5" cy="6.5" r="2.6" fill="currentColor"/>
+      </svg>
+      <span class="brand-name">Pursuit</span>
+    </div>
     <a class="nav-item"><span class="dot"></span>Today</a>
     <a class="nav-item active"><span class="dot"></span>Board</a>
     <a class="nav-item"><span class="dot"></span>Funnel</a>
@@ -297,8 +304,9 @@
 
   /* Sidebar */
   .sidebar { background: var(--surface-2); border-right: 1px solid var(--rule); padding: 18px 14px; display: flex; flex-direction: column; gap: 4px; }
-  .brand { display: flex; align-items: center; gap: 8px; padding: 4px 8px 18px; font-weight: 600; font-size: 14.5px; letter-spacing: -0.01em; }
-  .brand .mark { width: 16px; height: 16px; border-radius: 4px; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; color: var(--accent); }
+  .brand-name { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
+  .brand-mark { color: var(--accent); }
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
   .nav-item .dot { width: 14px; height: 14px; border-radius: 3px; background: var(--rule-strong); }
   .nav-item.active { background: var(--card); color: var(--ink); box-shadow: var(--sh-1); }
@@ -326,7 +334,7 @@
   .app-hd { display: grid; grid-template-columns: 64px 1fr auto; gap: 18px; align-items: center; margin-bottom: 24px; }
   .logo-big { width: 64px; height: 64px; border-radius: 12px; background: var(--card); object-fit: contain; padding: 8px; border: 1px solid var(--rule); }
   .co-line { display: flex; align-items: center; gap: 12px; }
-  .co-line h1 { font-size: 24px; font-weight: 500; margin: 0; letter-spacing: -0.02em; }
+  .co-line h1 { font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -0.025em; }
   .role-line { font-size: 16px; color: var(--ink-2); margin-top: 2px; }
   .sub { font-size: 12.5px; color: var(--mute); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 0 6px; }
   .sub .dot { color: var(--mute-2); }
@@ -343,13 +351,13 @@
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin-bottom: 24px; }
   .tab { background: transparent; border: 0; padding: 10px 14px; font-size: 13px; color: var(--mute); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500; }
   .tab.active { color: var(--ink); border-bottom-color: var(--ink); }
-  .tab .count { font-family: var(--mono); font-size: 10px; background: var(--accent-tint); color: var(--accent-text); padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+  .tab .count { font-size: 11px; background: var(--accent-tint); color: var(--accent-text); padding: 1px 7px; border-radius: 99px; margin-left: 4px; font-weight: 500; }
 
   /* Block */
   .block { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 22px 24px; margin-bottom: 16px; box-shadow: var(--sh-1); }
   .block-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
   .block-hd h2 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
-  .ai-tag { font-family: var(--mono); font-size: 10px; background: var(--accent-tint); color: var(--accent-text); padding: 2px 7px; border-radius: 4px; letter-spacing: 0.04em; }
+  .ai-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; background: var(--accent-tint); color: var(--accent-text); padding: 3px 10px; border-radius: 99px; font-weight: 500; }
   .regen { background: transparent; border: 0; color: var(--accent-text); font-size: 12px; cursor: pointer; margin-left: auto; font-weight: 500; }
 
   /* Role */
@@ -360,7 +368,7 @@
   .role-meta dt { color: var(--mute); margin: 0; }
   .role-meta dd { margin: 0; color: var(--ink); font-feature-settings: "tnum"; }
   .role-reqs { display: flex; flex-direction: column; gap: 14px; }
-  .req-hd { font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; font-weight: 500; }
+  .req-hd { font-size: 12.5px; color: var(--mute); margin-bottom: 8px; font-weight: 600; }
   .req-col ul { margin: 0; padding: 0; list-style: none; }
   .req-col li { font-size: 12.5px; padding: 4px 0; color: var(--ink-2); position: relative; padding-left: 14px; }
   .req-col li::before { content: '·'; position: absolute; left: 4px; color: var(--mute-2); }
@@ -395,12 +403,12 @@
   /* Signals */
   .signals { margin-bottom: 20px; }
   .sig-hd { font-size: 13px; font-weight: 500; margin-bottom: 8px; }
-  .sig-hd .num { font-family: var(--mono); font-size: 11px; color: var(--mute); margin-left: 6px; font-weight: 400; }
+  .sig-hd .num { font-size: 12px; color: var(--mute); margin-left: 8px; font-weight: 400; }
   .signals ul { margin: 0; padding: 0; list-style: none; }
-  .signals li { display: grid; grid-template-columns: 60px 1fr; padding: 6px 0; font-size: 12.5px; border-top: 1px dashed var(--rule); }
+  .signals li { display: grid; grid-template-columns: 60px 1fr; padding: 8px 0; font-size: 13px; border-top: 1px dashed var(--rule); }
   .signals li:first-child { border-top: 0; }
-  .signals .date { color: var(--mute); font-family: var(--mono); font-size: 11px; padding-top: 2px; }
-  .signals .kind { font-family: var(--mono); font-size: 10px; background: var(--surface-2); color: var(--mute); padding: 1px 5px; border-radius: 3px; margin-right: 6px; }
+  .signals .date { color: var(--mute); font-size: 12px; padding-top: 2px; }
+  .signals .kind { font-size: 11px; background: var(--surface-2); color: var(--mute); padding: 2px 8px; border-radius: 99px; margin-right: 8px; font-weight: 500; }
   .signals .source { color: var(--accent-text); margin-left: 4px; font-size: 11.5px; }
 
   /* Lands / avoid */
@@ -422,7 +430,7 @@
   .questions { margin-top: 8px; }
   .questions ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
   .questions li { background: var(--card); padding: 12px 14px; display: grid; grid-template-columns: 24px 1fr 28px; gap: 12px; align-items: center; }
-  .qn { font-family: var(--mono); font-size: 11px; color: var(--mute); }
+  .qn { font-size: 13px; color: var(--mute); font-weight: 600; font-feature-settings: "tnum"; }
   .q { font-size: 13px; font-style: italic; color: var(--ink); }
   .why { font-size: 11.5px; color: var(--mute); margin-top: 3px; }
   .save { background: var(--surface-2); border: 0; width: 24px; height: 24px; border-radius: 6px; cursor: pointer; color: var(--mute); font-size: 14px; }
