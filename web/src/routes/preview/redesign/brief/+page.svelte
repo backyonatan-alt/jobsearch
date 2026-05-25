@@ -28,11 +28,11 @@
     { lbl: 'Match score',      n: 'A−', sub: 'CV v3 vs. JD',      tone: 'warm'     }
   ];
 
-  // Compact tags for the role section (replaces long must/nice prose).
+  // Compact tags for the role section (single neutral chip style, with
+  // a colored dot indicator on the group label).
   const mustHave = ['10+ yrs distributed systems', 'Go or Rust at scale', 'Owned a Tier-0 service'];
   const niceHave = ['Payments / fintech', 'Multi-region active-active', 'OSS maintainership'];
   const techStack = ['Go', 'Rust', 'PostgreSQL', 'Kafka', 'AWS'];
-  const salaryRange = { low: '$280k', high: '$340k', note: 'base + equity' };
 
   // Trimmed company copy.
   const company = {
@@ -59,9 +59,9 @@
     prior: ['Cloudflare', 'Two Sigma', 'CMU MS'],
     snapshot: '2 years at Stripe on payments-routing. Known for her QCon SF 2024 talk on regional failover — likely to drill on failure modes more than happy paths.',
     signals: [
-      { date: 'Apr 26', kind: 'Talk', body: '"Regional failover at p99.99"',     source: 'qconsf.com' },
-      { date: 'Mar 04', kind: 'Post', body: 'Thread on idempotency-key collisions', source: 'twitter.com' },
-      { date: 'Jan 12', kind: 'Doc',  body: 'Cited in Stripe multi-region writes', source: 'stripe.com' }
+      { date: 'Apr 26', kind: 'Talk', body: '"Regional failover at p99.99"',     source: 'qconsf.com',  domain: 'qconsf.com' },
+      { date: 'Mar 04', kind: 'Post', body: 'Thread on idempotency-key collisions', source: 'twitter.com', domain: 'twitter.com' },
+      { date: 'Jan 12', kind: 'Doc',  body: 'Cited in Stripe multi-region writes', source: 'stripe.com',  domain: 'stripe.com' }
     ],
     lands: [
       'Concrete failure-mode reasoning',
@@ -203,18 +203,12 @@
               <h2>The role</h2>
               <span class="ai-tag">AI · from JD</span>
             </div>
-            <div class="salary-card">
-              <div class="salary-row">
-                <span class="sal-big">{salaryRange.low}–{salaryRange.high}</span>
-                <span class="sal-sub">{salaryRange.note}</span>
-              </div>
-            </div>
             <div class="req-group">
               <div class="req-hd">
                 <span class="req-dot d-must"></span>Must-have
               </div>
               <div class="chip-row">
-                {#each mustHave as m}<span class="chip c-must">{m}</span>{/each}
+                {#each mustHave as m}<span class="chip">{m}</span>{/each}
               </div>
             </div>
             <div class="req-group">
@@ -222,7 +216,7 @@
                 <span class="req-dot d-nice"></span>Nice-to-have
               </div>
               <div class="chip-row">
-                {#each niceHave as n}<span class="chip c-nice">{n}</span>{/each}
+                {#each niceHave as n}<span class="chip">{n}</span>{/each}
               </div>
             </div>
             <div class="req-group">
@@ -230,7 +224,7 @@
                 <span class="req-dot d-tech"></span>Tech in the stack
               </div>
               <div class="chip-row">
-                {#each techStack as t}<span class="chip c-tech">{t}</span>{/each}
+                {#each techStack as t}<span class="chip">{t}</span>{/each}
               </div>
             </div>
           </div>
@@ -316,32 +310,67 @@
           <p>{interviewer.snapshot}</p>
         </div>
 
-        <!-- SIGNALS + LANDS/AVOID — three-column visual -->
+        <!-- RECENT POSTS & TALKS — public things the interviewer has said/done
+             that you can reference or read before the meeting -->
         <div class="block">
           <div class="block-hd">
-            <h2>What you can use</h2>
+            <h2>Recent posts &amp; talks</h2>
             <span class="ai-tag">last 90 days</span>
           </div>
-
           <div class="signals-row">
             {#each interviewer.signals as s}
-              <div class="signal">
-                <div class="sig-kind kind-{s.kind.toLowerCase()}">{s.kind}</div>
-                <div class="sig-date">{s.date}</div>
+              <a class="signal" href="#">
+                <img class="sig-logo" src={`https://logo.clearbit.com/${s.domain}`} alt="" />
+                <div class="sig-meta">
+                  <span class="sig-kind">{s.kind}</span>
+                  <span class="sig-date">{s.date}</span>
+                </div>
                 <div class="sig-body">{s.body}</div>
-                <a class="sig-src" href="#">{s.source} ↗</a>
-              </div>
+                <div class="sig-src">{s.source} ↗</div>
+              </a>
             {/each}
           </div>
+        </div>
 
-          <div class="la-grid">
-            <div class="la-col lands">
-              <div class="la-hd"><span class="la-glyph">+</span>What lands</div>
-              <ul>{#each interviewer.lands as l}<li>{l}</li>{/each}</ul>
+        <!-- HOW TO APPROACH — was "What lands / What to avoid".
+             Now a single block with two clean lists and check / cross icons. -->
+        <div class="block">
+          <div class="block-hd">
+            <h2>How to approach this interview</h2>
+            <span class="ai-tag">AI · interviewer-specific</span>
+          </div>
+          <div class="approach-grid">
+            <div class="approach-col">
+              <div class="approach-hd ok">
+                <span class="approach-glyph ok">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg>
+                </span>
+                Lead with
+              </div>
+              <ul class="approach-list">{#each interviewer.lands as l}
+                <li>
+                  <span class="approach-marker ok">
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg>
+                  </span>
+                  <span>{l}</span>
+                </li>
+              {/each}</ul>
             </div>
-            <div class="la-col avoid">
-              <div class="la-hd"><span class="la-glyph">−</span>What to avoid</div>
-              <ul>{#each interviewer.avoid as a}<li>{a}</li>{/each}</ul>
+            <div class="approach-col">
+              <div class="approach-hd no">
+                <span class="approach-glyph no">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+                </span>
+                Steer clear of
+              </div>
+              <ul class="approach-list">{#each interviewer.avoid as a}
+                <li>
+                  <span class="approach-marker no">
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+                  </span>
+                  <span>{a}</span>
+                </li>
+              {/each}</ul>
             </div>
           </div>
         </div>
@@ -409,11 +438,12 @@
 
   /* HERO */
   .hero {
-    background: linear-gradient(135deg, var(--accent-tint) 0%, var(--card) 60%);
+    background: var(--card);
     border: 1px solid var(--rule);
     border-radius: 18px;
     padding: 22px 24px;
     margin-bottom: 14px;
+    box-shadow: var(--sh-1);
   }
   .hero-top { display: grid; grid-template-columns: 64px 1fr auto; gap: 18px; align-items: center; }
   .logo-big { width: 64px; height: 64px; border-radius: 14px; background: var(--card); object-fit: contain; padding: 8px; border: 1px solid var(--rule); }
@@ -496,30 +526,16 @@
   .block-hd h2 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
   .ai-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; background: var(--accent-tint); color: var(--accent-text); padding: 3px 10px; border-radius: 99px; font-weight: 500; }
 
-  /* ROLE — salary visual + chips */
-  .salary-card {
-    background: linear-gradient(135deg, var(--warm-tint), var(--card));
-    border: 1px solid var(--rule);
-    border-radius: 12px;
-    padding: 14px 16px;
-    margin-bottom: 16px;
-  }
-  .salary-row { display: flex; align-items: baseline; gap: 10px; }
-  .sal-big { font-size: 24px; font-weight: 600; color: var(--warm-text); letter-spacing: -0.025em; }
-  .sal-sub { font-size: 12.5px; color: var(--mute); }
-
-  .req-group { margin-bottom: 14px; }
+  /* ROLE — single neutral chip style; group label carries the only color. */
+  .req-group { margin-bottom: 16px; }
   .req-group:last-child { margin-bottom: 0; }
   .req-hd { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 8px; font-weight: 600; }
   .req-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mute-2); }
   .d-must { background: var(--positive); }
   .d-nice { background: var(--accent); }
   .d-tech { background: var(--warm); }
-  .chip-row { display: flex; flex-wrap: wrap; gap: 5px; }
-  .chip { font-size: 12px; padding: 4px 10px; border-radius: 99px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); }
-  .chip.c-must { background: var(--positive-tint); color: var(--positive-text); }
-  .chip.c-nice { background: var(--accent-tint); color: var(--accent-text); }
-  .chip.c-tech { background: var(--warm-tint); color: var(--warm-text); }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 12.5px; padding: 5px 11px; border-radius: 99px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--rule); }
 
   /* COMPANY */
   .company-id { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
@@ -549,9 +565,9 @@
   .p-lbl { font-size: 11.5px; color: var(--mute); font-weight: 600; }
   .prior-chip { font-size: 11.5px; background: var(--surface-2); color: var(--ink-2); padding: 3px 9px; border-radius: 99px; font-weight: 500; }
 
-  /* SNAPSHOT */
+  /* SNAPSHOT — flat accent-tint card, no gradient */
   .snapshot-card {
-    background: linear-gradient(135deg, var(--accent-tint), var(--card));
+    background: var(--accent-tint);
     border: 1px solid var(--rule);
     border-radius: 14px;
     padding: 16px 20px;
@@ -560,31 +576,43 @@
   .snap-lbl { font-size: 11.5px; color: var(--accent-text); font-weight: 600; margin-bottom: 4px; }
   .snapshot-card p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink); }
 
-  /* SIGNALS — three cards in a row */
-  .signals-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
-  .signal { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
-  .sig-kind { font-size: 10.5px; padding: 1px 8px; border-radius: 99px; align-self: flex-start; font-weight: 600; background: var(--rule-strong); color: var(--ink-2); }
-  .sig-kind.kind-talk { background: var(--accent-tint); color: var(--accent-text); }
-  .sig-kind.kind-post { background: var(--positive-tint); color: var(--positive-text); }
-  .sig-kind.kind-doc { background: var(--warm-tint); color: var(--warm-text); }
-  .sig-date { font-size: 11.5px; color: var(--mute); margin-top: 2px; }
-  .sig-body { font-size: 13px; color: var(--ink); line-height: 1.4; }
-  .sig-src { font-size: 11.5px; color: var(--accent-text); text-decoration: none; margin-top: 2px; }
+  /* RECENT POSTS & TALKS — three small cards with the source's logo */
+  .signals-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .signal {
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "logo meta"
+      "body body"
+      "src  src";
+    gap: 6px 10px;
+    text-decoration: none; color: inherit;
+    transition: border-color 120ms ease, transform 120ms ease;
+  }
+  .signal:hover { border-color: var(--rule-strong); transform: translateY(-1px); }
+  .sig-logo { grid-area: logo; width: 28px; height: 28px; border-radius: 7px; background: var(--card); object-fit: contain; padding: 3px; border: 1px solid var(--rule); }
+  .sig-meta { grid-area: meta; display: flex; align-items: center; gap: 8px; }
+  .sig-kind { font-size: 11px; color: var(--mute); font-weight: 600; }
+  .sig-date { font-size: 11px; color: var(--mute-2); }
+  .sig-body { grid-area: body; font-size: 13px; color: var(--ink); line-height: 1.4; }
+  .sig-src  { grid-area: src; font-size: 11.5px; color: var(--accent-text); }
 
-  /* LANDS / AVOID */
-  .la-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .la-col { padding: 14px 16px; border-radius: 12px; }
-  .la-col.lands { background: var(--positive-tint); }
-  .la-col.avoid { background: var(--danger-tint); }
-  .la-hd { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
-  .la-col.lands .la-hd { color: var(--positive-text); }
-  .la-col.avoid .la-hd { color: var(--danger-text); }
-  .la-glyph { width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,0.65); display: grid; place-items: center; font-weight: 700; font-size: 11px; }
-  .la-col ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
-  .la-col li { font-size: 12.5px; line-height: 1.45; padding-left: 12px; position: relative; }
-  .la-col li::before { content: '·'; position: absolute; left: 4px; font-weight: 700; }
-  .la-col.lands li { color: var(--positive-text); }
-  .la-col.avoid li { color: var(--danger-text); }
+  /* HOW TO APPROACH — two simple lists, no heavy color blocks. */
+  .approach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .approach-hd { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--ink); }
+  .approach-glyph { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
+  .approach-glyph.ok { background: var(--positive-tint); color: var(--positive-text); }
+  .approach-glyph.no { background: var(--danger-tint); color: var(--danger-text); }
+  .approach-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .approach-list li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+  .approach-marker { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; margin-top: 1px; }
+  .approach-marker.ok { background: var(--positive-tint); color: var(--positive-text); }
+  .approach-marker.no { background: var(--danger-tint); color: var(--danger-text); }
 
   /* QUESTIONS */
   .q-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
