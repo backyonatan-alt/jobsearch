@@ -189,6 +189,33 @@
     return new Date(ev.starts_at) < new Date();
   }
 
+  // Meeting hero formatters — used when the dossier has a real interview
+  // linked. starts_at/ends_at are ISO timestamps from the server; format in
+  // the viewer's TZ so the hero matches the Scheduled list below.
+  function meetingWhen(meeting) {
+    if (!meeting?.starts_at) return meeting?.when ?? 'Upcoming · time TBD';
+    const d = new Date(meeting.starts_at);
+    if (meeting.all_day) {
+      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
+    }
+    const now = new Date();
+    const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+    const days = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
+    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    if (days === 0) return `Today · ${time}`;
+    if (days === 1) return `Tomorrow · ${time}`;
+    if (days > 1 && days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'long' })} · ${time}`;
+    if (days < 0) return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time} (past)`;
+    return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
+  }
+
+  function meetingDuration(meeting) {
+    if (!meeting?.starts_at || !meeting?.ends_at) return meeting?.duration ?? '—';
+    const mins = Math.round((new Date(meeting.ends_at) - new Date(meeting.starts_at)) / 60000);
+    if (mins <= 0) return meeting.duration ?? '—';
+    return mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`;
+  }
+
   async function setStatus(newStatus) {
     showStatusMenu = false;
     if (!app || newStatus === app.status) return;
@@ -362,11 +389,11 @@
           <div class="meeting">
             <div class="lhs">
               <h3>
-                {dossier.meeting.when}
+                {meetingWhen(dossier.meeting)}
                 <span class="live-tag"><span class="pulse"></span> upcoming</span>
               </h3>
               <div class="when">
-                <span>{dossier.meeting.duration}</span>
+                <span>{meetingDuration(dossier.meeting)}</span>
                 <span class="dot">·</span>
                 <span>{dossier.meeting.medium}</span>
                 <span class="dot">·</span>
