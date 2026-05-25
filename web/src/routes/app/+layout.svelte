@@ -31,23 +31,6 @@
     return path === href || path.startsWith(href + '/');
   }
 
-  const counts = $derived.by(() => {
-    const c = { active: 0, interview: 0, offer: 0, wishlist: 0, screen: 0, closed: 0 };
-    for (const a of applications) {
-      if (a.status === 'wishlist') c.wishlist++;
-      else if (a.status === 'interview') c.interview++;
-      else if (a.status === 'screen') c.screen++;
-      else if (a.status === 'offer') c.offer++;
-      if (['rejected', 'withdrawn'].includes(a.status)) c.closed++;
-      else c.active++;
-    }
-    return c;
-  });
-
-  function navWithFilter(filter) {
-    goto(`/app?filter=${filter}`);
-  }
-
   const userInitials = $derived(me?.email
     ? me.email.split('@')[0].slice(0, 2).toUpperCase()
     : '—');
@@ -55,11 +38,14 @@
 
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">
-      <span class="mark"></span>
+    <a class="brand" href="/app">
+      <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.4" opacity="0.65"/>
+        <circle cx="12" cy="12" r="5.5" stroke="currentColor" stroke-width="1.4" opacity="0.9"/>
+        <circle cx="17.5" cy="6.5" r="2.6" fill="currentColor"/>
+      </svg>
       <span class="name">Pursuit</span>
-      <span class="kbd">⌘K</span>
-    </div>
+    </a>
 
     <a class="nav-item" class:active={isCurrent('/app', true)} href="/app">
       <span class="nav-icon">
@@ -94,46 +80,6 @@
       <span class="nav-count"></span>
     </a>
 
-    <div class="divider"></div>
-    <div class="nav-section">Pipeline</div>
-    <a class="nav-item" href="/app?filter=interview">
-      <span class="nav-icon">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M3 8a5 5 0 0 1 9-3M13 8a5 5 0 0 1-9 3M11.5 4v2H9.5M4.5 12v-2h2"/>
-        </svg>
-      </span>
-      <span>Interview loops</span>
-      <span class="nav-count">{counts.interview}</span>
-    </a>
-    <a class="nav-item" href="/app?filter=offer">
-      <span class="nav-icon">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M8 1.5l1.7 3.4 3.8.5-2.75 2.7.65 3.8L8 10l-3.4 1.9.65-3.8L2.5 5.4l3.8-.5z"/>
-        </svg>
-      </span>
-      <span>Open offers</span>
-      <span class="nav-count">{counts.offer}</span>
-    </a>
-    <a class="nav-item" href="/app?filter=wishlist">
-      <span class="nav-icon">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M8 2.5l1.7 3.4 3.8.55-2.75 2.7.65 3.85L8 11.1l-3.4 1.9.65-3.85L2.5 6.45l3.8-.55z"/>
-        </svg>
-      </span>
-      <span>Wishlist</span>
-      <span class="nav-count">{counts.wishlist}</span>
-    </a>
-    <a class="nav-item" href="/app?filter=closed">
-      <span class="nav-icon">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="8" cy="8" r="5.5"/>
-          <path d="M5 8h6"/>
-        </svg>
-      </span>
-      <span>Closed</span>
-      <span class="nav-count">{counts.closed}</span>
-    </a>
-
     <div class="sidebar-footer">
       <button class="profile" onclick={signOut} title="Sign out">
         <span class="av">{userInitials}</span>
@@ -154,6 +100,15 @@
 </div>
 
 <style>
+  /* Brand mark: target-style SVG paired with the wordmark, swapping out the
+     old square + dot. The SVG colors itself via currentColor. */
+  :global(.sidebar .brand) {
+    grid-template-columns: 22px 1fr;
+    text-decoration: none;
+  }
+  :global(.sidebar .brand .brand-mark) { color: var(--accent); }
+  :global(.sidebar .brand .name) { color: var(--ink); }
+
   /* Disabled-looking nav items for the not-yet-built screens. */
   :global(.sidebar .nav-item[aria-disabled="true"]) {
     cursor: not-allowed;

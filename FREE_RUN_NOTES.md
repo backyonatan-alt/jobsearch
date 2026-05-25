@@ -29,7 +29,18 @@ the moment you notice something; triage later.
 
 ### Today dashboard (/app)
 
-- 
+- `[ux]` The "Pursuit debrief — two threads worth your attention" card is
+  not interesting. What are the threads? What is an offer? Card copy /
+  concept needs a rethink.
+- `[ux]` Top stat row "14 / 2 / 1 — offers / wishlist / loops" should
+  be **more prominent** (big counts at the top).
+- `[ux]` The word **"loop"** is unclear — what does it mean for something
+  to be a loop? Rename or explain.
+- `[gap]` Want a "what can you do today" section with proactive offers:
+  *"get ready for this interview", "learn about this company"* etc.
+  → **wants a design preview before we build it.**
+- `[idea]` "What we're noticing" (currently on funnel) belongs on the
+  main page — that's the whole product. Move it here.
 
 ### New application modal (⌘N)
 
@@ -37,15 +48,37 @@ the moment you notice something; triage later.
 
 ### Application detail (/app/[id]) + dossier
 
-- 
+- `[ux]` The word **"dossier"** / "Open dossier" is unclear. Find a
+  different term.
+- `[gap]` Add a link back to **where the application was taken from**
+  (the original job posting URL on the source site).
+- `[gap]` Show **information about the job** itself (JD summary).
+- `[gap]` Add a short **AI-generated company summary**.
+- `[gap]` Show the **company logo**.
+- `[gap]` If we have it, link to the **hiring manager's LinkedIn**.
 
 ### Board (/app/board)
 
-- 
+- `[ux]` **No spacing between cards** — they're crammed together.
+- `[ux]` Instead of the first-letter square avatar, **fetch the actual
+  company logo**.
+- `[ux]` **Dragging looks really bad** — needs a micro-animation /
+  better drag affordance.
+- `[idea]` Turn a card **red when it's been a long time** since the
+  last activity (needs-your-attention signal).
+- `[bug]` The **list ↔ board toggle takes you back to the main page**
+  and doesn't scroll inside the view. Remove it (or fix it).
 
 ### Funnel (/app/funnel)
 
-- 
+- `[ux]` **Don't like the chart.** Rethink it — make it look like a
+  real product analytics chart (Mixpanel-style funnel viz).
+- `[ux]` The page looks **really plain**, needs a design upgrade —
+  more modern.
+- `[idea]` Move **"what we're noticing"** to the main page.
+- `[gap]` **Why do we need the Pipeline view?** It's just the
+  applications table filtered by status — not sure it's needed.
+  Consider removing or justifying it.
 
 ### Admin / People (/admin/people)
 
@@ -57,10 +90,87 @@ the moment you notice something; triage later.
 
 ### Anything else
 
-- 
+- `[bug]` Top-right user avatar shows initials **"BA"** — should show
+  the **Google profile picture** from OAuth.
 
 ---
 
 ## Shipped (move items here once fixed)
 
+### Bug fixes
+
 - `[bug]` dossier meeting hero rendered start time in the **server's** TZ while the Scheduled list rendered it in the **browser's** TZ — same event showed two different wall-clock times. Fixed by sending raw `starts_at`/`ends_at` from `meetingDTO` and letting the Svelte component format. (May 25 2026)
+
+### Design decisions locked (May 25 2026 review session)
+
+- **Logo source**: Google favicon service
+  (`https://www.google.com/s2/favicons?sz=128&domain=<domain>`).
+  Clearbit's free API was deprecated. Fallback = coloured letter square
+  when the favicon returns nothing.
+- **Today page**: variant A locked
+  (`/preview/redesign/today/a`). Modern sans, narrative count cards
+  with colored top ribbon + per-metric subtitle, action grid, "What
+  we're noticing" with people / pause / moon icons in tinted squares.
+- **Board page**: variant A locked
+  (`/preview/redesign/board/a`). Real logos, generous card gaps,
+  drag micro-animation, stale = red dot + red applied date. Broken
+  list/board segmented toggle removed (sidebar handles nav).
+- **Application Brief** (was "Dossier"): current pass at
+  `/preview/redesign/brief`. Flat (no gradients), no salary block,
+  neutral chips with colored group dots, lands/avoid replaced by
+  "How to approach this interview" with check/cross markers.
+- **Funnel page**: variant B dashboard locked, chart Option 1 locked
+  (`/preview/redesign/funnel/b`). 4 KPI cards on top (overall, best
+  CV, avg time-to-offer, in flight), stepped funnel in monochromatic
+  blue with numbers inside bars and soft accent-pill conversion %,
+  source + CV bar charts side-by-side, time-in-stage cells below.
+- **Brand mark**: target-style SVG (concentric circles + offset accent
+  dot) paired with sentence-case "Pursuit" wordmark in Geist.
+
+### Wired into the real app (May 25 2026)
+
+- **Sidebar Pipeline section killed** — it was just filtered Today views.
+  Layout now shows Today / Board / Funnel only, plus the target-style
+  brand mark.
+- **Today (/app)**: locked Today A applied. Greeting + 4 count cards
+  with colored ribbons + per-metric subtitles derived from real apps,
+  AI-suggested action grid (prep for next interview, decide on open
+  offer, nudge oldest stale, learn about latest screen), insights row
+  with people/pause/moon icons in tinted squares (referral lift, days
+  since last apply, stale loops), applications table with real
+  favicons + relative dates + stale tag.
+- **Board (/app/board)**: locked Board A applied. Real favicons, 10px
+  card gaps, drag micro-animation (`scale(0.99) rotate(-0.5deg)` on
+  active), stale = red border + red stale-dot + red applied date,
+  six-column layout (rejected + withdrawn collapsed into a single
+  Closed column), broken list/board toggle removed.
+- **Funnel (/app/funnel)**: locked Funnel B applied. 4 KPI cards
+  (overall conversion, best CV variant, avg time to offer, in flight)
+  derived from real apps, monochromatic-blue stepped funnel with
+  numbers inside bars and soft accent-pill conversion %, source
+  breakdown (Referral / LinkedIn / Cold / Other) + CV variant bars
+  side-by-side, time-in-stage cells below. "What we're noticing"
+  removed (now lives on Today).
+- **Application detail (/app/[id])**: locked Brief applied. Hero strip
+  with real logo + status pill + JD link, Up-next card (when dossier
+  has a meeting), 3 at-a-glance stats (days in pipeline / current
+  stage of 4 / match score placeholder), tabs, dossier-driven content
+  rendered through the new Brief layout (interviewer card, snapshot,
+  background, recent posts & talks signals with per-source favicons,
+  "How to approach this interview" with check/cross markers,
+  questions). Generate/regenerate flow preserved.
+
+### Helpers added
+
+- `companyDomain(co, jdUrl)`, `faviconUrl(...)`, `daysSince(iso)`,
+  `isStale(a)`, `fmtRelativeDate(iso)` in `web/src/lib/app-helpers.js`.
+  `toDisplayApp` now also exposes `domain`, `logoSrc`, `appliedRel`,
+  `stale`.
+
+### Still to design / decide
+
+- **Google profile picture on user avatar**: the OAuth `picture` URL
+  isn't stored yet — needs a `users.picture_url` column + capture in
+  the Google callback + return from `/api/me`. Layout still shows
+  initials.
+- **New application modal**: no notes yet, may not need a redesign.
