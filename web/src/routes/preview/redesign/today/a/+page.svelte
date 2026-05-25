@@ -13,10 +13,19 @@
     { urgency: 'Just moved',    tone: 'accent', title: 'Learn about Anthropic',         sub: 'Moved to screen yesterday — generate the company brief.',  cta: 'Generate',       logo: 'anthropic.com' }
   ];
 
+  // Each insight pulls its key metric into a visual badge instead of an icon.
   const insights = [
-    { kind: 'trend', text: 'Referrals convert at <b>3×</b> the rate of cold apps.',    detail: '4 of 5 referrals reached screen vs. 3 of 10 cold' },
-    { kind: 'pace',  text: "You haven't applied in <b>5 days</b>.",                      detail: 'Your usual pace is about two per day' },
-    { kind: 'bell',  text: '<b>3 loops</b> have gone quiet for over a week.',            detail: 'Linear, Notion, Figma — worth a nudge' }
+    { badge: '3×',  tone: 'positive', text: 'Referrals convert at <b>3×</b> the rate of cold apps.',    detail: '4 of 5 referrals reached screen vs. 3 of 10 cold' },
+    { badge: '5d',  tone: 'warm',     text: "You haven't applied in <b>5 days</b>.",                     detail: 'Your usual pace is about two per day' },
+    { badge: '3',   tone: 'accent',   text: '<b>3 loops</b> have gone quiet for over a week.',           detail: 'Linear, Notion, Figma — worth a nudge' }
+  ];
+
+  // Per-metric narrative subtitles so each count card tells a story.
+  const countCards = [
+    { lbl: 'Interviews',        n: 2, tone: 'accent',   sub: 'Stripe tomorrow, 2:00 PM',  hint: 'An interview loop = a series of rounds with one company' },
+    { lbl: 'Open offers',       n: 1, tone: 'warm',     sub: 'Vercel — decide by Friday' },
+    { lbl: 'Applied & waiting', n: 8, tone: 'positive', sub: '3 worth a nudge this week' },
+    { lbl: 'Wishlist',          n: 3, tone: 'mute',     sub: 'Oldest sat 12 days' }
   ];
 
   const apps = [
@@ -82,24 +91,21 @@
           <h1>Good afternoon, {me.name}.</h1>
         </div>
 
-        <!-- Big counts with sentence-case labels -->
+        <!-- Big counts — one card per metric, with a tiny narrative subtitle -->
         <div class="counts">
-          <div class="count-cell live">
-            <div class="n">{counts.interviews}</div>
-            <div class="lbl">Interviews <span class="hint" title="An interview loop = a series of rounds with one company">i</span></div>
-          </div>
-          <div class="count-cell warm">
-            <div class="n">{counts.offers}</div>
-            <div class="lbl">Open offers</div>
-          </div>
-          <div class="count-cell">
-            <div class="n">{counts.applied}</div>
-            <div class="lbl">Applied &amp; waiting</div>
-          </div>
-          <div class="count-cell">
-            <div class="n">{counts.wishlist}</div>
-            <div class="lbl">Wishlist</div>
-          </div>
+          {#each countCards as c}
+            <div class={`count-cell tone-${c.tone}`}>
+              <span class="ribbon"></span>
+              <div class="cell-top">
+                <span class="lbl">
+                  {c.lbl}
+                  {#if c.hint}<span class="hint" title={c.hint}>i</span>{/if}
+                </span>
+              </div>
+              <div class="n">{c.n}</div>
+              <div class="sub">{c.sub}</div>
+            </div>
+          {/each}
         </div>
 
         <!-- What you can do today -->
@@ -135,27 +141,7 @@
         <div class="insight-list">
           {#each insights as ins}
             <div class="insight">
-              <span class="ins-icon">
-                {#if ins.kind === 'trend'}
-                  <!-- Ascending line + dot -->
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 17l5-5 4 3 7-9"/>
-                    <circle cx="19" cy="6" r="2.2" fill="currentColor" stroke="none"/>
-                  </svg>
-                {:else if ins.kind === 'pace'}
-                  <!-- Hourglass -->
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M6 3h12M6 21h12"/>
-                    <path d="M7 3c0 4 5 5 5 9s-5 5-5 9M17 3c0 4-5 5-5 9s5 5 5 9"/>
-                  </svg>
-                {:else if ins.kind === 'bell'}
-                  <!-- Soft bell -->
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2H4.5z"/>
-                    <path d="M10 20a2 2 0 0 0 4 0"/>
-                  </svg>
-                {/if}
-              </span>
+              <span class={`ins-badge t-${ins.tone}`}>{ins.badge}</span>
               <div class="ins-body">
                 <div class="ins-line">{@html ins.text}</div>
                 <div class="ins-detail">{ins.detail}</div>
@@ -203,13 +189,10 @@
 <style>
   :global(html, body) { background: var(--surface); margin: 0; }
   .frame { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; font-family: var(--sans); color: var(--ink); }
-  /* Serif headline family — system serifs, no extra font load. */
-  :global(.editorial-serif) { font-family: "Charter", "Iowan Old Style", "Georgia", serif; }
-
   /* Sidebar */
   .sidebar { background: var(--surface-2); border-right: 1px solid var(--rule); padding: 18px 14px; display: flex; flex-direction: column; gap: 4px; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; color: var(--accent-text); }
-  .brand-name { font-family: "Charter", "Iowan Old Style", "Georgia", serif; font-size: 19px; font-weight: 500; letter-spacing: -0.01em; color: var(--ink); }
+  .brand-name { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
   .brand-mark { color: var(--accent); }
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; }
   .nav-item .dot { width: 14px; height: 14px; border-radius: 3px; background: var(--rule-strong); }
@@ -236,34 +219,57 @@
   .hello { margin-bottom: 28px; }
   .hello .date { font-size: 13.5px; color: var(--mute); margin-bottom: 6px; font-weight: 400; }
   .hello h1 {
-    font-family: "Charter", "Iowan Old Style", "Georgia", serif;
-    font-size: 32px; font-weight: 400;
-    margin: 0; letter-spacing: -0.015em;
+    font-size: 30px; font-weight: 600;
+    margin: 0; letter-spacing: -0.025em;
     color: var(--ink);
   }
 
-  /* Big counts */
-  .counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; margin-bottom: 40px; box-shadow: var(--sh-1); }
-  .count-cell { background: var(--card); padding: 22px 24px 20px; }
-  .count-cell .n { font-size: 46px; font-weight: 400; letter-spacing: -0.04em; line-height: 1; color: var(--ink); font-feature-settings: "tnum"; }
-  .count-cell .lbl { font-size: 13.5px; color: var(--mute); margin-top: 10px; display: flex; align-items: center; gap: 6px; font-weight: 400; }
-  .count-cell.live .n { color: var(--accent-text); }
-  .count-cell.warm .n { color: var(--warm-text); }
-  .hint { width: 13px; height: 13px; display: inline-grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--mute); font-size: 9.5px; font-style: italic; font-weight: 600; cursor: help; }
+  /* Big counts — individual cards with a colored top ribbon and a narrative subtitle */
+  .counts {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 40px;
+  }
+  .count-cell {
+    position: relative;
+    background: var(--card); border: 1px solid var(--rule); border-radius: 14px;
+    padding: 18px 20px 18px;
+    box-shadow: var(--sh-1);
+    overflow: hidden;
+    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  }
+  .count-cell:hover { transform: translateY(-2px); box-shadow: var(--sh-pop); border-color: var(--rule-strong); }
+  .ribbon { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+  .count-cell.tone-accent   .ribbon { background: var(--accent); }
+  .count-cell.tone-warm     .ribbon { background: var(--warm); }
+  .count-cell.tone-positive .ribbon { background: var(--positive); }
+  .count-cell.tone-mute     .ribbon { background: var(--rule-strong); }
+  .cell-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .count-cell .lbl { font-size: 13px; color: var(--mute); display: flex; align-items: center; gap: 6px; font-weight: 500; }
+  .count-cell .n {
+    font-size: 42px; font-weight: 600; letter-spacing: -0.035em;
+    line-height: 1.05; color: var(--ink); font-feature-settings: "tnum";
+    margin-top: 2px;
+  }
+  .count-cell.tone-accent   .n { color: var(--accent-text); }
+  .count-cell.tone-warm     .n { color: var(--warm-text); }
+  .count-cell.tone-positive .n { color: var(--positive-text); }
+  .count-cell .sub {
+    margin-top: 8px; font-size: 12.5px; color: var(--mute); line-height: 1.4;
+    padding-top: 8px; border-top: 1px dashed var(--rule);
+  }
+  .hint { width: 14px; height: 14px; display: inline-grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--mute); font-size: 10px; font-style: italic; font-weight: 600; cursor: help; }
 
-  /* Section heading */
+  /* Section heading — modern sans, no serif */
   .section-hd { display: flex; align-items: center; justify-content: space-between; margin: 32px 0 14px; }
   .section-hd h2 {
-    font-family: "Charter", "Iowan Old Style", "Georgia", serif;
-    font-size: 20px; font-weight: 500; margin: 0; letter-spacing: -0.015em;
+    font-size: 18px; font-weight: 600; margin: 0; letter-spacing: -0.02em;
   }
-  .section-hd h2 .count { font-size: 14px; color: var(--mute); margin-left: 8px; font-weight: 400; font-family: var(--sans); }
+  .section-hd h2 .count { font-size: 14px; color: var(--mute); margin-left: 8px; font-weight: 400; }
   .ai-tag {
     display: inline-flex; align-items: center; gap: 5px;
     font-size: 12.5px; color: var(--accent-text);
-    background: var(--accent-tint); padding: 3px 9px; border-radius: 99px;
+    background: var(--accent-tint); padding: 3px 10px; border-radius: 99px;
     font-weight: 500;
-    font-style: italic;
   }
 
   /* Action grid */
@@ -282,10 +288,18 @@
   .action-cta .arrow { transition: transform 140ms ease; display: inline-block; }
   .action-card:hover .action-cta .arrow { transform: translateX(2px); }
 
-  /* Insights — custom outline icons */
+  /* Insights — the key metric IS the visual. */
   .insight-list { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; }
-  .insight { background: var(--card); padding: 16px 20px; display: grid; grid-template-columns: 36px 1fr auto; gap: 14px; align-items: center; }
-  .ins-icon { width: 36px; height: 36px; border-radius: 10px; background: var(--accent-tint); color: var(--accent-text); display: grid; place-items: center; }
+  .insight { background: var(--card); padding: 14px 20px; display: grid; grid-template-columns: 52px 1fr auto; gap: 16px; align-items: center; }
+  .ins-badge {
+    width: 52px; height: 52px; border-radius: 14px;
+    display: grid; place-items: center;
+    font-size: 20px; font-weight: 600; letter-spacing: -0.02em;
+    font-feature-settings: "tnum";
+  }
+  .ins-badge.t-positive { background: var(--positive-tint); color: var(--positive-text); }
+  .ins-badge.t-warm     { background: var(--warm-tint);     color: var(--warm-text); }
+  .ins-badge.t-accent   { background: var(--accent-tint);   color: var(--accent-text); }
   .ins-line { font-size: 14px; color: var(--ink); line-height: 1.45; }
   .ins-detail { font-size: 12.5px; color: var(--mute); margin-top: 3px; }
   .ins-act { background: transparent; border: 0; color: var(--accent-text); font-size: 13px; font-weight: 500; cursor: pointer; }
