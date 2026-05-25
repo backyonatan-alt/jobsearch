@@ -44,6 +44,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/applications/{id}/dossier", s.requireUser(s.handleDossierGet))
 	mux.HandleFunc("POST /api/applications/{id}/dossier/refresh", s.requireUser(s.handleDossierRefresh))
 
+	mux.HandleFunc("GET /api/applications/{id}/interviews", s.requireUser(s.handleInterviewsList))
+	mux.HandleFunc("POST /api/applications/{id}/interviews", s.requireUser(s.handleInterviewCreate))
+	mux.HandleFunc("POST /api/applications/{id}/interviews/parse", s.requireUser(s.handleInterviewsParse))
+	mux.HandleFunc("DELETE /api/applications/{id}/interviews/{iid}", s.requireUser(s.handleInterviewDelete))
+
 	mux.HandleFunc("GET /api/admin/invites", s.requireAdmin(s.handleAdminInvitesList))
 	mux.HandleFunc("POST /api/admin/invites", s.requireAdmin(s.handleAdminInvitesAdd))
 	mux.HandleFunc("DELETE /api/admin/invites/{email}", s.requireAdmin(s.handleAdminInvitesDelete))

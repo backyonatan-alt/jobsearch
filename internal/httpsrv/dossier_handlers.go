@@ -74,7 +74,7 @@ func (s *Server) handleDossierGet(w http.ResponseWriter, r *http.Request) {
 		GeneratedAgo:    humanAgo(generatedAt),
 		ModelUsed:       modelUsed,
 		Content:         content,
-		Meeting:         meetingPlaceholder(app, deref(interviewerName)),
+		Meeting:         s.meetingForApp(r.Context(), app, deref(interviewerName)),
 	})
 }
 
@@ -150,7 +150,7 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		GeneratedAgo:    "just now",
 		ModelUsed:       modelUsed,
 		Content:         content,
-		Meeting:         meetingPlaceholder(app, req.InterviewerName),
+		Meeting:         s.meetingForApp(r.Context(), app, req.InterviewerName),
 	})
 }
 
@@ -184,6 +184,71 @@ func meetingPlaceholder(app *applicationRow, interviewer string) meetingDTO {
 		Duration: "60 min",
 		Medium:   "Video call",
 		Panel:    panel,
+	}
+}
+
+// meetingForApp prefers a real upcoming interview pulled from the interviews
+// table; if none exists, falls back to the placeholder so the dossier still
+// renders. Logged-and-swallowed errors keep the dossier resilient even if the
+// interviews query fails.
+func (s *Server) meetingForApp(ctx context.Context, app *applicationRow, interviewer string) meetingDTO {
+	iv, err := s.nextInterview(ctx, app.ID)
+	if err != nil {
+		s.Logger.Error("next interview lookup", "err", err, "app_id", app.ID)
+	}
+	if iv == nil {
+		return meetingPlaceholder(app, interviewer)
+	}
+
+	panel := interviewer
+	if panel == "" {
+		panel = "(hiring team)"
+	}
+	medium := "Video call"
+	if loc := deref(iv.Location); loc != "" {
+		medium = loc
+	}
+	dur := "—"
+	if iv.EndsAt != nil && !iv.EndsAt.IsZero() {
+		d := iv.EndsAt.Sub(iv.StartsAt)
+		if d > 0 {
+			mins := int(d.Minutes())
+			if mins >= 60 && mins%60 == 0 {
+				dur = fmt.Sprintf("%dh", mins/60)
+			} else {
+				dur = fmt.Sprintf("%d min", mins)
+			}
+		}
+	}
+	return meetingDTO{
+		When:     formatWhen(iv.StartsAt),
+		Duration: dur,
+		Medium:   medium,
+		Panel:    panel,
+	}
+}
+
+// formatWhen renders a start time the way the meeting hero expects: a relative
+// day prefix (Today / Tomorrow / weekday) plus the wall-clock time.
+func formatWhen(t time.Time) string {
+	t = t.Local()
+	now := time.Now()
+	startOfDay := func(x time.Time) time.Time {
+		return time.Date(x.Year(), x.Month(), x.Day(), 0, 0, 0, 0, x.Location())
+	}
+	days := int(startOfDay(t).Sub(startOfDay(now)).Hours() / 24)
+	clock := t.Format("3:04 PM")
+	switch {
+	case days == 0:
+		return "Today · " + clock
+	case days == 1:
+		return "Tomorrow · " + clock
+	case days > 1 && days < 7:
+		return t.Format("Monday") + " · " + clock
+	case days < 0:
+		return t.Format("Jan 2") + " · " + clock + " (past)"
+	default:
+		return t.Format("Mon Jan 2") + " · " + clock
 	}
 }
 

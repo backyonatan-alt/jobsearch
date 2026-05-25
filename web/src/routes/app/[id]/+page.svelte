@@ -11,6 +11,15 @@
   let notFound = $state(false);
   let tab = $state('dossier');
 
+  // Interviews tab state
+  let interviews = $state([]);
+  let interviewsLoading = $state(false);
+  let icsText = $state('');
+  let icsParsing = $state(false);
+  let icsParseError = $state('');
+  let icsPreview = $state([]); // parsed events awaiting save
+  let icsSaving = $state(false);
+
   // Inline-action state
   let showStatusMenu = $state(false);
   let showEditModal = $state(false);
@@ -30,6 +39,7 @@
     void id; // re-fetch when the path param changes
     loadApp();
     loadDossier();
+    loadInterviews();
   });
 
   async function loadApp() {
@@ -81,6 +91,102 @@
     } finally {
       generating = false;
     }
+  }
+
+  async function loadInterviews() {
+    interviewsLoading = true;
+    try {
+      interviews = await api(`/api/applications/${id}/interviews`);
+    } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+      interviews = [];
+    } finally {
+      interviewsLoading = false;
+    }
+  }
+
+  async function onIcsFile(e) {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (f.size > 256 * 1024) {
+      icsParseError = 'File too large (256 KB max).';
+      return;
+    }
+    icsText = await f.text();
+    await parseIcs();
+  }
+
+  async function parseIcs() {
+    if (icsParsing) return;
+    icsParseError = '';
+    icsPreview = [];
+    const body = icsText.trim();
+    if (!body) {
+      icsParseError = 'Paste the .ics contents or pick a file.';
+      return;
+    }
+    icsParsing = true;
+    try {
+      const r = await api(`/api/applications/${id}/interviews/parse`, {
+        method: 'POST',
+        body: JSON.stringify({ ics: body })
+      });
+      icsPreview = r.events ?? [];
+      if (icsPreview.length === 0) icsParseError = 'No events found in that file.';
+    } catch (e) {
+      icsParseError = e.message || 'Could not parse calendar.';
+    } finally {
+      icsParsing = false;
+    }
+  }
+
+  async function saveParsedEvents() {
+    if (icsSaving || icsPreview.length === 0) return;
+    icsSaving = true;
+    try {
+      for (const ev of icsPreview) {
+        await api(`/api/applications/${id}/interviews`, {
+          method: 'POST',
+          body: JSON.stringify(ev)
+        });
+      }
+      icsText = '';
+      icsPreview = [];
+      await loadInterviews();
+      await loadDossier(); // refresh meeting block in dossier tab
+    } catch (e) {
+      icsParseError = e.message || 'Could not save events.';
+    } finally {
+      icsSaving = false;
+    }
+  }
+
+  async function deleteInterview(iv) {
+    if (!confirm(`Delete "${iv.summary}"?`)) return;
+    await api(`/api/applications/${id}/interviews/${iv.id}`, { method: 'DELETE' });
+    await loadInterviews();
+    await loadDossier();
+  }
+
+  function fmtEventWhen(ev) {
+    const d = new Date(ev.starts_at);
+    if (ev.all_day) {
+      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
+    }
+    const date = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    let suffix = '';
+    if (ev.ends_at) {
+      const end = new Date(ev.ends_at);
+      const mins = Math.round((end - d) / 60000);
+      if (mins > 0) suffix = ` · ${mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`}`;
+    }
+    return `${date}, ${time}${suffix}`;
+  }
+
+  function isPast(ev) {
+    return new Date(ev.starts_at) < new Date();
   }
 
   async function setStatus(newStatus) {
@@ -237,6 +343,10 @@
         <div class={`tab ${tab === 'dossier' ? 'active' : ''}`} onclick={() => (tab = 'dossier')}>
           Dossier
           <span class="count">AI</span>
+        </div>
+        <div class={`tab ${tab === 'interviews' ? 'active' : ''}`} onclick={() => (tab = 'interviews')}>
+          Interviews
+          <span class="count">{interviews.length}</span>
         </div>
         <div class={`tab ${tab === 'timeline' ? 'active' : ''}`} onclick={() => (tab = 'timeline')}>
           Timeline
@@ -443,6 +553,81 @@
             {/if}
           </div>
         {/if}
+      {:else if tab === 'interviews'}
+        <div class="ics-card">
+          <h3>Add an interview from a calendar invite</h3>
+          <p class="ics-hint">
+            Drop or pick the <code>.ics</code> file your interviewer sent — or paste the raw text below.
+            We parse it locally (no AI round-trip) and link the event to this application.
+          </p>
+          <div class="ics-row">
+            <label class="btn ics-file">
+              Choose .ics file…
+              <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} hidden />
+            </label>
+            <span class="ics-sep">or paste below</span>
+          </div>
+          <textarea
+            class="ics-textarea"
+            placeholder={"BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\n…"}
+            bind:value={icsText}
+            rows="6"
+          ></textarea>
+          <div class="ics-actions">
+            <button class="btn btn-primary" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
+              {icsParsing ? 'Parsing…' : 'Parse'}
+            </button>
+            {#if icsText || icsPreview.length}
+              <button class="btn" onclick={() => { icsText = ''; icsPreview = []; icsParseError = ''; }}>Clear</button>
+            {/if}
+          </div>
+          {#if icsParseError}
+            <p class="dossier-err" style="margin-top:12px">{icsParseError}</p>
+          {/if}
+
+          {#if icsPreview.length > 0}
+            <div class="ics-preview">
+              <h4>Preview — {icsPreview.length} event{icsPreview.length === 1 ? '' : 's'}</h4>
+              {#each icsPreview as ev}
+                <div class="ics-preview-row">
+                  <div class="iv-when">{fmtEventWhen(ev)}</div>
+                  <div class="iv-summary">{ev.summary || 'Interview'}</div>
+                  {#if ev.location}<div class="iv-loc">{ev.location}</div>{/if}
+                </div>
+              {/each}
+              <div class="ics-actions" style="margin-top:12px">
+                <button class="btn btn-primary" onclick={saveParsedEvents} disabled={icsSaving}>
+                  {icsSaving ? 'Saving…' : `Save ${icsPreview.length} event${icsPreview.length === 1 ? '' : 's'}`}
+                </button>
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <div class="iv-list">
+          <h3>Scheduled</h3>
+          {#if interviewsLoading}
+            <p style="color:var(--mute)">Loading…</p>
+          {:else if interviews.length === 0}
+            <p style="color:var(--mute); font-size:13px;">No interviews scheduled yet.</p>
+          {:else}
+            {#each interviews as iv}
+              <div class={`iv-card ${isPast(iv) ? 'past' : ''}`}>
+                <div class="iv-card-main">
+                  <div class="iv-when">{fmtEventWhen(iv)}{isPast(iv) ? ' · past' : ''}</div>
+                  <div class="iv-summary">{iv.summary}</div>
+                  {#if iv.location}<div class="iv-loc">{iv.location}</div>{/if}
+                  {#if iv.attendees && iv.attendees.length > 0}
+                    <div class="iv-att">
+                      with {iv.attendees.map(a => a.name || a.email).filter(Boolean).join(', ')}
+                    </div>
+                  {/if}
+                </div>
+                <button class="btn btn-danger" onclick={() => deleteInterview(iv)} title="Delete this interview">Delete</button>
+              </div>
+            {/each}
+          {/if}
+        </div>
       {:else if tab === 'timeline'}
         {#if timeline.length > 0}
           <div class="timeline">
@@ -691,4 +876,115 @@
 
   .regen { cursor: pointer; user-select: none; }
   .regen.busy { opacity: 0.6; pointer-events: none; }
+
+  /* Interviews tab */
+  .ics-card {
+    border: 1px dashed var(--rule-strong);
+    border-radius: 12px;
+    padding: 20px 24px;
+    background: var(--card);
+    margin-bottom: 24px;
+  }
+  .ics-card h3 {
+    font-size: 15px; font-weight: 500;
+    letter-spacing: -0.012em;
+    margin: 0 0 .35rem;
+    color: var(--ink);
+  }
+  .ics-hint {
+    font-size: 13px;
+    color: var(--mute);
+    margin: 0 0 1rem;
+    line-height: 1.5;
+  }
+  .ics-hint code {
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .ics-row {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: .75rem;
+  }
+  .ics-file {
+    cursor: pointer;
+  }
+  .ics-sep {
+    color: var(--mute);
+    font-size: 12px;
+  }
+  .ics-textarea {
+    width: 100%;
+    font: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 8px 10px;
+    outline: none;
+    resize: vertical;
+    box-sizing: border-box;
+  }
+  .ics-textarea:focus { border-color: var(--accent); }
+  .ics-actions {
+    display: flex; gap: 8px;
+    margin-top: 10px;
+  }
+  .ics-preview {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+  }
+  .ics-preview h4 {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 8px;
+  }
+  .ics-preview-row {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .ics-preview-row:last-of-type { border-bottom: none; }
+
+  .iv-list h3 {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 12px;
+  }
+  .iv-card {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: var(--card);
+    margin-bottom: 8px;
+  }
+  .iv-card.past { opacity: 0.6; }
+  .iv-card-main { flex: 1; min-width: 0; }
+  .iv-when {
+    font-size: 12px;
+    color: var(--accent-text);
+    font-weight: 500;
+    margin-bottom: 2px;
+  }
+  .iv-summary {
+    font-size: 14px;
+    color: var(--ink);
+    margin-bottom: 2px;
+  }
+  .iv-loc, .iv-att {
+    font-size: 12px;
+    color: var(--mute);
+    margin-top: 2px;
+  }
 </style>
