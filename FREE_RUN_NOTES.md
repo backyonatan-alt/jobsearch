@@ -96,3 +96,31 @@ the moment you notice something; triage later.
 ---
 
 ## Shipped (move items here once fixed)
+
+### Design decisions locked (May 25 2026 review session)
+
+- **Logo source**: Google favicon service
+  (`https://www.google.com/s2/favicons?sz=128&domain=<domain>`).
+  Clearbit's free API was deprecated. Fallback = coloured letter square
+  when the favicon returns nothing.
+- **Today page**: variant A locked
+  (`/preview/redesign/today/a`). Modern sans, narrative count cards
+  with colored top ribbon + per-metric subtitle, action grid, "What
+  we're noticing" with people / pause / moon icons in tinted squares.
+- **Board page**: variant A locked
+  (`/preview/redesign/board/a`). Real logos, generous card gaps,
+  drag micro-animation, stale = red dot + red applied date. Broken
+  list/board segmented toggle removed (sidebar handles nav).
+- **Application Brief** (was "Dossier"): current pass at
+  `/preview/redesign/brief`. Flat (no gradients), no salary block,
+  neutral chips with colored group dots, lands/avoid replaced by
+  "How to approach this interview" with check/cross markers.
+- **Brand mark**: target-style SVG (concentric circles + offset accent
+  dot) paired with sentence-case "Pursuit" wordmark in Geist.
+
+### Still to design / decide
+
+- Funnel page (Mixpanel-style chart, modernized layout)
+- Pipeline section in sidebar (kill, since it's just filtered Today, or
+  justify keeping)
+- New application modal — no notes yet, may not need a redesign
