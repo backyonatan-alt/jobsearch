@@ -29,7 +29,18 @@ the moment you notice something; triage later.
 
 ### Today dashboard (/app)
 
-- 
+- `[ux]` The "Pursuit debrief — two threads worth your attention" card is
+  not interesting. What are the threads? What is an offer? Card copy /
+  concept needs a rethink.
+- `[ux]` Top stat row "14 / 2 / 1 — offers / wishlist / loops" should
+  be **more prominent** (big counts at the top).
+- `[ux]` The word **"loop"** is unclear — what does it mean for something
+  to be a loop? Rename or explain.
+- `[gap]` Want a "what can you do today" section with proactive offers:
+  *"get ready for this interview", "learn about this company"* etc.
+  → **wants a design preview before we build it.**
+- `[idea]` "What we're noticing" (currently on funnel) belongs on the
+  main page — that's the whole product. Move it here.
 
 ### New application modal (⌘N)
 
@@ -37,15 +48,37 @@ the moment you notice something; triage later.
 
 ### Application detail (/app/[id]) + dossier
 
-- 
+- `[ux]` The word **"dossier"** / "Open dossier" is unclear. Find a
+  different term.
+- `[gap]` Add a link back to **where the application was taken from**
+  (the original job posting URL on the source site).
+- `[gap]` Show **information about the job** itself (JD summary).
+- `[gap]` Add a short **AI-generated company summary**.
+- `[gap]` Show the **company logo**.
+- `[gap]` If we have it, link to the **hiring manager's LinkedIn**.
 
 ### Board (/app/board)
 
-- 
+- `[ux]` **No spacing between cards** — they're crammed together.
+- `[ux]` Instead of the first-letter square avatar, **fetch the actual
+  company logo**.
+- `[ux]` **Dragging looks really bad** — needs a micro-animation /
+  better drag affordance.
+- `[idea]` Turn a card **red when it's been a long time** since the
+  last activity (needs-your-attention signal).
+- `[bug]` The **list ↔ board toggle takes you back to the main page**
+  and doesn't scroll inside the view. Remove it (or fix it).
 
 ### Funnel (/app/funnel)
 
-- 
+- `[ux]` **Don't like the chart.** Rethink it — make it look like a
+  real product analytics chart (Mixpanel-style funnel viz).
+- `[ux]` The page looks **really plain**, needs a design upgrade —
+  more modern.
+- `[idea]` Move **"what we're noticing"** to the main page.
+- `[gap]` **Why do we need the Pipeline view?** It's just the
+  applications table filtered by status — not sure it's needed.
+  Consider removing or justifying it.
 
 ### Admin / People (/admin/people)
 
@@ -57,7 +90,8 @@ the moment you notice something; triage later.
 
 ### Anything else
 
-- 
+- `[bug]` Top-right user avatar shows initials **"BA"** — should show
+  the **Google profile picture** from OAuth.
 
 ---
 
