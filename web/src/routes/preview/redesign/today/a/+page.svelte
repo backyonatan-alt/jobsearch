@@ -13,11 +13,10 @@
     { urgency: 'Just moved',    tone: 'accent', title: 'Learn about Anthropic',         sub: 'Moved to screen yesterday — generate the company brief.',  cta: 'Generate',       logo: 'anthropic.com' }
   ];
 
-  // Each insight pulls its key metric into a visual badge instead of an icon.
   const insights = [
-    { badge: '3×',  tone: 'positive', text: 'Referrals convert at <b>3×</b> the rate of cold apps.',    detail: '4 of 5 referrals reached screen vs. 3 of 10 cold' },
-    { badge: '5d',  tone: 'warm',     text: "You haven't applied in <b>5 days</b>.",                     detail: 'Your usual pace is about two per day' },
-    { badge: '3',   tone: 'accent',   text: '<b>3 loops</b> have gone quiet for over a week.',           detail: 'Linear, Notion, Figma — worth a nudge' }
+    { icon: 'people', tone: 'positive', text: 'Referrals convert at <b>3×</b> the rate of cold apps.',    detail: '4 of 5 referrals reached screen vs. 3 of 10 cold' },
+    { icon: 'pause',  tone: 'warm',     text: "You haven't applied in <b>5 days</b>.",                     detail: 'Your usual pace is about two per day' },
+    { icon: 'moon',   tone: 'accent',   text: '<b>3 loops</b> have gone quiet for over a week.',           detail: 'Linear, Notion, Figma — worth a nudge' }
   ];
 
   // Per-metric narrative subtitles so each count card tells a story.
@@ -141,7 +140,24 @@
         <div class="insight-list">
           {#each insights as ins}
             <div class="insight">
-              <span class={`ins-badge t-${ins.tone}`}>{ins.badge}</span>
+              <span class={`ins-icon t-${ins.tone}`}>
+                {#if ins.icon === 'people'}
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                    <circle cx="8.5" cy="8" r="3.5"/>
+                    <circle cx="16.5" cy="9" r="2.8"/>
+                    <path d="M2 19c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5v1H2zM15 19.5c0-2.4 2-4 4.5-4S22 17 22 19.5V20h-7z"/>
+                  </svg>
+                {:else if ins.icon === 'pause'}
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                    <rect x="6" y="5" width="4" height="14" rx="1.5"/>
+                    <rect x="14" y="5" width="4" height="14" rx="1.5"/>
+                  </svg>
+                {:else if ins.icon === 'moon'}
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                    <path d="M14 3a9 9 0 1 0 7 14 7 7 0 0 1-7-14z"/>
+                  </svg>
+                {/if}
+              </span>
               <div class="ins-body">
                 <div class="ins-line">{@html ins.text}</div>
                 <div class="ins-detail">{ins.detail}</div>
@@ -288,18 +304,16 @@
   .action-cta .arrow { transition: transform 140ms ease; display: inline-block; }
   .action-card:hover .action-cta .arrow { transform: translateX(2px); }
 
-  /* Insights — the key metric IS the visual. */
+  /* Insights — filled icons in tinted rounded squares. */
   .insight-list { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; }
-  .insight { background: var(--card); padding: 14px 20px; display: grid; grid-template-columns: 52px 1fr auto; gap: 16px; align-items: center; }
-  .ins-badge {
-    width: 52px; height: 52px; border-radius: 14px;
+  .insight { background: var(--card); padding: 14px 20px; display: grid; grid-template-columns: 44px 1fr auto; gap: 16px; align-items: center; }
+  .ins-icon {
+    width: 44px; height: 44px; border-radius: 12px;
     display: grid; place-items: center;
-    font-size: 20px; font-weight: 600; letter-spacing: -0.02em;
-    font-feature-settings: "tnum";
   }
-  .ins-badge.t-positive { background: var(--positive-tint); color: var(--positive-text); }
-  .ins-badge.t-warm     { background: var(--warm-tint);     color: var(--warm-text); }
-  .ins-badge.t-accent   { background: var(--accent-tint);   color: var(--accent-text); }
+  .ins-icon.t-positive { background: var(--positive-tint); color: var(--positive-text); }
+  .ins-icon.t-warm     { background: var(--warm-tint);     color: var(--warm-text); }
+  .ins-icon.t-accent   { background: var(--accent-tint);   color: var(--accent-text); }
   .ins-line { font-size: 14px; color: var(--ink); line-height: 1.45; }
   .ins-detail { font-size: 12.5px; color: var(--mute); margin-top: 3px; }
   .ins-act { background: transparent; border: 0; color: var(--accent-text); font-size: 13px; font-weight: 500; cursor: pointer; }
