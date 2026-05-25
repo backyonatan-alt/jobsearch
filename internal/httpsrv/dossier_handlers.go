@@ -27,10 +27,18 @@ type dossierDTO struct {
 }
 
 type meetingDTO struct {
+	// When/Duration are server-rendered fallbacks for when no real interview
+	// is linked — placeholder strings the dossier hero used before .ics
+	// ingest existed. When StartsAt is set the frontend formats from the raw
+	// timestamps instead so the viewer sees their own timezone.
 	When     string `json:"when"`
 	Duration string `json:"duration"`
 	Medium   string `json:"medium"`
 	Panel    string `json:"panel"`
+
+	StartsAt *time.Time `json:"starts_at,omitempty"`
+	EndsAt   *time.Time `json:"ends_at,omitempty"`
+	AllDay   bool       `json:"all_day,omitempty"`
 }
 
 // GET /api/applications/:id/dossier — returns the cached dossier or 404.
@@ -191,6 +199,11 @@ func meetingPlaceholder(app *applicationRow, interviewer string) meetingDTO {
 // table; if none exists, falls back to the placeholder so the dossier still
 // renders. Logged-and-swallowed errors keep the dossier resilient even if the
 // interviews query fails.
+//
+// When a real interview exists, we emit only the raw timestamps (StartsAt /
+// EndsAt / AllDay) and leave When/Duration empty — the frontend formats both
+// in the viewer's timezone. Server-side formatting renders in the server's
+// zone, which surfaces as a TZ mismatch against the Scheduled list.
 func (s *Server) meetingForApp(ctx context.Context, app *applicationRow, interviewer string) meetingDTO {
 	iv, err := s.nextInterview(ctx, app.ID)
 	if err != nil {
@@ -208,47 +221,13 @@ func (s *Server) meetingForApp(ctx context.Context, app *applicationRow, intervi
 	if loc := deref(iv.Location); loc != "" {
 		medium = loc
 	}
-	dur := "—"
-	if iv.EndsAt != nil && !iv.EndsAt.IsZero() {
-		d := iv.EndsAt.Sub(iv.StartsAt)
-		if d > 0 {
-			mins := int(d.Minutes())
-			if mins >= 60 && mins%60 == 0 {
-				dur = fmt.Sprintf("%dh", mins/60)
-			} else {
-				dur = fmt.Sprintf("%d min", mins)
-			}
-		}
-	}
+	start := iv.StartsAt
 	return meetingDTO{
-		When:     formatWhen(iv.StartsAt),
-		Duration: dur,
-		Medium:   medium,
 		Panel:    panel,
-	}
-}
-
-// formatWhen renders a start time the way the meeting hero expects: a relative
-// day prefix (Today / Tomorrow / weekday) plus the wall-clock time.
-func formatWhen(t time.Time) string {
-	t = t.Local()
-	now := time.Now()
-	startOfDay := func(x time.Time) time.Time {
-		return time.Date(x.Year(), x.Month(), x.Day(), 0, 0, 0, 0, x.Location())
-	}
-	days := int(startOfDay(t).Sub(startOfDay(now)).Hours() / 24)
-	clock := t.Format("3:04 PM")
-	switch {
-	case days == 0:
-		return "Today · " + clock
-	case days == 1:
-		return "Tomorrow · " + clock
-	case days > 1 && days < 7:
-		return t.Format("Monday") + " · " + clock
-	case days < 0:
-		return t.Format("Jan 2") + " · " + clock + " (past)"
-	default:
-		return t.Format("Mon Jan 2") + " · " + clock
+		Medium:   medium,
+		StartsAt: &start,
+		EndsAt:   iv.EndsAt,
+		AllDay:   iv.AllDay,
 	}
 }
 
