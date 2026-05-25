@@ -1,9 +1,19 @@
 <script>
   const previews = [
     {
+      slug: 'today/a',
+      name: 'Today · variant A — Quiet editorial',
+      blurb: 'Same counts you liked, but serif headlines, sentence-case labels (no UPPERCASE, no mono), outline custom icons, and a target-style Pursuit mark in the sidebar. Less utilitarian, more like a written page.'
+    },
+    {
+      slug: 'today/b',
+      name: 'Today · variant B — Warm playful',
+      blurb: 'Sentence-case rounded sans, a tinted greeting card, colored ribbons on the count cards, filled custom icons in tinted circles, and a gradient Pursuit mark. More colorful and friendly.'
+    },
+    {
       slug: 'today',
-      name: 'Today — redesigned',
-      blurb: 'Big counts at the top, "What you can do today" action cards, "What we\'re noticing" insights moved over from the funnel, Google avatar in the corner, rephrased AI card. "Loops" renamed "Interviews".'
+      name: 'Today · v1 (original)',
+      blurb: 'The first pass you reacted to. Kept here for comparison.'
     },
     {
       slug: 'brief',
