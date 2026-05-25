@@ -3,22 +3,45 @@
   import { api } from '$lib/api.js';
 
   let invites = $state([]);
+  let interest = $state([]);
   let loading = $state(true);
   let email = $state('');
   let note = $state('');
   let saving = $state(false);
   let error = $state('');
+  let promoting = $state(''); // email currently being promoted
 
   onMount(refresh);
   async function refresh() {
     try {
-      invites = await api('/api/admin/invites');
+      const [inv, intr] = await Promise.all([
+        api('/api/admin/invites'),
+        api('/api/admin/beta-interest')
+      ]);
+      invites = inv;
+      interest = intr;
     } catch (e) {
       if (e.message !== 'unauthorized') console.error(e);
     } finally {
       loading = false;
     }
   }
+
+  async function inviteFromInterest(e) {
+    if (!confirm(`Invite ${e}? They'll be able to sign in with this Gmail.`)) return;
+    promoting = e;
+    try {
+      await api(`/api/admin/beta-interest/${encodeURIComponent(e)}/invite`, { method: 'POST' });
+      await refresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      promoting = '';
+    }
+  }
+
+  const pendingInterest = $derived(interest.filter(i => !i.invited_at));
+  const invitedInterest = $derived(interest.filter(i => i.invited_at));
 
   async function add(e) {
     e.preventDefault();
@@ -117,6 +140,49 @@
   {/if}
 </section>
 
+<section class="interest">
+  <header class="dh">
+    <h2>Access requests <span class="count">{pendingInterest.length}</span></h2>
+    <p>People who submitted the form on the homepage. Click <b>Invite</b> to promote them to the invite list above — once invited, they can sign in with that Gmail.</p>
+  </header>
+  {#if pendingInterest.length === 0 && invitedInterest.length === 0}
+    <p class="empty">No access requests yet. Share <code>https://178.105.213.124.nip.io</code> with people you want to invite — they can drop their email from the homepage.</p>
+  {:else}
+    {#if pendingInterest.length > 0}
+      <ul class="ir-list">
+        {#each pendingInterest as i (i.email)}
+          <li class="ir">
+            <div class="ir-main">
+              <div class="ir-email">{i.email}</div>
+              {#if i.note}<div class="ir-note">{i.note}</div>{/if}
+              <div class="ir-meta">requested {fmtDate(i.created_at)}{i.source ? ` · src: ${i.source}` : ''}</div>
+            </div>
+            <button class="btn btn-primary" onclick={() => inviteFromInterest(i.email)} disabled={promoting === i.email}>
+              {promoting === i.email ? 'Inviting…' : 'Invite'}
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if invitedInterest.length > 0}
+      <details class="invited-fold">
+        <summary>Already invited from this list ({invitedInterest.length})</summary>
+        <ul class="ir-list muted">
+          {#each invitedInterest as i (i.email)}
+            <li class="ir">
+              <div class="ir-main">
+                <div class="ir-email">{i.email}</div>
+                {#if i.note}<div class="ir-note">{i.note}</div>{/if}
+                <div class="ir-meta">invited {fmtDate(i.invited_at)}</div>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      </details>
+    {/if}
+  {/if}
+</section>
+
 <section class="demo">
   <header class="dh">
     <h2>Demo data</h2>
@@ -159,4 +225,23 @@
   .demo .dh code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 3px; color: var(--ink-2); }
   .demo-actions { display: flex; gap: 8px; }
   .seed-ok { color: var(--positive-text); font-size: 12.5px; margin: 10px 0 0; }
+
+  .interest { margin-top: 32px; border: 1px solid var(--rule); border-radius: 10px; background: var(--card); padding: 18px 20px; }
+  .interest .dh h2 { font-size: 16px; font-weight: 500; letter-spacing: -0.015em; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .interest .dh .count { font-family: var(--mono); font-size: 11px; background: var(--accent-tint); color: var(--accent-text); padding: 2px 7px; border-radius: 4px; }
+  .interest .dh p { color: var(--mute); font-size: 13px; margin: 0 0 14px; max-width: 70ch; line-height: 1.5; }
+  .interest .empty { color: var(--mute); font-size: 13px; margin: 0; padding: 14px 0; }
+  .interest .empty code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 3px; color: var(--ink-2); }
+
+  .ir-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+  .ir { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
+  .ir-main { flex: 1; min-width: 0; }
+  .ir-email { font-weight: 500; font-size: 13.5px; color: var(--ink); }
+  .ir-note { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; line-height: 1.4; }
+  .ir-meta { font-size: 11.5px; color: var(--mute); margin-top: 4px; }
+  .ir-list.muted .ir { background: var(--surface-2); opacity: .75; }
+  .invited-fold { margin-top: 12px; }
+  .invited-fold summary { cursor: pointer; font-size: 12.5px; color: var(--mute); padding: 6px 0; }
+  .invited-fold summary:hover { color: var(--ink-2); }
+  .invited-fold[open] summary { margin-bottom: 8px; }
 </style>

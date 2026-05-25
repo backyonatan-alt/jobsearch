@@ -6,7 +6,7 @@
 
 ## Decisions locked at kickoff (May 22 2026)
 
-- **Audience:** closed beta, invite-only friends. Multi-tenant data model from day 1, but no public signup.
+- **Audience:** closed beta, invite-only friends. Multi-tenant data model from day 1; **public homepage now also has a "Request access" form** (`/api/beta-interest`) that drops emails into `beta_interest`. The admin reviews on `/admin/people` → one-click **Invite** promotes the row into `invited_emails`. So we have public *interest collection* but not public *signup* — the admin still gates everyone.
 - **Stack:** Go + Postgres + static frontend on a user-owned Hetzner VM. systemd + nginx + GitHub Actions deploy. Same shape as Aegis but without the black-box constraint — `ssh` and `psql` are fair game on this project.
 - **LLM provider:** Anthropic (Claude).
 - **MVP wedge:** application tracker + LinkedIn/calendar ingest (spine) + AI interviewer dossier (the AI-native moment).
@@ -26,9 +26,16 @@
 5. Kanban + list views on the frontend (placeholder UI — full design pass scheduled before v0.2 features)
 
 ### v0.2 — Ingest + Dossier
-6. LinkedIn job paste → parse title/company/location/JD → prefill new application
+6. ~~LinkedIn job paste → parse title/company/location/JD → prefill new application~~ **DONE** (May 24 2026): text path via Haiku + URL fetch, and **screenshot path via Haiku vision** (paste/drop image → base64 → vision content block). LinkedIn URL fetching is rejected with an error guiding users to the screenshot path.
 7. Calendar `.ics` upload or paste → create interview event linked to application
-8. AI interviewer dossier: name + company (or LinkedIn URL) → Claude brief on background, recent posts/talks, likely style, watch-fors
+8. ~~AI interviewer dossier: name + company (or LinkedIn URL) → Claude brief on background, recent posts/talks, likely style, watch-fors~~ **DONE**: Sonnet + web_search, refreshable per-application.
+
+### Adjacent infra shipped (not on original roadmap)
+- **Demo data seed/clear** (`/api/admin/demo-seed`) — admin button on /admin/people that populates the calling admin's account with 15 realistic apps spanning every status. Tagged `[demo]` for clean teardown.
+- **Beta interest form** on the homepage — anyone can drop their email; admin promotes them with one click. Replaces the old "I'll add you to .env manually" flow.
+- **Onboarding overlay v2** — leads with the three AI moments (paste / screenshot / dossier) as feature pills before the seed-your-search step.
+- **`FREE_RUN_NOTES.md`** at the repo root — scratchpad for live-use observations during exploration sessions. Tagged `[bug]`/`[ux]`/`[gap]`/`[idea]`/`[wow]`. The SessionStart hook (see below) prints it into the next agent's context automatically.
+- **SessionStart hook** at `.claude/hooks/session-start.sh` — installs Go + pnpm deps in remote-web sessions, then prints `FREE_RUN_NOTES.md` and a one-line repo-state summary so the next agent walks in already oriented.
 
 ### v0.3 — Insight
 9. Funnel view: applied → screen → onsite → offer, with conversion rates

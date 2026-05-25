@@ -6,12 +6,43 @@
     oauth_state:   'Your sign-in session expired. Try again.',
     oauth_no_code: "Sign-in didn't return a code. Try again.",
     oauth_failed:  "We couldn't verify your Google account. Try again.",
-    not_invited:   "That Google account isn't on the beta invite list yet.",
+    not_invited:   "That Google account isn't on the beta invite list yet — drop your email below and the admin will see it.",
     internal:      'Something went wrong on our end. Try again.'
   };
 
   const err = $derived(page.url.searchParams.get('err'));
   const statusMessage = $derived(err ? messages[err] || null : null);
+  // If they bounced off "not_invited", auto-expand the request-access form
+  // so the affordance is right where their eyes already are.
+  let showInterest = $state(false);
+  $effect(() => { if (err === 'not_invited') showInterest = true; });
+
+  let email = $state('');
+  let note = $state('');
+  let submitting = $state(false);
+  let interestState = $state(''); // '' | 'sent' | 'already_invited'
+  let interestError = $state('');
+  const source = $derived(page.url.searchParams.get('src') || '');
+
+  async function submitInterest(e) {
+    e.preventDefault();
+    interestError = '';
+    submitting = true;
+    try {
+      const r = await fetch('/api/beta-interest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), note: note.trim(), source })
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || 'Something went wrong.');
+      interestState = body.status === 'already_invited' ? 'already_invited' : 'sent';
+    } catch (e) {
+      interestError = e.message;
+    } finally {
+      submitting = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -40,6 +71,145 @@
       <p class="status">&nbsp;</p>
     {/if}
 
+    <div class="interest-block">
+      {#if !showInterest && interestState === ''}
+        <button type="button" class="link-btn" onclick={() => (showInterest = true)}>
+          Not invited yet? <span class="link">Request access →</span>
+        </button>
+      {:else if interestState === 'sent'}
+        <div class="interest-done">
+          <h3>Thanks — you're on the list.</h3>
+          <p>The admin sees your email on their dashboard. When you're invited you'll be able to sign in with this Google account.</p>
+        </div>
+      {:else if interestState === 'already_invited'}
+        <div class="interest-done">
+          <h3>You're already on the invite list.</h3>
+          <p>Click <b>Continue with Google</b> above with that email.</p>
+        </div>
+      {:else}
+        <form class="interest-form" onsubmit={submitInterest}>
+          <h3>Request access</h3>
+          <p class="interest-help">Pursuit is in closed beta. Drop your email + one line on what you're job-searching for; the admin reviews and invites manually.</p>
+          <label>
+            <span class="lbl">Your Gmail</span>
+            <input type="email" bind:value={email} placeholder="you@gmail.com" required />
+          </label>
+          <label>
+            <span class="lbl">One line about your search <span class="opt">— optional</span></span>
+            <input type="text" bind:value={note} placeholder="Looking for staff roles in AI infra, US remote" maxlength="500" />
+          </label>
+          {#if interestError}<p class="ifail">{interestError}</p>{/if}
+          <div class="iactions">
+            <button type="button" class="ghost" onclick={() => (showInterest = false)}>Cancel</button>
+            <button type="submit" class="primary" disabled={submitting || !email.trim()}>
+              {submitting ? 'Sending…' : 'Request access'}
+            </button>
+          </div>
+        </form>
+      {/if}
+    </div>
+
     <p class="footnote">Closed beta. By invite only.</p>
   </div>
 </main>
+
+<style>
+  .auth-shell {
+    min-height: 100vh;
+    display: grid; place-items: center;
+    background: var(--surface);
+    padding: 32px 16px;
+  }
+  .auth-card {
+    width: 100%; max-width: 380px;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    padding: 32px 28px 24px;
+    box-shadow: var(--sh-pop);
+    text-align: center;
+  }
+  .mark {
+    width: 36px; height: 36px;
+    background: var(--ink);
+    border-radius: 8px;
+    margin: 0 auto 16px;
+  }
+  h1 { font-size: 28px; font-weight: 500; letter-spacing: -0.025em; margin: 0 0 6px; }
+  .tagline { color: var(--mute); margin: 0 0 22px; font-size: 14px; }
+
+  .google {
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px;
+    height: 42px;
+    background: var(--ink); color: white;
+    border: 1px solid var(--ink);
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 14px; font-weight: 500;
+    transition: background 100ms ease;
+  }
+  .google:hover { background: #1a1a1f; }
+  .google svg { background: white; border-radius: 3px; padding: 2px; box-sizing: content-box; }
+
+  .status { font-size: 12.5px; min-height: 18px; margin: 12px 0 0; color: var(--mute); }
+  .status.error { color: var(--danger-text); }
+
+  .interest-block { margin-top: 18px; text-align: left; }
+  .link-btn {
+    background: transparent; border: 0; padding: 0;
+    font: inherit; font-size: 13px; color: var(--mute);
+    cursor: pointer;
+    text-align: center; width: 100%;
+  }
+  .link-btn .link { color: var(--accent-text); font-weight: 500; }
+  .link-btn:hover .link { text-decoration: underline; }
+
+  .interest-form {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .interest-form h3 { font-size: 14px; font-weight: 500; margin: 0; letter-spacing: -0.01em; }
+  .interest-help { font-size: 12px; color: var(--mute); margin: 0 0 4px; line-height: 1.5; }
+  .interest-form label { display: flex; flex-direction: column; gap: 4px; }
+  .interest-form .lbl { font-size: 11.5px; color: var(--mute); font-weight: 500; }
+  .interest-form .opt { color: var(--mute-2); font-weight: 400; }
+  .interest-form input {
+    font: inherit; font-size: 13px;
+    height: 34px; padding: 0 10px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--card);
+    color: var(--ink);
+    outline: none;
+  }
+  .interest-form input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-tint);
+  }
+  .ifail { color: var(--danger-text); font-size: 12px; margin: 0; }
+
+  .iactions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+  .iactions button {
+    font: inherit; font-size: 12.5px; font-weight: 500;
+    height: 30px; padding: 0 12px;
+    border-radius: 6px; cursor: pointer;
+  }
+  .iactions .ghost { background: transparent; border: 1px solid var(--rule); color: var(--ink-2); }
+  .iactions .primary { background: var(--ink); color: white; border: 1px solid var(--ink); }
+  .iactions .primary:disabled { opacity: .55; cursor: not-allowed; }
+
+  .interest-done {
+    background: var(--positive-tint);
+    border: 1px solid var(--positive-tint);
+    border-radius: 10px; padding: 14px 16px;
+    text-align: left;
+  }
+  .interest-done h3 { font-size: 14px; font-weight: 500; margin: 0 0 4px; color: var(--positive-text); }
+  .interest-done p { font-size: 12.5px; color: var(--ink-2); margin: 0; line-height: 1.5; }
+
+  .footnote { font-size: 11.5px; color: var(--mute-2); margin: 18px 0 0; }
+</style>

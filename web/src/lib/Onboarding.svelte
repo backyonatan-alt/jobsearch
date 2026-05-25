@@ -88,23 +88,53 @@
   <div class="ob-card" onclick={(e) => e.stopPropagation()}>
     <header>
       <h1>Welcome to Pursuit.</h1>
-      <p class="lede">A working tool for your job search. Two minutes to get oriented.</p>
+      <p class="lede">A job-search tracker with two AI moments most trackers don't have. Sixty seconds to get oriented.</p>
     </header>
 
     {#if !finished}
+      <ul class="feature-pills">
+        <li>
+          <div class="fp-ic">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h3"/></svg>
+          </div>
+          <div>
+            <h3>Paste any job</h3>
+            <p>JD body, URL, recruiter email, or a one-line note. Claude parses it into a row.</p>
+          </div>
+        </li>
+        <li>
+          <div class="fp-ic">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+          </div>
+          <div>
+            <h3>Drop a screenshot</h3>
+            <p>LinkedIn blocks scrapers — so screenshot the page (<kbd>⌘⌃⇧4</kbd>) and paste. Vision reads it.</p>
+          </div>
+        </li>
+        <li>
+          <div class="fp-ic">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="6" r="2.5"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>
+          </div>
+          <div>
+            <h3>AI interviewer dossier</h3>
+            <p>Before an interview, get a 60-sec brief on the person — recent posts, style, watch-fors. Live web search.</p>
+          </div>
+        </li>
+      </ul>
+
       <section class="step">
         <div class="step-head">
           <span class="step-num">1</span>
-          <h2>Add the jobs you've applied to</h2>
+          <h2>Seed your search now</h2>
         </div>
         <p class="step-help">
-          Paste any job postings, URLs, recruiter emails, or notes in your own
-          words. <b>Separate entries with a blank line.</b> Claude will parse
-          each one into a row.
+          Paste any jobs you've already applied to — URLs, JD body text, recruiter
+          emails, or your own one-liners. <b>Separate entries with a blank line.</b>
+          Or skip and add them one-by-one with <kbd class="hk">⌘N</kbd> later.
         </p>
         <textarea
           bind:value={text}
-          rows="8"
+          rows="6"
           disabled={working}
           placeholder={"https://job-boards.greenhouse.io/anthropic/jobs/4020693008\n\nStripe — Staff Backend Engineer · referred by Mia · applied 14 May\n\nJD body text pasted from any company's careers page"}
         ></textarea>
@@ -127,19 +157,20 @@
       <section class="step">
         <div class="step-head">
           <span class="step-num">2</span>
-          <h2>What you can do next</h2>
+          <h2>The shortcuts that matter</h2>
         </div>
         <ul class="tips">
-          <li><b>Update status</b> on any application from its detail page — the pipeline runs wishlist → applied → screen → interview → offer.</li>
-          <li><b>AI dossier</b>: once an application is in Screen / Interview / Offer, open it and click <em>Generate</em>. Claude researches the interviewer or company live and writes you a 60-second briefing.</li>
-          <li><b>Today</b> in the sidebar surfaces what needs your attention now — open offers, upcoming loops.</li>
+          <li><kbd class="hk">⌘N</kbd> anywhere opens the New-application modal. Drop a screenshot or paste a URL; it parses in ~3s.</li>
+          <li>Open any application → <b>Refresh dossier</b> generates the AI briefing (interview-status apps benefit the most).</li>
+          <li>Sidebar pipeline links (Interview loops / Open offers / Wishlist) jump straight to filtered views.</li>
+          <li><b>Today</b> surfaces the live loop and recent offers; <b>Board</b> is Kanban; <b>Funnel</b> shows your conversion rates.</li>
         </ul>
       </section>
 
       <footer class="actions">
-        <button class="btn" onclick={skipForNow} disabled={working}>Skip for now</button>
+        <button class="btn" onclick={skipForNow} disabled={working}>Skip — just explore</button>
         <button class="btn btn-primary" onclick={start} disabled={working}>
-          {working ? 'Adding…' : (text.trim() ? 'Add applications + start' : 'Start with no data')}
+          {working ? 'Adding…' : (text.trim() ? 'Parse + open dashboard →' : 'Open the dashboard →')}
         </button>
       </footer>
     {:else}
@@ -207,7 +238,44 @@
     margin: 24px auto;
   }
   header h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.022em; margin: 0 0 .4rem; }
-  .lede { color: var(--mute); margin: 0 0 28px; font-size: 14px; }
+  .lede { color: var(--mute); margin: 0 0 24px; font-size: 14px; line-height: 1.5; }
+
+  .feature-pills {
+    list-style: none; padding: 0; margin: 0 0 28px;
+    display: grid; grid-template-columns: 1fr; gap: 8px;
+  }
+  .feature-pills li {
+    display: grid; grid-template-columns: 36px 1fr; gap: 12px;
+    align-items: start;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+  }
+  .feature-pills .fp-ic {
+    width: 32px; height: 32px;
+    border-radius: 7px;
+    background: var(--accent-tint);
+    color: var(--accent-text);
+    display: grid; place-items: center;
+  }
+  .feature-pills h3 { font-size: 13.5px; font-weight: 500; margin: 0 0 2px; color: var(--ink); letter-spacing: -0.005em; }
+  .feature-pills p { font-size: 12.5px; color: var(--mute); margin: 0; line-height: 1.5; }
+  .feature-pills kbd {
+    font-family: var(--mono); font-size: 10.5px;
+    background: var(--card); border: 1px solid var(--rule);
+    border-bottom-width: 2px; border-radius: 3px;
+    padding: 0 4px; color: var(--ink-2);
+  }
+
+  .hk {
+    font-family: var(--mono); font-size: 11.5px;
+    background: var(--surface-2); border: 1px solid var(--rule);
+    border-bottom-width: 2px; border-radius: 4px;
+    padding: 0 5px; color: var(--ink-2);
+  }
+  .tips kbd { font-family: var(--mono); font-size: 11.5px; background: var(--card); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--ink-2); }
+  .step-help kbd { font-family: var(--mono); font-size: 11.5px; background: var(--card); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--ink-2); }
 
   .step { margin-bottom: 24px; }
   .step-head {

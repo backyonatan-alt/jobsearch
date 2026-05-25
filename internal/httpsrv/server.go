@@ -31,6 +31,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /auth/google/start", s.handleGoogleStart)
 	mux.HandleFunc("GET /auth/google/callback", s.handleGoogleCallback)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	mux.HandleFunc("POST /api/beta-interest", s.handleBetaInterestCreate)
 	mux.HandleFunc("GET /api/me", s.requireUser(s.handleMe))
 	mux.HandleFunc("POST /api/me/onboarded", s.requireUser(s.handleMarkOnboarded))
 
@@ -48,6 +49,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/admin/invites/{email}", s.requireAdmin(s.handleAdminInvitesDelete))
 	mux.HandleFunc("POST /api/admin/demo-seed", s.requireAdmin(s.handleDemoSeed))
 	mux.HandleFunc("DELETE /api/admin/demo-seed", s.requireAdmin(s.handleDemoClear))
+	mux.HandleFunc("GET /api/admin/beta-interest", s.requireAdmin(s.handleBetaInterestList))
+	mux.HandleFunc("POST /api/admin/beta-interest/{email}/invite", s.requireAdmin(s.handleBetaInterestPromote))
 
 	// SPA fallback: the SvelteKit static build emits a single index.html for
 	// all client-routed pages, so any /app/* or /admin/* or /preview/* URL
