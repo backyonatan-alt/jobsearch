@@ -16,14 +16,19 @@
       blurb: 'Latest pass — flat (no gradients), no salary, neutral chips, redesigned lands/avoid as "How to approach this interview".'
     },
     {
-      slug: 'funnel/a',
-      name: 'Funnel · variant A — Faithful funnel',
-      blurb: 'True Mixpanel-style trapezoid funnel chart + a By-source table below. Three KPI cards on top: overall conversion, best source, where you\'re stalling.'
+      slug: 'funnel/b-options',
+      name: 'Funnel · 3 chart options (built on B)',
+      blurb: 'Three treatments for the funnel chart\'s colors + number styling. Pick one — that becomes the chart inside the locked B dashboard.'
     },
     {
       slug: 'funnel/b',
-      name: 'Funnel · variant B — Analytics dashboard',
-      blurb: 'Funnel as one card in a fuller PM-style dashboard: 4 KPI cards on top, stepped funnel, side-by-side bar charts for source + CV variant, then time-in-stage cells.'
+      name: 'Funnel · variant B (locked dashboard)',
+      blurb: 'The dashboard layout we picked. The chart inside it is one of the 3 options above.'
+    },
+    {
+      slug: 'funnel/a',
+      name: 'Funnel · variant A (rejected)',
+      blurb: 'Reference only.'
     },
     {
       slug: 'logos',
