@@ -19,6 +19,7 @@ Time-bound items. Cross off as completed. Things that don't have a date go in `C
 - [ ] Frontend design pass: SvelteKit migration + 3 design directions deployed at `/preview/a|b|c`, pick one
 - [ ] Rotate Google OAuth Client Secret (current one was exposed in chat transcript on May 22 2026)
 - [ ] Send invite links to 3 friends for the closed beta
+- [ ] **Board view on mobile web is really bad — needs a new design** (noted May 26 2026, tackle tomorrow)
 
 ## Next (v0.2 — ingest + dossier)
 
