@@ -41,6 +41,7 @@
 9. Funnel view: applied → screen → onsite → offer, with conversion rates
 10. AI weekly review: "what's working, where you're stalling"
 11. Reminders (follow-ups, prep tasks) — email + browser
+12. **Today page → real AI.** Replace the deterministic rule engines behind "What you can do today" and "What we're noticing" (`web/src/routes/app/+page.svelte:228–314`) with a Claude-backed `/api/today` endpoint that picks the slots, picks the signals, and writes the copy. Keep the rule-based version as the fallback. Details in `TODO.md`.
 
 ### v1.5+ — Parked, needs decisions
 - Post-interview review + recording analysis (privacy/consent first)
