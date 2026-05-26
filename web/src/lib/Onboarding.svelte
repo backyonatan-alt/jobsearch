@@ -8,6 +8,7 @@
   let progress = $state([]); // [{idx, status: 'pending'|'parsing'|'creating'|'done'|'error', label, error?}]
   let globalError = $state('');
   let finished = $state(false);
+  let seeding = $state(false);
   const added = $derived(progress.filter(p => p.status === 'done').length);
 
   function splitEntries(s) {
@@ -66,8 +67,18 @@
 
     finished = true;
     working = false;
-    // If at least one was added, mark onboarded automatically and let the
-    // user click Done. If none, they can still click Done to skip.
+  }
+
+  async function seedDemo() {
+    if (seeding) return;
+    seeding = true;
+    try {
+      await api('/api/me/demo-seed', { method: 'POST' });
+      await markOnboarded();
+    } catch (e) {
+      globalError = e.message || 'Could not seed demo data.';
+      seeding = false;
+    }
   }
 
   async function markOnboarded() {
@@ -116,7 +127,7 @@
             <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="6" r="2.5"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>
           </div>
           <div>
-            <h3>AI interviewer dossier</h3>
+            <h3>AI interview brief</h3>
             <p>Before an interview, get a 60-sec brief on the person — recent posts, style, watch-fors. Live web search.</p>
           </div>
         </li>
@@ -130,12 +141,13 @@
         <p class="step-help">
           Paste any jobs you've already applied to — URLs, JD body text, recruiter
           emails, or your own one-liners. <b>Separate entries with a blank line.</b>
-          Or skip and add them one-by-one with <kbd class="hk">⌘N</kbd> later.
+          Or click <b>Try with demo data</b> to start with 15 realistic apps so you
+          can see every surface populated.
         </p>
         <textarea
           bind:value={text}
           rows="6"
-          disabled={working}
+          disabled={working || seeding}
           placeholder={"https://job-boards.greenhouse.io/anthropic/jobs/4020693008\n\nStripe — Staff Backend Engineer · referred by Mia · applied 14 May\n\nJD body text pasted from any company's careers page"}
         ></textarea>
 
@@ -152,6 +164,7 @@
             {/each}
           </ul>
         {/if}
+        {#if globalError}<p class="pe" style="margin-top: 8px">{globalError}</p>{/if}
       </section>
 
       <section class="step">
@@ -161,15 +174,18 @@
         </div>
         <ul class="tips">
           <li><kbd class="hk">⌘N</kbd> anywhere opens the New-application modal. Drop a screenshot or paste a URL; it parses in ~3s.</li>
-          <li>Open any application → <b>Refresh dossier</b> generates the AI briefing (interview-status apps benefit the most).</li>
-          <li>Sidebar pipeline links (Interview loops / Open offers / Wishlist) jump straight to filtered views.</li>
-          <li><b>Today</b> surfaces the live loop and recent offers; <b>Board</b> is Kanban; <b>Funnel</b> shows your conversion rates.</li>
+          <li>Open any application → the <b>Brief</b> tab. Click <b>Generate</b> to get an AI briefing on the interviewer (works best on screen / interview / offer status).</li>
+          <li>The filter chips on <b>Today</b> jump between Active / Interview / Offer / Wishlist / All without a page reload.</li>
+          <li><b>Today</b> surfaces what needs attention; <b>Board</b> is your Kanban; <b>Insights</b> shows your conversion funnel and pipeline health.</li>
         </ul>
       </section>
 
       <footer class="actions">
-        <button class="btn" onclick={skipForNow} disabled={working}>Skip — just explore</button>
-        <button class="btn btn-primary" onclick={start} disabled={working}>
+        <button class="btn skip" onclick={skipForNow} disabled={working || seeding}>Skip — just explore</button>
+        <button class="btn" onclick={seedDemo} disabled={working || seeding}>
+          {seeding ? 'Seeding…' : 'Try with demo data'}
+        </button>
+        <button class="btn btn-primary" onclick={start} disabled={working || seeding}>
           {working ? 'Adding…' : (text.trim() ? 'Parse + open dashboard →' : 'Open the dashboard →')}
         </button>
       </footer>
@@ -358,8 +374,14 @@
   .tips em { font-style: italic; color: var(--accent-text); }
 
   .actions {
-    display: flex; justify-content: flex-end; gap: 8px;
+    display: flex; align-items: center; gap: 8px;
     margin-top: 28px;
+    flex-wrap: wrap;
+  }
+  .actions .skip { margin-right: auto; }
+  @media (max-width: 720px) {
+    .actions { flex-direction: column-reverse; align-items: stretch; }
+    .actions .skip { margin-right: 0; }
   }
   .btn {
     height: 32px;
