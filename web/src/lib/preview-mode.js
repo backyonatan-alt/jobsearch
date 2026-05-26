@@ -132,6 +132,12 @@ export async function mockApi(path, opts = {}) {
   // POST /api/auth/logout — no-op in preview.
   if (method === 'POST' && cleanPath === '/api/auth/logout') return ok({ status: 'ok' });
 
+  // POST /api/me/onboarded — flips the flag on the fake user.
+  if (method === 'POST' && cleanPath === '/api/me/onboarded') {
+    PREVIEW_USER.onboarded_at = new Date().toISOString();
+    return ok({ status: 'ok' });
+  }
+
   // GET /api/applications
   if (method === 'GET' && cleanPath === '/api/applications') return ok(apps.slice());
 
