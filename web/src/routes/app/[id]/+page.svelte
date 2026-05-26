@@ -354,7 +354,10 @@
 
   function back() { goto('/app'); }
 
-  const dossierEligible = $derived(app && ['screen', 'interview', 'offer'].includes(app.status));
+  // Brief is available the moment an application is on file. The only
+  // exceptions are closed apps — no point burning an AI call on a dead
+  // pipeline. Auto-trigger inherits the same gate.
+  const dossierEligible = $derived(app && !['rejected', 'withdrawn'].includes(app.status));
   const dossierAvailable = $derived(!!dossier);
   function initialsOf(name) {
     return (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase();
@@ -372,9 +375,24 @@
   const daysInPipe = $derived(app ? daysSince(app.raw.applied_at) : null);
 
   const appliedLong = $derived(app ? fmtLongDate(app.raw.applied_at) : '');
-  const jdHost = $derived.by(() => {
+  // Host shown next to the "View" link. For known job boards (LinkedIn,
+  // Greenhouse, Workday, etc.) we say "original posting" instead — the user
+  // doesn't think of the JD as "on LinkedIn", they think of it as the job
+  // posting page.
+  const JOB_BOARD_HOSTS = new Set([
+    'linkedin.com', 'indeed.com', 'glassdoor.com', 'monster.com', 'ziprecruiter.com',
+    'wellfound.com', 'angel.co', 'builtin.com', 'greenhouse.io', 'lever.co',
+    'ashbyhq.com', 'workday.com', 'workable.com', 'smartrecruiters.com'
+  ]);
+  const jdLinkLabel = $derived.by(() => {
     if (!app?.raw?.jd_url) return '';
-    try { return new URL(app.raw.jd_url).hostname.replace(/^www\./, ''); } catch { return ''; }
+    try {
+      const h = new URL(app.raw.jd_url).hostname.toLowerCase().replace(/^www\./, '');
+      if (JOB_BOARD_HOSTS.has(h) || /\.(myworkdayjobs|greenhouse|lever|ashbyhq|workable)\.(com|io|co)$/.test(h)) {
+        return 'View original posting';
+      }
+      return 'View on ' + h;
+    } catch { return 'View posting'; }
   });
 </script>
 
@@ -447,7 +465,7 @@
           {#if app.raw.jd_url}
             <a class="src-link" href={app.raw.jd_url} target="_blank" rel="noopener">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 11l6-6M6 5h5v5"/></svg>
-              View on {jdHost || 'source'}
+              {jdLinkLabel}
             </a>
           {/if}
         </div>
@@ -759,7 +777,7 @@
             <h3>Generate the brief</h3>
             <p>
               Claude reads the web — recent essays, talks, papers, company news —
-              and writes you a focused briefing for this interview. Optional: name
+              and writes you a focused briefing — the company, their typical interview process, and (optional) a person-specific read on a named interviewer. Name
               the interviewer for a person-specific brief.
             </p>
             <div class="generate-row">
@@ -774,7 +792,7 @@
               </button>
             </div>
             {#if !dossierEligible}
-              <p class="muted-note">Move this application to <b>Screen</b>, <b>Interview</b>, or <b>Offer</b> to enable the brief.</p>
+              <p class="muted-note">This application is closed — re-open it to a live status if you want a brief.</p>
             {/if}
             {#if dossierError}
               <p class="dossier-err">{dossierError}</p>
@@ -1172,8 +1190,11 @@
   .generate-row { display: flex; gap: 8px; max-width: 520px; margin: 0 auto; }
   .generate-row input { flex: 1; font: inherit; font-size: 13.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; outline: none; }
   .generate-row input:focus { border-color: var(--accent); }
-  .muted-note { color: var(--mute); font-size: 12px; margin: .75rem 0 0; }
-  .muted-note b { color: var(--ink-2); font-weight: 600; }
+  .muted-note { color: var(--warm-text); background: var(--warm-tint); border: 1px solid var(--warm-tint); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin: 14px 0 0; }
+  .muted-note b { color: var(--warm-text); font-weight: 700; }
+  /* Disabled primary button — make it visually obvious so users don't think
+     the button is broken when the dossier gate isn't open yet. */
+  .generate-card .btn-primary:disabled { background: var(--rule-strong); border-color: var(--rule-strong); color: var(--mute); cursor: not-allowed; opacity: 1; }
   .dossier-err { color: var(--danger-text); background: var(--danger-tint); border: 1px solid var(--danger-tint); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: .75rem 0 0; }
   .generating-card {
     border: 1px solid var(--accent-tint-2);

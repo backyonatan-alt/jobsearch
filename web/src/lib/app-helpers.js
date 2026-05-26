@@ -66,14 +66,41 @@ export function countsByStatus(apps) {
   }, {});
 }
 
+// Hosts that are job boards / ATS systems, not the hiring company. When the
+// JD URL points to one of these, the URL host is useless for branding the
+// row (we'd render LinkedIn's logo for every LinkedIn-posted job), so we
+// skip the URL and fall back to the company-name slug.
+const JOB_BOARD_HOSTS = new Set([
+  'linkedin.com', 'indeed.com', 'glassdoor.com', 'monster.com', 'ziprecruiter.com',
+  'wellfound.com', 'angel.co', 'builtin.com', 'simplyhired.com', 'dice.com',
+  'greenhouse.io', 'lever.co', 'ashbyhq.com', 'ashby.com',
+  'smartrecruiters.com', 'workable.com', 'breezy.hr', 'recruitee.com',
+  'bamboohr.com', 'jobvite.com', 'icims.com', 'taleo.net', 'successfactors.com',
+  'workday.com', 'myworkdayjobs.com', 'oraclecloud.com',
+  'jobboards.greenhouse.io', 'job-boards.greenhouse.io', 'boards.greenhouse.io',
+  'careers.google.com'
+]);
+
+function isJobBoardHost(host) {
+  if (JOB_BOARD_HOSTS.has(host)) return true;
+  // myworkdayjobs.com and similar use customer subdomains — match the suffix.
+  for (const suffix of ['.myworkdayjobs.com', '.greenhouse.io', '.lever.co', '.ashbyhq.com', '.workable.com', '.icims.com', '.taleo.net']) {
+    if (host.endsWith(suffix)) return true;
+  }
+  return false;
+}
+
 // Best-effort domain for a company so we can fetch a real favicon. Prefers the
-// JD url host (drops "www." and any "jobs."/"careers." subdomain), else falls
-// back to a lowercased company-name slug + ".com".
+// JD url host (drops "www." and any "jobs."/"careers." subdomain) WHEN the
+// host is a real company site, not a job board. Otherwise — and as the
+// fallback — uses a lowercased company-name slug + ".com".
 export function companyDomain(company, jdUrl) {
   if (jdUrl) {
     try {
-      const h = new URL(jdUrl).hostname.toLowerCase();
-      return h.replace(/^www\./, '').replace(/^(jobs|careers|boards|apply)\./, '');
+      const host = new URL(jdUrl).hostname.toLowerCase().replace(/^www\./, '');
+      if (!isJobBoardHost(host)) {
+        return host.replace(/^(jobs|careers|boards|apply)\./, '');
+      }
     } catch {}
   }
   const slug = String(company || '').toLowerCase()
