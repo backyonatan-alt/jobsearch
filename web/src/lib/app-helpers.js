@@ -106,7 +106,9 @@ export function isStale(a) {
 export function fmtRelativeDate(iso) {
   const d = daysSince(iso);
   if (d === null) return '—';
-  if (d === 0) return 'today';
+  // Server-side applied_at can land a few ms after the client clock, which
+  // turns Math.floor into -1. Treat anything ≤ 0 days as "today".
+  if (d <= 0) return 'today';
   if (d === 1) return 'yesterday';
   if (d < 30) return `${d} days ago`;
   const months = Math.floor(d / 30);

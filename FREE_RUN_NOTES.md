@@ -100,6 +100,13 @@ the moment you notice something; triage later.
 ### Bug fixes
 
 - `[bug]` dossier meeting hero rendered start time in the **server's** TZ while the Scheduled list rendered it in the **browser's** TZ — same event showed two different wall-clock times. Fixed by sending raw `starts_at`/`ends_at` from `meetingDTO` and letting the Svelte component format. (May 25 2026)
+- `[bug]` Today's Applications table briefly showed **"-1 days ago"** for just-created rows because `Math.floor` on a negative ms diff rounds toward −∞. Fixed `fmtRelativeDate` to treat `d ≤ 0` as "today". (May 26 2026)
+
+### Demo data for new users (May 26 2026)
+
+- New `POST /api/me/demo-seed` + `DELETE /api/me/demo-seed` routes (same handlers as the admin ones, just open to any signed-in user via `requireUser`).
+- On Today, when the signed-in user has zero applications, the whole body collapses to a welcome card: brand glyph, one paragraph about Pursuit, "Add your first application" + "Try with demo data" buttons.
+- Once seeded, a small "Clear demo data" chip appears in the Applications-table filter row; it deletes only rows whose notes start with `[demo] `, so real applications are kept.
 
 ### Design decisions locked (May 25 2026 review session)
 

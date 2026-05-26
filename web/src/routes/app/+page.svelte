@@ -183,6 +183,36 @@
 
   function open(id) { goto(`/app/${id}`); }
 
+  // ── Demo data ────────────────────────────────────────────
+  // Friends signing in for the first time land on a blank /app, which is a
+  // terrible first impression. Offer a one-click "seed me with 15 realistic
+  // apps" so they can see the full product, with a matching clear action.
+  let seeding = $state(false);
+  let seedError = $state('');
+  async function seedDemo() {
+    if (seeding) return;
+    seeding = true;
+    seedError = '';
+    try {
+      await api('/api/me/demo-seed', { method: 'POST' });
+      await refresh();
+    } catch (e) {
+      seedError = e.message || 'Could not seed demo data.';
+    } finally {
+      seeding = false;
+    }
+  }
+  async function clearDemo() {
+    if (!confirm('Remove all demo applications? Your real ones are kept.')) return;
+    try {
+      await api('/api/me/demo-seed', { method: 'DELETE' });
+      await refresh();
+    } catch (e) {
+      console.error('clear demo', e);
+    }
+  }
+  const hasDemoRows = $derived(apps.some(a => (a.raw?.notes || '').startsWith('[demo] ')));
+
   // ── Derived state ────────────────────────────────────────
   const counts = $derived(countsByStatus(apps));
   const active = $derived(apps.filter(a => !['rejected', 'withdrawn'].includes(a.status)));
@@ -381,6 +411,34 @@
       <h1>{timeOfDayGreeting}, {firstName}.</h1>
     </div>
 
+    {#if !loading && apps.length === 0}
+      <div class="welcome-card">
+        <div class="welcome-glyph">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none">
+            <circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.4" opacity="0.65"/>
+            <circle cx="12" cy="12" r="5.5" stroke="currentColor" stroke-width="1.4" opacity="0.9"/>
+            <circle cx="17.5" cy="6.5" r="2.6" fill="currentColor"/>
+          </svg>
+        </div>
+        <h2>Welcome to Pursuit.</h2>
+        <p>
+          Pursuit tracks your job search end-to-end — applications, interviews,
+          and AI briefings on the people you're about to meet. Add your first
+          application to start, or seed your account with 15 realistic
+          applications so you can see every surface populated.
+        </p>
+        <div class="welcome-actions">
+          <button class="btn btn-primary" onclick={() => (showNewModal = true)}>
+            Add your first application
+          </button>
+          <button class="btn" onclick={seedDemo} disabled={seeding}>
+            {seeding ? 'Seeding…' : 'Try with demo data'}
+          </button>
+        </div>
+        {#if seedError}<p class="welcome-err">{seedError}</p>{/if}
+        <p class="welcome-note">Demo rows are tagged so you can clear them in one click later.</p>
+      </div>
+    {:else}
     <div class="counts">
       {#each countCards as c}
         <div class={`count-cell tone-${c.tone}`}>
@@ -461,6 +519,11 @@
     <div class="section-hd">
       <h2>Applications <span class="count-pill">{apps.length}</span></h2>
       <div class="filters">
+        {#if hasDemoRows}
+          <button class="chip chip-warn" onclick={clearDemo} title="Remove demo data — real applications are kept">
+            Clear demo data
+          </button>
+        {/if}
         {#each chips as c}
           <button class={`chip ${filter === c.k ? 'active' : ''}`} onclick={() => (filter = c.k)}>{c.lbl}</button>
         {/each}
@@ -500,6 +563,7 @@
         {/each}
       {/if}
     </div>
+    {/if}
   </div>
 </div>
 
@@ -718,6 +782,33 @@
   .filters { display: flex; gap: 4px; }
   .chip { background: transparent; border: 1px solid var(--rule); border-radius: 99px; padding: 4px 12px; font-size: 12.5px; color: var(--mute); cursor: pointer; }
   .chip.active { background: var(--ink); border-color: var(--ink); color: white; }
+  .chip.chip-warn { color: var(--danger-text); border-color: var(--danger-tint); }
+  .chip.chip-warn:hover { background: var(--danger-tint); }
+
+  /* Welcome card — shown only when the signed-in user has zero applications. */
+  .welcome-card {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 18px;
+    padding: 36px 40px;
+    text-align: center;
+    box-shadow: var(--sh-1);
+    max-width: 640px;
+    margin: 16px auto 0;
+  }
+  .welcome-glyph {
+    width: 56px; height: 56px;
+    margin: 0 auto 14px;
+    border-radius: 14px;
+    background: var(--accent-tint);
+    color: var(--accent);
+    display: grid; place-items: center;
+  }
+  .welcome-card h2 { font-size: 22px; font-weight: 600; margin: 0 0 .5rem; letter-spacing: -0.02em; }
+  .welcome-card > p { font-size: 14px; color: var(--mute); line-height: 1.55; margin: 0 auto 1.5rem; max-width: 52ch; }
+  .welcome-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+  .welcome-err { color: var(--danger-text); font-size: 12.5px; margin: 12px 0 0; }
+  .welcome-note { font-size: 12px; color: var(--mute-2); margin: 12px 0 0; }
   .table { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; }
   .tr { display: grid; grid-template-columns: 220px 1fr 130px 160px 20px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--rule); font-size: 13.5px; cursor: pointer; }
   .tr:last-child { border-bottom: 0; }
