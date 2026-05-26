@@ -265,4 +265,14 @@
   }
   .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
   .empty-tab p { color: var(--mute); margin: 0; font-size: 13.5px; }
+
+  /* Mobile — tighten the board so each column is closer to phone width.
+     Horizontal scroll stays (already overflow-x: auto on .board-cols). */
+  @media (max-width: 720px) {
+    .body { padding: 18px 14px; }
+    .board-hd h1 { font-size: 22px; }
+    .board-cols { grid-template-columns: repeat(6, minmax(220px, 220px)); gap: 10px; }
+    .board-col { padding: 10px; min-height: 50vh; }
+    .bcard { padding: 10px 11px; }
+  }
 </style>

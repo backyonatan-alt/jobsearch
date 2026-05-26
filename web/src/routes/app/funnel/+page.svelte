@@ -362,4 +362,21 @@
   }
   .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
   .empty-tab p { color: var(--mute); margin: 0; font-size: 13.5px; }
+
+  /* Mobile — stack KPIs and breakdowns; keep funnel bars readable. */
+  @media (max-width: 720px) {
+    .body { padding: 18px 14px; }
+    .hello h1 { font-size: 22px; }
+    .kpis { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .kpi { padding: 14px 16px; }
+    .kpi-n { font-size: 24px; }
+    .two-col { grid-template-columns: 1fr; gap: 10px; }
+    .block { padding: 16px 16px; }
+    .block-hd { flex-wrap: wrap; }
+    .fb-row { grid-template-columns: 90px 1fr 70px; gap: 10px; }
+    .fb-track { height: 30px; }
+    .fb-rate-pill { font-size: 13px; padding: 4px 10px; }
+    .tis-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .bar-row { grid-template-columns: 1fr 1fr 40px; gap: 8px; }
+  }
 </style>

@@ -940,4 +940,26 @@
   .foot-actions { display: flex; gap: 8px; }
   .foot-actions .btn-primary { display: inline-flex; align-items: center; gap: 6px; }
   .dark-kbd { font-family: var(--mono); font-size: 10.5px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.22); border-radius: 3px; padding: 0 5px; color: rgba(255,255,255,.9); }
+
+  /* Mobile — stack everything to a single column. */
+  @media (max-width: 720px) {
+    .hello h1 { font-size: 22px; }
+    .counts { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 24px; }
+    .count-cell { padding: 14px 14px; }
+    .count-cell .n { font-size: 32px; }
+    .section-hd { flex-direction: column; align-items: flex-start; gap: 8px; margin: 24px 0 12px; }
+    .section-hd h2 { font-size: 16px; }
+    .action-grid { grid-template-columns: 1fr; }
+    .insight { grid-template-columns: 38px 1fr; gap: 12px; padding: 12px 14px; }
+    .ins-icon { width: 38px; height: 38px; border-radius: 10px; }
+    .filters { flex-wrap: wrap; }
+    .tr { grid-template-columns: 1fr auto; row-gap: 4px; padding: 12px 14px; }
+    .tr.head { display: none; }
+    .tr .role,
+    .tr .applied,
+    .tr .arrow { display: none; }
+    .tr .pill { justify-self: end; }
+    .modal { max-width: 100%; }
+    .fields { grid-template-columns: 1fr; }
+  }
 </style>

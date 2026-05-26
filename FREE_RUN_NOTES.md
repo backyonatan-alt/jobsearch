@@ -102,6 +102,20 @@ the moment you notice something; triage later.
 - `[bug]` dossier meeting hero rendered start time in the **server's** TZ while the Scheduled list rendered it in the **browser's** TZ — same event showed two different wall-clock times. Fixed by sending raw `starts_at`/`ends_at` from `meetingDTO` and letting the Svelte component format. (May 25 2026)
 - `[bug]` Today's Applications table briefly showed **"-1 days ago"** for just-created rows because `Math.floor` on a negative ms diff rounds toward −∞. Fixed `fmtRelativeDate` to treat `d ≤ 0` as "today". (May 26 2026)
 
+### Mobile pass (May 26 2026)
+
+- Layout collapses to icons-only horizontal nav strip on screens ≤ 720px (sidebar → top bar). Brand on the left, nav items (icons only) in the middle, profile avatar on the right.
+- Topbar wraps; search box shrinks to icon + flex placeholder; kbd hints hidden.
+- Per-page media queries stack multi-column grids: count cards (Today) → 2-col, action grid → 1-col, applications table sheds role/applied/arrow columns (relative date moves under company); funnel KPIs → 2-col, two-col blocks → 1-col, time-in-stage → 2-col; brief hero stacks, stats → 1-col, signals/approach → 1-col, edit modal goes full-screen.
+- Board stays horizontal-scroll on mobile (six columns at 220px each, swipe to see all).
+
+### Hiring manager on the Brief (May 26 2026)
+
+- Migration 0012 adds `hiring_manager_name` and `hiring_manager_linkedin` to `applications`.
+- Backend list/get/create/update plumb both fields. PATCH treats blank as keep.
+- Edit modal on the Brief gets two new inputs.
+- Brief tab renders a dedicated "Hiring manager" card (warm-tinted initials avatar + LinkedIn button) above the dossier section, always visible when the data is set — independent of whether a dossier has been generated.
+
 ### Demo data for new users (May 26 2026)
 
 - New `POST /api/me/demo-seed` + `DELETE /api/me/demo-seed` routes (same handlers as the admin ones, just open to any signed-in user via `requireUser`).
