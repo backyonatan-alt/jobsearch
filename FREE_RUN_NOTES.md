@@ -107,6 +107,7 @@ the moment you notice something; triage later.
 - New `POST /api/me/demo-seed` + `DELETE /api/me/demo-seed` routes (same handlers as the admin ones, just open to any signed-in user via `requireUser`).
 - On Today, when the signed-in user has zero applications, the whole body collapses to a welcome card: brand glyph, one paragraph about Pursuit, "Add your first application" + "Try with demo data" buttons.
 - Once seeded, a small "Clear demo data" chip appears in the Applications-table filter row; it deletes only rows whose notes start with `[demo] `, so real applications are kept.
+- The auto-deploy for PR #5 silently failed to trigger; merged a no-op PR to force a fresh push-to-main event and bring the welcome-card code online.
 
 ### Design decisions locked (May 25 2026 review session)
 
