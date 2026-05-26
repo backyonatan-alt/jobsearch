@@ -142,6 +142,38 @@ For a *new* user-owned project this constraint may not apply — but **the habit
 6. Add a GA4 (or equivalent) event for any user interaction worth measuring.
 7. If something ships broken, update this file's checklist so the bug class can't recur.
 
+### Local preview is mandatory before any UI deploy (locked May 26 2026)
+
+The user wants to **see every UI change with their own eyes locally
+before it ships to prod**. Treat this as a hard requirement: no UI
+change merges without a local preview first.
+
+After making any change that affects pixels on `/app/*` (or any other
+route), the agent MUST:
+
+1. Push the branch (so the user can pull).
+2. Reply with the exact local-preview recipe for this change, including:
+   - Branch to pull (`git fetch && git checkout <branch> && git pull`).
+   - Whether backend + DB are needed (yes for `/app/*`; no for
+     `/preview/*` static mockups or the homepage).
+   - The two commands to run (`go run ./cmd/server` in one terminal,
+     `cd web && pnpm dev` in another).
+   - The exact URL to open (e.g. `http://localhost:5173/app` for the
+     mobile pass, or `http://localhost:5173/preview/redesign/today/a`
+     for static mockups).
+   - What to look for / what to ignore.
+3. Wait for the user to confirm the local view looks right before
+   asking them to merge / deploy.
+
+For pure backend changes (handlers, migrations, etc.) skip the local
+preview prompt — but still call them out so the user knows nothing
+visual changed.
+
+**Why this rule exists**: several deploys have shipped to prod before
+the user got to see them, leading to discoveries-on-prod that should
+have been caught at design time. The local dev server (see
+`README.md` "Local dev") is the right place to catch this.
+
 ### QA pattern — Claude for Chrome runs the rendered-UI test (locked May 24 2026)
 
 The user has Claude for Chrome installed and prefers automated browser
