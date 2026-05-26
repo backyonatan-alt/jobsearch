@@ -1,6 +1,16 @@
 <script>
   const previews = [
     {
+      slug: 'brief-v2',
+      name: 'Brief v2 — with AI Company brief above interviewer',
+      blurb: 'Round 2 mockup. New compact "About [Company]" card sits above the interviewer block. Includes blurb + current direction, 4 facts (HQ / Employees / Stage / Founded), typical interview process, and watch-fors for this loop.'
+    },
+    {
+      slug: 'interviews-v2',
+      name: 'Interviews v2 — side-by-side parse zones',
+      blurb: 'Round 2 mockup. Two equal drop zones — Calendar file (.ics) on the left, Screenshot / email text on the right. Click Parse to see a preview event.'
+    },
+    {
       slug: 'onboarding/a',
       name: 'Onboarding · A v2 — backdrop 1 (dim+blur)',
       blurb: 'Picked variant. Now with X close, fixed-height card, larger nav buttons. Backdrop: classic translucent ink + blur. Clean modal feel.'

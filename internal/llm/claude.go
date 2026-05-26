@@ -292,6 +292,98 @@ var (
 	wsRe      = regexp.MustCompile(`\s+`)
 )
 
+// ParsedEvent is the structured calendar event we expect Claude to extract
+// from a screenshot or pasted email body. Mirrors the .ics parser output so
+// the frontend can render the preview through the same code path.
+type ParsedEvent struct {
+	Summary     string   `json:"summary,omitempty"`
+	Location    string   `json:"location,omitempty"`
+	Description string   `json:"description,omitempty"`
+	StartsAt    string   `json:"starts_at,omitempty"` // ISO 8601
+	EndsAt      string   `json:"ends_at,omitempty"`   // ISO 8601
+	AllDay      bool     `json:"all_day,omitempty"`
+	Attendees   []string `json:"attendees,omitempty"` // free-form names/emails
+}
+
+const eventParserSystemPrompt = `You are a precise calendar-event parser. The user pastes either a screenshot (Gmail invite, Google Calendar event detail, Outlook screenshot, etc.) OR raw text (email body, copied invite, plain notes). Extract the event details.
+
+Return ONLY a JSON object with this shape (omit any you can't determine):
+
+{
+  "summary":     "Event title (e.g. 'Stripe — Technical screen')",
+  "location":    "Conferencing link or physical address (e.g. 'Google Meet', 'Zoom: https://...', '510 Townsend St, SF')",
+  "description": "Short description, agenda, or notes if any",
+  "starts_at":   "ISO 8601 with timezone (e.g. '2026-05-28T14:00:00-04:00'). If only a date is given, use 00:00 in the user's likely timezone and set all_day: true.",
+  "ends_at":     "ISO 8601 with timezone. Omit if not specified.",
+  "all_day":     true|false,
+  "attendees":   ["Free-form list of names or emails of attendees"]
+}
+
+Rules:
+- summary is required if any event is described; if you can't find a summary, fall back to the company / interview type (e.g. "Interview").
+- Default timezone: if the screenshot/text shows a timezone (PDT, EST, "America/New_York"), use it. Otherwise use US Eastern.
+- Dates without years: assume the next occurrence of that month/day.
+- Times like "2pm" or "14:00": assume the local timezone you inferred.
+- If the input is a series (multiple events), pick the SOONEST one — only return a single event.
+
+Output the JSON object only — no prose, no markdown. If the input has no event you can extract, return: {"error": "no event found"}.`
+
+// ParseEvent asks Claude to extract a single calendar event from a screenshot
+// and/or pasted text. Same Haiku + Vision flow as ParseJob. Returns nil with
+// an error if nothing extractable is found.
+func (c *Client) ParseEvent(ctx context.Context, text string, image *ParseImage) (*ParsedEvent, error) {
+	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	ctx = cctx
+	text = strings.TrimSpace(text)
+
+	if text == "" && image == nil {
+		return nil, errors.New("paste an event screenshot or text first")
+	}
+
+	var msg Message
+	if image != nil {
+		caption := text
+		if caption == "" {
+			caption = "Extract the calendar event: title, time, location, attendees."
+		} else {
+			caption = "Extract the calendar event from this screenshot. User added: " + caption
+		}
+		msg = Message{
+			Role: "user",
+			Content: []ContentBlock{
+				ImageBlock(image.MediaType, image.Data),
+				TextBlock(caption),
+			},
+		}
+	} else {
+		msg = Message{Role: "user", Content: text}
+	}
+
+	resp, err := c.CreateMessage(ctx, ModelHaiku, eventParserSystemPrompt, []Message{msg}, 600)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := extractFirstJSONObject(resp)
+	if err != nil {
+		return nil, fmt.Errorf("model didn't return JSON (raw: %.300s)", resp)
+	}
+	var errProbe struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(raw, &errProbe) == nil && errProbe.Error != "" {
+		return nil, errors.New(errProbe.Error)
+	}
+	var ev ParsedEvent
+	if err := json.Unmarshal(raw, &ev); err != nil {
+		return nil, fmt.Errorf("event JSON missing expected fields: %w", err)
+	}
+	if ev.Summary == "" && ev.StartsAt == "" {
+		return nil, errors.New("could not extract an event from the input")
+	}
+	return &ev, nil
+}
+
 func isBareURL(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	if !bareURLRe.MatchString(s) || len(s) > 500 {
@@ -388,10 +480,34 @@ Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
   "avoid":     ["4 short, specific things that don't."],
   "questions": [
     {"q": "Question for the candidate to ask back.", "why": "Why it lands."}
-  ]
+  ],
+  "company": {
+    "blurb":     "One sentence on what the company does. Plain English, no marketing.",
+    "direction": "Two sentences on where they're going right now. Recent news, last raise, product launches, leadership shifts. Last 12 months only.",
+    "hq":        "City",
+    "employees": "~N,NNN (range or approximate is fine)",
+    "stage":     "Late stage · $X valuation  /  Series B  /  Public  /  Bootstrapped — pick what fits",
+    "founded":   "YYYY",
+    "process": [
+      {"kind": "Recruiter screen",   "detail": "30 min · culture + role fit"},
+      {"kind": "Hiring-manager call","detail": "45 min · architecture, prior wins"},
+      {"kind": "Technical screen",   "detail": "60 min · live coding (language)"},
+      {"kind": "Onsite loop",        "detail": "4 panels · sys design, IC code, behavioral, bar-raiser"},
+      {"kind": "Team match",         "detail": "Two 30-min chats with prospective teams"}
+    ],
+    "watch_fors": [
+      "Five short sentences specific to THIS company's loop.",
+      "Drawn from Glassdoor / Blind / levels.fyi / engineering blog content.",
+      "Not generic advice — name what THIS team grades for.",
+      "Mention rollout / observability / failure modes if relevant.",
+      "Mention the company's current strategic bet if it matters."
+    ]
+  }
 }
 
-If the interviewer name is empty, write a COMPANY-LEVEL briefing:
+The "company" block is REQUIRED — populate it for every dossier regardless of whether an interviewer is named. Use web search to ground every claim. Omit fields you can't verify (empty string is fine, but DON'T invent numbers, valuations, or interview steps you can't source).
+
+If the interviewer name is empty, ALSO write a COMPANY-LEVEL interviewer-section:
 - interviewer.name = "Hiring team"
 - interviewer.role = the company name
 - interviewer.initials = the first letter of the company

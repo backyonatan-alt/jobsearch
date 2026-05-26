@@ -112,7 +112,29 @@ dossiersByApp[102] = {
       { q: "What's the hardest production incident this year?",  why: 'Real story; reveals what she owns vs. delegates.' },
       { q: 'Hot-patch legacy router vs. forward on v2?',          why: 'Tests whether the org pays down debt.' },
       { q: 'What does a great first 90 days look like?',          why: 'Standard, high-signal — loose answer = loose role.' }
-    ]
+    ],
+    company: {
+      blurb: 'Payments + financial infrastructure used by a meaningful share of the internet.',
+      direction: 'Recently shipping agentic-commerce APIs and pushing into AI-mediated transactions. Last 12 months: agent toolkit, deeper Issuing rollouts, expanded Atlas.',
+      hq: 'San Francisco',
+      employees: '~8,000',
+      stage: 'Late stage · $50B valuation',
+      founded: '2010',
+      process: [
+        { kind: 'Recruiter screen',    detail: '30 min · culture + role fit' },
+        { kind: 'Hiring-manager call', detail: '45 min · architecture, prior wins' },
+        { kind: 'Technical screen',    detail: '60 min · live coding (Go or Python)' },
+        { kind: 'Onsite loop',         detail: '4 panels · sys design, IC code, behavioral, bar-raiser' },
+        { kind: 'Team match',          detail: 'Two 30-min chats with prospective teams' }
+      ],
+      watch_fors: [
+        'Sys design is graded on rollout + observability, not just the diagram.',
+        'Be explicit about failure modes — they probe consistency tradeoffs.',
+        'Stripe interviewers value "what would you measure?" over hand-waving.',
+        'Bar raiser is structured — STAR format pays off here.',
+        "Have a take on agentic commerce; they'll ask where you think this goes."
+      ]
+    }
   }
 };
 
@@ -230,9 +252,27 @@ export async function mockApi(path, opts = {}) {
       return ok(ev);
     }
 
-    // POST /api/applications/:id/interviews/parse — return one mock event.
+    // POST /api/applications/:id/interviews/parse — supports {ics}, {text}, {image}.
+    // Returns the same {events:[...]} shape regardless so the preview UI can
+    // exercise both zones.
     if (method === 'POST' && sub === 'interviews/parse') {
-      return ok({ events: [{ summary: 'Onsite — Stripe', starts_at: new Date(Date.now() + 86400000).toISOString(), ends_at: new Date(Date.now() + 86400000 + 3600000).toISOString(), location: 'Google Meet' }] });
+      const body = JSON.parse(opts.body || '{}');
+      const source = body.image ? 'ai' : body.text ? 'ai' : 'ics';
+      const summary = body.image
+        ? 'Stripe — Technical screen (parsed from screenshot)'
+        : body.text
+          ? 'Stripe — Technical screen (parsed from email)'
+          : 'Onsite — Stripe';
+      // Two business days from now at 14:00 local — keeps the preview always future-dated.
+      const d = new Date(); d.setDate(d.getDate() + 2); d.setHours(14, 0, 0, 0);
+      const e = new Date(d); e.setHours(15, 0, 0, 0);
+      return ok({ events: [{
+        source, summary,
+        starts_at: d.toISOString(),
+        ends_at: e.toISOString(),
+        location: 'Google Meet',
+        attendees: [{ name: 'Sarah Chen' }, { email: 'recruiter@stripe.com' }]
+      }] });
     }
 
     // DELETE /api/applications/:id/interviews/:iid
