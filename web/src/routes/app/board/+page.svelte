@@ -84,7 +84,10 @@
       <div>
         <div class="date">{dateLong}</div>
         <h1>Board.</h1>
-        <p class="sub"><b>{inFlight}</b> in flight · drag a card across columns to move its status.</p>
+        <p class="sub">
+          <b>{inFlight}</b> in flight · drag a card across columns to move its status.
+          <span class="legend"><span class="legend-dot"></span>red border = no movement in 7+ days</span>
+        </p>
       </div>
     </div>
 
@@ -154,31 +157,36 @@
 </div>
 
 <style>
-  .body { padding: 28px; }
-  .board-page { max-width: 1400px; margin: 0 auto; }
+  /* Use the full viewport so all six columns fit without horizontal scroll. */
+  .body { padding: 28px 20px; }
+  .board-page { max-width: none; margin: 0; }
 
   .board-hd { margin-bottom: 24px; }
   .board-hd .date { font-size: 13.5px; color: var(--mute); margin-bottom: 6px; }
   .board-hd h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.025em; margin: 0; }
-  .board-hd .sub { font-size: 13.5px; color: var(--mute); margin: 6px 0 0; }
+  .board-hd .sub { font-size: 13.5px; color: var(--mute); margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+  .board-hd .sub .legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--mute); }
+  .board-hd .sub .legend-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px var(--danger-tint); }
 
   .board-cols {
     display: grid;
-    grid-template-columns: repeat(6, minmax(240px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(6, minmax(180px, 1fr));
+    gap: 10px;
     overflow-x: auto;
     padding-bottom: 8px;
   }
   .board-col {
     background: var(--surface-2);
     border-radius: 14px;
-    padding: 12px;
+    padding: 14px 10px 10px;
     min-height: 60vh;
     transition: background 120ms ease;
   }
   .board-col.muted { opacity: 0.65; }
   .board-col.drag-over { background: var(--accent-tint); }
-  .board-col-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 0 4px; }
+  .board-col-hd { display: flex; align-items: center; gap: 8px; margin: 2px 0 14px; padding: 0 2px; }
+  .board-col-hd .pill { padding: 4px 11px; font-size: 12.5px; }
+  .board-col-hd .pill .pdot { width: 6px; height: 6px; }
   .board-col-hd .count { font-size: 12.5px; color: var(--mute); font-weight: 500; }
   .board-col-hd .add {
     margin-left: auto; width: 22px; height: 22px; border-radius: 6px;
@@ -265,4 +273,14 @@
   }
   .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
   .empty-tab p { color: var(--mute); margin: 0; font-size: 13.5px; }
+
+  /* Mobile — tighten the board so each column is closer to phone width.
+     Horizontal scroll stays (already overflow-x: auto on .board-cols). */
+  @media (max-width: 720px) {
+    .body { padding: 18px 14px; }
+    .board-hd h1 { font-size: 22px; }
+    .board-cols { grid-template-columns: repeat(6, minmax(220px, 220px)); gap: 10px; }
+    .board-col { padding: 10px; min-height: 50vh; }
+    .bcard { padding: 10px 11px; }
+  }
 </style>

@@ -3,11 +3,14 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
+  import { isPreview } from '$lib/preview-mode.js';
 
   let { children } = $props();
   let me = $state(null);
   let applications = $state([]);
   let loading = $state(true);
+  let previewMode = $state(false);
+  $effect(() => { previewMode = isPreview(); });
 
   onMount(async () => {
     try {
@@ -76,7 +79,7 @@
           <path d="M2 3h12l-5 6v5l-2-1V9z"/>
         </svg>
       </span>
-      <span>Funnel</span>
+      <span>Insights</span>
       <span class="nav-count"></span>
     </a>
 
@@ -99,11 +102,33 @@
   </aside>
 
   <section class="main">
+    {#if previewMode}
+      <div class="preview-banner">
+        <span class="pb-dot"></span>
+        <strong>Preview mode</strong>
+        <span>· UI-only, no backend. Changes live in this tab and reset on reload.</span>
+        <a class="pb-exit" href="?preview=0">Exit</a>
+      </div>
+    {/if}
     {@render children()}
   </section>
 </div>
 
 <style>
+  .preview-banner {
+    background: var(--warm-tint);
+    color: var(--warm-text);
+    border-bottom: 1px solid var(--rule);
+    padding: 6px 16px;
+    font-size: 12.5px;
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 500;
+  }
+  .preview-banner .pb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warm); flex-shrink: 0; }
+  .preview-banner strong { font-weight: 600; }
+  .preview-banner .pb-exit { margin-left: auto; color: var(--warm-text); font-weight: 600; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--warm); }
+  .preview-banner .pb-exit:hover { background: var(--warm); color: white; }
+
   /* Brand mark: target-style SVG paired with the wordmark, swapping out the
      old square + dot. The SVG colors itself via currentColor. */
   :global(.sidebar .brand) {

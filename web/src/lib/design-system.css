@@ -1809,3 +1809,84 @@ a { color: inherit; text-decoration: none; }
   padding: 1px 5px;
   background: var(--card);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE PASS — narrow viewports (<=720px)
+   Goal: app is usable on a phone for friends doing QA.
+   Strategy: collapse sidebar to a horizontal icon strip at the
+   top, tighten body padding, and let per-page styles stack
+   their multi-column grids.
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 720px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: auto;
+    min-height: 100vh;
+  }
+  .sidebar {
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    overflow-x: auto;
+  }
+  .sidebar .brand {
+    margin-bottom: 0;
+    padding: 0 6px;
+    height: auto;
+    flex-shrink: 0;
+  }
+  .sidebar .brand .kbd { display: none; }
+  .sidebar .nav-item {
+    grid-template-columns: auto;
+    gap: 0;
+    padding: 0 10px;
+    height: 32px;
+    flex-shrink: 0;
+  }
+  /* Hide the text label + count on mobile — icons-only nav. */
+  .sidebar .nav-item > span:not(.nav-icon),
+  .sidebar .nav-section,
+  .sidebar .divider {
+    display: none;
+  }
+  .sidebar-footer {
+    margin-top: 0;
+    margin-left: auto;
+    padding-top: 0;
+    flex-shrink: 0;
+  }
+  .profile {
+    grid-template-columns: 26px;
+    gap: 0;
+    padding: 4px;
+  }
+  .profile .who,
+  .profile > svg { display: none; }
+
+  /* Topbar — shrink the search to an icon, drop the kbd hints,
+     keep the buttons. */
+  .topbar {
+    height: auto;
+    padding: 10px 14px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .search {
+    width: auto;
+    min-width: 0;
+    flex: 1;
+    padding: 4px 8px;
+  }
+  .search > span:not(.kbd) { display: none; }
+  .search .kbd { display: none; }
+  .btn .kbd { display: none; }
+
+  /* Body — tighter padding, no max-width clamp so cards breathe. */
+  .body { padding: 18px 14px 80px; }
+  .body-inner { max-width: 100%; }
+  .page-hd { flex-direction: column; align-items: flex-start; gap: 8px; }
+}

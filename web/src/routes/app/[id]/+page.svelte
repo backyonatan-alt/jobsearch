@@ -23,7 +23,7 @@
   // Inline-action state
   let showStatusMenu = $state(false);
   let showEditModal = $state(false);
-  let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', salary_note: '' });
+  let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', salary_note: '', hiring_manager_name: '', hiring_manager_linkedin: '' });
   let saving = $state(false);
 
   // Dossier state
@@ -225,13 +225,15 @@
   function openEdit() {
     if (!app) return;
     edit = {
-      company:     app.raw.company ?? '',
-      role:        app.raw.role ?? '',
-      source:      app.raw.source ?? '',
-      location:    app.raw.location ?? '',
-      cv_variant:  app.raw.cv_variant ?? '',
-      jd_url:      app.raw.jd_url ?? '',
-      salary_note: app.raw.salary_note ?? ''
+      company:                 app.raw.company ?? '',
+      role:                    app.raw.role ?? '',
+      source:                  app.raw.source ?? '',
+      location:                app.raw.location ?? '',
+      cv_variant:              app.raw.cv_variant ?? '',
+      jd_url:                  app.raw.jd_url ?? '',
+      salary_note:             app.raw.salary_note ?? '',
+      hiring_manager_name:     app.raw.hiring_manager_name ?? '',
+      hiring_manager_linkedin: app.raw.hiring_manager_linkedin ?? ''
     };
     showEditModal = true;
   }
@@ -261,10 +263,11 @@
 
   const dossierEligible = $derived(app && ['screen', 'interview', 'offer'].includes(app.status));
   const dossierAvailable = $derived(!!dossier);
-  const interviewerInitials = $derived.by(() => {
-    const name = dossier?.content?.interviewer?.name || '';
-    return name.split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase();
-  });
+  function initialsOf(name) {
+    return (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase();
+  }
+  const interviewerInitials = $derived(initialsOf(dossier?.content?.interviewer?.name));
+  const hiringManagerInitials = $derived(initialsOf(app?.raw?.hiring_manager_name));
 
   const timeline = $derived.by(() => app ? buildTimelineFromApplication(app.raw) : []);
 
@@ -432,6 +435,28 @@
       </div>
 
       {#if tab === 'brief'}
+        <!-- HIRING MANAGER — always rendered (when set), regardless of dossier state. -->
+        {#if app.raw.hiring_manager_name || app.raw.hiring_manager_linkedin}
+          <div class="block person-block">
+            <div class="block-hd">
+              <h2>Hiring manager</h2>
+              <span class="ai-tag-mute">from posting</span>
+            </div>
+            <div class="person">
+              <div class="p-av t-warm">{hiringManagerInitials || '—'}</div>
+              <div class="p-info">
+                <h4>{app.raw.hiring_manager_name || 'Name not set'}</h4>
+                {#if app.raw.role}<div class="p-role">{app.role}</div>{/if}
+              </div>
+              {#if app.raw.hiring_manager_linkedin}
+                <a class="p-li" href={app.raw.hiring_manager_linkedin} target="_blank" rel="noopener">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
+                  LinkedIn
+                </a>
+              {/if}
+            </div>
+          </div>
+        {/if}
         {#if dossierAvailable}
           <!-- INTERVIEWER -->
           {#if dossier.content.interviewer?.name}
@@ -731,6 +756,8 @@
         <label>CV variant <input bind:value={edit.cv_variant} placeholder="v3-ai-focus" /></label>
         <label>Salary note <input bind:value={edit.salary_note} placeholder="$220k-$280k base" /></label>
         <label class="span-2">JD URL <input bind:value={edit.jd_url} placeholder="https://…" /></label>
+        <label>Hiring manager <input bind:value={edit.hiring_manager_name} placeholder="Jane Doe" /></label>
+        <label>Hiring manager LinkedIn <input bind:value={edit.hiring_manager_linkedin} placeholder="https://linkedin.com/in/…" /></label>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn" onclick={() => (showEditModal = false)}>Cancel</button>
@@ -845,6 +872,7 @@
   .block-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
   .block-hd h2 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
   .ai-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; background: var(--accent-tint); color: var(--accent-text); padding: 3px 10px; border-radius: 99px; font-weight: 500; }
+  .ai-tag-mute { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; background: var(--surface-2); color: var(--mute); padding: 3px 10px; border-radius: 99px; font-weight: 500; }
   .regen { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--rule); border-radius: 99px; padding: 4px 10px; font-size: 12px; color: var(--ink-2); cursor: pointer; }
   .regen:hover:not(:disabled) { background: var(--surface-2); }
   .regen:disabled { opacity: 0.55; cursor: wait; }
@@ -855,6 +883,7 @@
   .person { display: grid; grid-template-columns: 46px 1fr auto; gap: 12px; align-items: center; }
   .p-av { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 16px; }
   .p-av.t-accent { background: var(--accent-tint); color: var(--accent-text); }
+  .p-av.t-warm { background: var(--warm-tint); color: var(--warm-text); }
   .p-info h4 { margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
   .p-info .p-role { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
   .p-li { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 99px; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--ink); text-decoration: none; }
@@ -1050,4 +1079,38 @@
   .iv-when { font-size: 12px; color: var(--accent-text); font-weight: 500; margin-bottom: 2px; }
   .iv-summary { font-size: 14px; color: var(--ink); margin-bottom: 2px; }
   .iv-loc, .iv-att { font-size: 12px; color: var(--mute); margin-top: 2px; }
+
+  /* Mobile — stack hero and grids; keep tabs scrollable. */
+  @media (max-width: 720px) {
+    .body { padding: 18px 14px; }
+    .hero { padding: 18px 16px; border-radius: 14px; }
+    .hero-top { grid-template-columns: 48px 1fr; gap: 12px; }
+    .logo-big { width: 48px; height: 48px; border-radius: 12px; padding: 6px; }
+    .logo-big.letter { font-size: 18px; }
+    .co-row h1 { font-size: 22px; }
+    .role-line { font-size: 13.5px; }
+    .src-link { grid-column: 1 / -1; justify-self: start; margin-top: 4px; padding: 6px 10px; font-size: 12px; }
+    .facts { gap: 4px; }
+    .fact { font-size: 11.5px; padding: 3px 8px; }
+    .upnext { grid-template-columns: 1fr; padding: 14px 16px; }
+    .upnext h3 { font-size: 16px; }
+    .stats { grid-template-columns: 1fr; gap: 8px; margin-bottom: 18px; }
+    .stat { padding: 14px 16px; }
+    .stat-n { font-size: 26px; }
+    .tabs { overflow-x: auto; flex-wrap: nowrap; }
+    .tab { white-space: nowrap; padding: 10px 12px; font-size: 13px; }
+    .block { padding: 16px 16px; }
+    .block-hd { flex-wrap: wrap; }
+    .person { grid-template-columns: 40px 1fr; row-gap: 8px; }
+    .p-li { grid-column: 1 / -1; justify-self: start; }
+    .signals-row { grid-template-columns: 1fr; }
+    .approach-grid { grid-template-columns: 1fr; gap: 18px; }
+    .q-list li { grid-template-columns: 24px 1fr; }
+    .modal-overlay { padding: 0; }
+    .modal { max-width: 100%; border-radius: 0; min-height: 100vh; padding: 1rem; }
+    .fields { grid-template-columns: 1fr; }
+    .fields .span-2 { grid-column: auto; }
+    .ics-card { padding: 16px 16px; }
+    .ics-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  }
 </style>
