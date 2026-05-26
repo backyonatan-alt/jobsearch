@@ -354,7 +354,10 @@
 
   function back() { goto('/app'); }
 
-  const dossierEligible = $derived(app && ['screen', 'interview', 'offer'].includes(app.status));
+  // Brief is available the moment an application is on file. The only
+  // exceptions are closed apps — no point burning an AI call on a dead
+  // pipeline. Auto-trigger inherits the same gate.
+  const dossierEligible = $derived(app && !['rejected', 'withdrawn'].includes(app.status));
   const dossierAvailable = $derived(!!dossier);
   function initialsOf(name) {
     return (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase();
@@ -774,7 +777,7 @@
             <h3>Generate the brief</h3>
             <p>
               Claude reads the web — recent essays, talks, papers, company news —
-              and writes you a focused briefing for this interview. Optional: name
+              and writes you a focused briefing — the company, their typical interview process, and (optional) a person-specific read on a named interviewer. Name
               the interviewer for a person-specific brief.
             </p>
             <div class="generate-row">
@@ -789,7 +792,7 @@
               </button>
             </div>
             {#if !dossierEligible}
-              <p class="muted-note">Move this application to <b>Screen</b>, <b>Interview</b>, or <b>Offer</b> to enable the brief.</p>
+              <p class="muted-note">This application is closed — re-open it to a live status if you want a brief.</p>
             {/if}
             {#if dossierError}
               <p class="dossier-err">{dossierError}</p>
