@@ -58,12 +58,19 @@ jobs:
           rsync -avz --delete \
             web/build/ \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/jobsearch/web/build/"
+          # Ship ops scripts (e.g. nginx-timeouts patcher) so the deploy step
+          # can run them with sudo. These are idempotent — safe each deploy.
+          rsync -avz \
+            deploy/apply-nginx-timeouts.sh \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/jobsearch/deploy/"
 
-      - name: Cleanup legacy web/static + restart service + health check
+      - name: Apply nginx timeouts + restart service + health check
         run: |
           ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
-            rm -rf /opt/jobsearch/web/static &&
-            sudo systemctl restart jobsearch &&
-            sleep 2 &&
+            set -e
+            rm -rf /opt/jobsearch/web/static
+            sudo bash /opt/jobsearch/deploy/apply-nginx-timeouts.sh
+            sudo systemctl restart jobsearch
+            sleep 2
             curl -fsS http://localhost:8080/healthz
           '
