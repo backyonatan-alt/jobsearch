@@ -2,18 +2,28 @@
   const previews = [
     {
       slug: 'onboarding/a',
-      name: 'Onboarding · variant A (dots)',
-      blurb: 'Centered card, dot progress bar at the top. Linear-style. Click Next to step through 5 stages.'
+      name: 'Onboarding · A v2 — backdrop 1 (dim+blur)',
+      blurb: 'Picked variant. Now with X close, fixed-height card, larger nav buttons. Backdrop: classic translucent ink + blur. Clean modal feel.'
+    },
+    {
+      slug: 'onboarding/a-bg2',
+      name: 'Onboarding · A v2 — backdrop 2 (soft mesh)',
+      blurb: 'Same card, soft pastel mesh in the corners (accent + warm + positive tints). Marketing-page warmth, no center glow.'
+    },
+    {
+      slug: 'onboarding/a-bg3',
+      name: 'Onboarding · A v2 — backdrop 3 (dot grid)',
+      blurb: 'Same card, faint dot grid on neutral surface. Engineering-clean, very still.'
     },
     {
       slug: 'onboarding/b',
-      name: 'Onboarding · variant B (card stack)',
-      blurb: 'Card with two peek-cards behind it. "1 / 5" counter top right. Playful, more product-y.'
+      name: 'Onboarding · variant B (card stack — rejected)',
+      blurb: 'Reference only. Card with peek-cards behind it.'
     },
     {
       slug: 'onboarding/c',
-      name: 'Onboarding · variant C (split)',
-      blurb: 'Two-column split — colored illustration panel on the left, content on the right. Stripe / Resend style.'
+      name: 'Onboarding · variant C (split — rejected)',
+      blurb: 'Reference only. Two-column split.'
     },
     {
       slug: 'today/a',

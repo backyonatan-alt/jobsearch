@@ -109,12 +109,21 @@
 
 <div class="ob-overlay" role="dialog" aria-modal="true">
   <div class="ob-card">
+    <!-- Close — same effect as Skip. -->
+    <button class="x-close" onclick={skipForNow} aria-label="Close onboarding">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/>
+      </svg>
+    </button>
     <!-- Progress dots — active dot expands -->
     <div class="dots">
       {#each Array(total) as _, i}
         <span class="dot" class:active={i === step} class:done={i < step}></span>
       {/each}
     </div>
+
+    <!-- Stage stack — fixed-height body so the card doesn't jiggle between stages. -->
+    <div class="stage">
 
     <!-- Illustration well -->
     <div class="art">
@@ -312,6 +321,7 @@
         {/if}
       {/if}
     </div>
+    </div><!-- /.stage -->
 
     <!-- Footer -->
     <footer>
@@ -336,22 +346,36 @@
 <style>
   .ob-overlay {
     position: fixed; inset: 0;
-    background: radial-gradient(circle at 50% 30%, var(--accent-tint), rgba(10,10,13,0.55) 75%);
+    background: rgba(10, 10, 13, 0.55);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     display: grid; place-items: center;
     z-index: 200;
     padding: 24px;
     overflow-y: auto;
   }
   .ob-card {
+    position: relative;
     width: 100%;
     max-width: 560px;
     background: var(--card);
     border: 1px solid var(--rule);
     border-radius: 18px;
     padding: 28px 30px 22px;
-    box-shadow: 0 24px 80px -32px rgba(10,10,13,0.18), var(--sh-1);
+    box-shadow: 0 24px 80px -8px rgba(10,10,13,0.30), var(--sh-1);
     margin: 24px auto;
+    display: flex; flex-direction: column;
   }
+  .x-close {
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 28px; height: 28px; border-radius: 8px;
+    background: transparent; border: 0;
+    display: grid; place-items: center;
+    color: var(--mute); cursor: pointer;
+    transition: background 100ms ease, color 100ms ease;
+  }
+  .x-close:hover { background: var(--surface-2); color: var(--ink); }
   .dots {
     display: flex; justify-content: center; gap: 6px;
     margin-bottom: 22px;
@@ -364,10 +388,18 @@
   .dot.done { background: var(--accent); }
   .dot.active { background: var(--accent); width: 24px; border-radius: 99px; }
 
+  /* Fixed-height stage body so the card doesn't resize as stages change. */
+  .stage {
+    flex: 1;
+    min-height: 380px;
+    display: flex; flex-direction: column;
+  }
+
   .art {
     display: grid; place-items: center;
     height: 200px;
     margin-bottom: 18px;
+    flex-shrink: 0;
   }
 
   .text h1 {
@@ -474,22 +506,23 @@
     display: flex; align-items: center; gap: 8px;
     margin-top: 18px;
     border-top: 1px solid var(--rule);
-    padding-top: 14px;
+    padding-top: 16px;
+    flex-shrink: 0;
   }
   .btn {
-    height: 32px;
-    padding: 0 14px;
-    border-radius: 7px;
-    font: inherit; font-size: 13px; font-weight: 500;
+    height: 36px;
+    padding: 0 16px;
+    border-radius: 8px;
+    font: inherit; font-size: 13.5px; font-weight: 500;
     border: 1px solid var(--rule);
     background: var(--card);
     color: var(--ink-2);
     cursor: pointer;
   }
   .btn:disabled { opacity: 0.55; cursor: not-allowed; }
-  .btn.ghost { background: transparent; border-color: transparent; color: var(--mute); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--mute); padding: 0 12px; }
   .btn.ghost:hover { color: var(--ink); background: var(--surface-2); }
-  .btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: white; border-color: var(--accent); font-weight: 600; padding: 0 18px; }
   .btn.primary:hover:not(:disabled) { background: var(--accent-strong); }
 
   @media (max-width: 720px) {

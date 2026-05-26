@@ -12,9 +12,9 @@
   function close() { alert('Static mockup — in the real flow this closes the overlay and lands on /app with a tooltip on New application.'); }
 </script>
 
-<svelte:head><title>Onboarding · A v2 — Pursuit</title></svelte:head>
+<svelte:head><title>Onboarding · A v2 (mesh) — Pursuit</title></svelte:head>
 
-<div class="ob-overlay bg-dim">
+<div class="ob-overlay bg-mesh">
   <div class="ob-card">
     <button class="x-close" onclick={close} aria-label="Close">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -179,11 +179,13 @@
     display: grid; place-items: center;
     padding: 24px;
   }
-  /* BACKDROP — clean dim + blur (modal context). */
-  .bg-dim {
-    background: rgba(10, 10, 13, 0.55);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+  /* BACKDROP — soft mesh corners (warm light, no center glow). */
+  .bg-mesh {
+    background:
+      radial-gradient(60vw 60vw at 0% 0%,   var(--accent-tint)   0%, transparent 55%),
+      radial-gradient(60vw 60vw at 100% 100%, var(--warm-tint)   0%, transparent 55%),
+      radial-gradient(50vw 50vw at 100% 0%, var(--positive-tint) 0%, transparent 55%),
+      var(--surface);
   }
   .ob-card {
     position: relative;
@@ -239,5 +241,5 @@
   .btn.primary:hover { background: var(--accent-strong); }
 
   .back-link { position: fixed; bottom: 10px; left: 12px; font-size: 12.5px; }
-  .back-link a { color: white; text-decoration: none; background: rgba(0,0,0,0.4); padding: 4px 10px; border-radius: 999px; }
+  .back-link a { color: var(--accent-text); text-decoration: none; background: var(--card); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--rule); }
 </style>
