@@ -58,7 +58,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	email, err := s.Google.ExchangeAndVerify(r.Context(), code)
+	email, picture, err := s.Google.ExchangeAndVerify(r.Context(), code)
 	if err != nil {
 		s.Logger.Info("google exchange failed", "err", err)
 		http.Redirect(w, r, "/?err=oauth_failed", http.StatusFound)
@@ -77,7 +77,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, u, err := s.Auth.UpsertUserAndSession(r.Context(), email, r.UserAgent(), clientIP(r), s.Cfg.IsAdminEmail(email))
+	session, u, err := s.Auth.UpsertUserAndSession(r.Context(), email, r.UserAgent(), clientIP(r), picture, s.Cfg.IsAdminEmail(email))
 	if err != nil {
 		s.Logger.Error("upsert user", "err", err)
 		http.Redirect(w, r, "/?err=internal", http.StatusFound)
@@ -119,6 +119,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"email":        u.Email,
 		"is_admin":     u.IsAdmin,
 		"onboarded_at": u.OnboardedAt,
+		"picture_url":  u.PictureURL,
 	})
 }
 

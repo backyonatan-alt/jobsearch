@@ -38,24 +38,27 @@ func (g *Google) AuthCodeURL(state string) string {
 }
 
 // ExchangeAndVerify takes the `code` query param from Google's callback,
-// exchanges it for tokens, and returns the verified email from the ID token.
-func (g *Google) ExchangeAndVerify(ctx context.Context, code string) (email string, err error) {
+// exchanges it for tokens, and returns the verified email + the profile
+// picture URL from the ID token. The picture claim is optional — if Google
+// doesn't include one, picture is returned as "".
+func (g *Google) ExchangeAndVerify(ctx context.Context, code string) (email, picture string, err error) {
 	tok, err := g.cfg.Exchange(ctx, code)
 	if err != nil {
-		return "", fmt.Errorf("exchange code: %w", err)
+		return "", "", fmt.Errorf("exchange code: %w", err)
 	}
 	raw, ok := tok.Extra("id_token").(string)
 	if !ok || raw == "" {
-		return "", errors.New("no id_token in google response")
+		return "", "", errors.New("no id_token in google response")
 	}
 	payload, err := idtoken.Validate(ctx, raw, g.clientID)
 	if err != nil {
-		return "", fmt.Errorf("validate id_token: %w", err)
+		return "", "", fmt.Errorf("validate id_token: %w", err)
 	}
 	e, _ := payload.Claims["email"].(string)
 	verified, _ := payload.Claims["email_verified"].(bool)
 	if e == "" || !verified {
-		return "", errors.New("google account has no verified email")
+		return "", "", errors.New("google account has no verified email")
 	}
-	return e, nil
+	pic, _ := payload.Claims["picture"].(string)
+	return e, pic, nil
 }

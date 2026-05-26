@@ -82,7 +82,11 @@
 
     <div class="sidebar-footer">
       <button class="profile" onclick={signOut} title="Sign out">
-        <span class="av">{userInitials}</span>
+        {#if me?.picture_url}
+          <img class="av av-img" src={me.picture_url} alt={me.email ?? ''} referrerpolicy="no-referrer" />
+        {:else}
+          <span class="av">{userInitials}</span>
+        {/if}
         <span class="who">
           {me?.email?.split('@')[0] ?? 'Signed in'}
           <small>{me?.email ?? ''}</small>
@@ -108,6 +112,14 @@
   }
   :global(.sidebar .brand .brand-mark) { color: var(--accent); }
   :global(.sidebar .brand .name) { color: var(--ink); }
+
+  /* When we have the Google profile picture, render it where the gradient
+     initials square used to live. Same dimensions, just an <img>. */
+  :global(.sidebar .profile .av.av-img) {
+    background: var(--surface-2);
+    object-fit: cover;
+    padding: 0;
+  }
 
   /* Disabled-looking nav items for the not-yet-built screens. */
   :global(.sidebar .nav-item[aria-disabled="true"]) {

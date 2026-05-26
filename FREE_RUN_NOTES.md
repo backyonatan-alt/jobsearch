@@ -167,10 +167,17 @@ the moment you notice something; triage later.
   `toDisplayApp` now also exposes `domain`, `logoSrc`, `appliedRel`,
   `stale`.
 
+### Google profile picture on user avatar (May 25 2026)
+
+- Added `users.picture_url` (migration 0011).
+- Google OAuth callback now reads the `picture` claim from the ID token
+  and persists it on upsert. Refreshed on every sign-in via
+  `COALESCE(NULLIF($3,''), users.picture_url)` so a missing claim
+  doesn't clobber an existing value.
+- `/api/me` returns `picture_url`. Sidebar avatar renders the `<img>`
+  when present, falls back to the initials square when null. Existing
+  users will see the picture on their next sign-in.
+
 ### Still to design / decide
 
-- **Google profile picture on user avatar**: the OAuth `picture` URL
-  isn't stored yet — needs a `users.picture_url` column + capture in
-  the Google callback + return from `/api/me`. Layout still shows
-  initials.
 - **New application modal**: no notes yet, may not need a redesign.
