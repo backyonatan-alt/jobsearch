@@ -116,20 +116,17 @@
   const inFlight = $derived(apps.filter(a => !['rejected','withdrawn','offer'].includes(a.status)).length);
 </script>
 
-<svelte:head><title>Funnel — Pursuit</title></svelte:head>
+<svelte:head><title>Insights — Pursuit</title></svelte:head>
 
 <div class="topbar">
-  <div class="crumb"><span class="here">Funnel</span></div>
-  <div class="right">
-    <button class="btn">Last 90 days</button>
-  </div>
+  <div class="crumb"><span class="here">Insights</span></div>
 </div>
 
 <div class="body">
   <div class="body-inner">
     <div class="hello">
       <div class="date">How the pipeline is performing</div>
-      <h1>Funnel.</h1>
+      <h1>Insights.</h1>
     </div>
 
     {#if loading}
@@ -168,7 +165,7 @@
         </div>
       </div>
 
-      <!-- FUNNEL — stepped bars, monochromatic blue -->
+      <!-- FUNNEL — flat accent bars, per-step conversion -->
       <div class="block">
         <div class="block-hd">
           <h2>Conversion funnel</h2>
@@ -183,7 +180,7 @@
                 <span class="fb-lbl">{s.label}</span>
               </div>
               <div class="fb-track">
-                <div class="fb-fill" style={`width: ${width}%; background: oklch(${0.78 - i*0.1} 0.16 258);`}></div>
+                <div class="fb-fill" style={`width: ${width}%;`}></div>
                 <span class="fb-n">{s.n}</span>
               </div>
               <div class="fb-pct">
@@ -191,6 +188,7 @@
                   <span class="fb-base">baseline</span>
                 {:else}
                   <span class="fb-rate-pill">{stagePct}%</span>
+                  <span class="fb-rate-of">of {stages[i-1].label}</span>
                 {/if}
               </div>
             </div>
@@ -198,58 +196,57 @@
         </div>
       </div>
 
-      <!-- SOURCE + CV -->
-      <div class="two-col">
-        <div class="block">
-          <div class="block-hd">
-            <h2>Conversion by source</h2>
-            <span class="ai-tag">Applied → Offer</span>
-          </div>
-          {#if sourceBars.length === 0}
-            <p class="block-empty">Tag a source on your applications to see breakdowns.</p>
-          {:else}
-            <div class="bar-list">
-              {#each sourceBars as s}
-                <div class="bar-row">
-                  <div class="bar-lbl">
-                    <span>{s.name}</span>
-                    <span class="bar-n">({s.n})</span>
+      <!-- SOURCE + CV — hidden entirely when there's no data so the UI
+           doesn't promise something the user hasn't enabled. -->
+      {#if sourceBars.length > 0 || cvBars.length > 0}
+        <div class="two-col">
+          {#if sourceBars.length > 0}
+            <div class="block">
+              <div class="block-hd">
+                <h2>Conversion by source</h2>
+                <span class="ai-tag">Applied → Offer</span>
+              </div>
+              <div class="bar-list">
+                {#each sourceBars as s}
+                  <div class="bar-row">
+                    <div class="bar-lbl">
+                      <span>{s.name}</span>
+                      <span class="bar-n">({s.n})</span>
+                    </div>
+                    <div class="bar-track">
+                      <div class={`bar-fill f-${s.tone}`} style="width: {(s.rate / maxSource) * 100}%"></div>
+                    </div>
+                    <div class="bar-pct">{s.rate}%</div>
                   </div>
-                  <div class="bar-track">
-                    <div class={`bar-fill f-${s.tone}`} style="width: {(s.rate / maxSource) * 100}%"></div>
-                  </div>
-                  <div class="bar-pct">{s.rate}%</div>
-                </div>
-              {/each}
+                {/each}
+              </div>
             </div>
           {/if}
-        </div>
 
-        <div class="block">
-          <div class="block-hd">
-            <h2>Conversion by CV variant</h2>
-            <span class="ai-tag">Applied → Screen</span>
-          </div>
-          {#if cvBars.length === 0}
-            <p class="block-empty">Tag a CV variant on your applications to compare.</p>
-          {:else}
-            <div class="bar-list">
-              {#each cvBars as c}
-                <div class="bar-row">
-                  <div class="bar-lbl">
-                    <span>{c.name}</span>
-                    <span class="bar-n">({c.n})</span>
+          {#if cvBars.length > 0}
+            <div class="block">
+              <div class="block-hd">
+                <h2>Conversion by CV variant</h2>
+                <span class="ai-tag">Applied → Screen</span>
+              </div>
+              <div class="bar-list">
+                {#each cvBars as c}
+                  <div class="bar-row">
+                    <div class="bar-lbl">
+                      <span>{c.name}</span>
+                      <span class="bar-n">({c.n})</span>
+                    </div>
+                    <div class="bar-track">
+                      <div class={`bar-fill f-${c.tone}`} style="width: {(c.rate / maxCv) * 100}%"></div>
+                    </div>
+                    <div class="bar-pct">{c.rate}%</div>
                   </div>
-                  <div class="bar-track">
-                    <div class={`bar-fill f-${c.tone}`} style="width: {(c.rate / maxCv) * 100}%"></div>
-                  </div>
-                  <div class="bar-pct">{c.rate}%</div>
-                </div>
-              {/each}
+                {/each}
+              </div>
             </div>
           {/if}
         </div>
-      </div>
+      {/if}
 
       <!-- TIME IN STAGE -->
       <div class="block">
@@ -308,13 +305,14 @@
   .fb-lbl-col { display: flex; align-items: center; gap: 8px; }
   .fb-lbl { font-size: 13.5px; font-weight: 600; }
   .fb-track { position: relative; height: 36px; background: var(--surface-2); border-radius: 10px; overflow: hidden; }
-  .fb-fill { height: 100%; border-radius: 10px; transition: width 240ms ease; }
+  .fb-fill { height: 100%; border-radius: 10px; transition: width 240ms ease; background: var(--accent); }
   .fb-n {
     position: absolute; top: 50%; left: 14px; transform: translateY(-50%);
     font-size: 14px; font-weight: 700; color: white;
     font-feature-settings: "tnum"; letter-spacing: -0.01em;
   }
-  .fb-pct { display: flex; align-items: baseline; gap: 6px; }
+  .fb-pct { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .fb-rate-of { font-size: 11px; color: var(--mute); }
   .fb-rate-pill {
     font-size: 14px; font-weight: 600; padding: 5px 12px; border-radius: 99px;
     background: var(--accent-tint); color: var(--accent-text);

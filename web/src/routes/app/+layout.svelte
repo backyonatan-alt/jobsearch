@@ -79,7 +79,7 @@
           <path d="M2 3h12l-5 6v5l-2-1V9z"/>
         </svg>
       </span>
-      <span>Funnel</span>
+      <span>Insights</span>
       <span class="nav-count"></span>
     </a>
 
