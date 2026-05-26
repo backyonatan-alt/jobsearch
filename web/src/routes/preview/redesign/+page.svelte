@@ -1,6 +1,21 @@
 <script>
   const previews = [
     {
+      slug: 'onboarding/a',
+      name: 'Onboarding · variant A (dots)',
+      blurb: 'Centered card, dot progress bar at the top. Linear-style. Click Next to step through 5 stages.'
+    },
+    {
+      slug: 'onboarding/b',
+      name: 'Onboarding · variant B (card stack)',
+      blurb: 'Card with two peek-cards behind it. "1 / 5" counter top right. Playful, more product-y.'
+    },
+    {
+      slug: 'onboarding/c',
+      name: 'Onboarding · variant C (split)',
+      blurb: 'Two-column split — colored illustration panel on the left, content on the right. Stripe / Resend style.'
+    },
+    {
       slug: 'today/a',
       name: 'Today · variant A (locked)',
       blurb: 'The Today direction we picked.'
