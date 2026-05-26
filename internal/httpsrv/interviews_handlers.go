@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/backyonatan-alt/jobsearch/internal/ics"
+	"github.com/backyonatan-alt/jobsearch/internal/llm"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -53,15 +54,26 @@ type person struct {
 }
 
 type icsParseRequest struct {
-	ICS string `json:"ics"`
+	ICS   string         `json:"ics,omitempty"`
+	Text  string         `json:"text,omitempty"`
+	Image *parseImageReq `json:"image,omitempty"`
+}
+
+type parseImageReq struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type icsParseResponse struct {
 	Events []parsedEventDTO `json:"events"`
 }
 
-// POST /api/applications/{id}/interviews/parse — parse an .ics body and return
-// the events without persisting. Lets the frontend show a preview before save.
+// POST /api/applications/{id}/interviews/parse — three ways to parse:
+//   1. {ics: "BEGIN:VCALENDAR..."}   — strict ICS parsing, fastest, no LLM.
+//   2. {text: "You're invited..."}   — free-form email/notes through Haiku.
+//   3. {image: {media_type, data}}   — screenshot through Haiku Vision.
+// Returns the same {events: [...]} shape regardless so the frontend renders
+// the preview through one code path.
 func (s *Server) handleInterviewsParse(w http.ResponseWriter, r *http.Request) {
 	u, _ := userFromCtx(r.Context())
 	appID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -79,31 +91,125 @@ func (s *Server) handleInterviewsParse(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	body := strings.TrimSpace(req.ICS)
-	if body == "" {
-		writeJSONError(w, http.StatusBadRequest, "paste an .ics calendar invite or upload the file")
-		return
-	}
-	if len(body) > maxICSBytes {
-		writeJSONError(w, http.StatusBadRequest, "calendar payload too large (256 KB max)")
+	icsBody := strings.TrimSpace(req.ICS)
+	text := strings.TrimSpace(req.Text)
+	if icsBody == "" && text == "" && req.Image == nil {
+		writeJSONError(w, http.StatusBadRequest, "paste a calendar file, a screenshot, or the event text")
 		return
 	}
 
-	events, err := ics.Parse(strings.NewReader(body))
+	// 1. ICS path — strict parsing, no LLM.
+	if icsBody != "" {
+		if len(icsBody) > maxICSBytes {
+			writeJSONError(w, http.StatusBadRequest, "calendar payload too large (256 KB max)")
+			return
+		}
+		events, err := ics.Parse(strings.NewReader(icsBody))
+		if err != nil {
+			writeJSONError(w, http.StatusUnprocessableEntity, "could not parse calendar: "+err.Error())
+			return
+		}
+		if len(events) == 0 {
+			writeJSONError(w, http.StatusUnprocessableEntity, "no VEVENT found — is this an .ics calendar invite?")
+			return
+		}
+		out := make([]parsedEventDTO, 0, len(events))
+		for _, e := range events {
+			out = append(out, toParsedDTO(e))
+		}
+		writeJSON(w, http.StatusOK, icsParseResponse{Events: out})
+		return
+	}
+
+	// 2/3. Image + text path — needs the LLM client.
+	if s.LLM == nil {
+		writeJSONError(w, http.StatusServiceUnavailable,
+			"AI event parsing is not configured (ANTHROPIC_API_KEY missing) — paste an .ics file instead")
+		return
+	}
+	var img *llm.ParseImage
+	if req.Image != nil {
+		if req.Image.Data == "" || req.Image.MediaType == "" {
+			writeJSONError(w, http.StatusBadRequest, "image needs both media_type and data")
+			return
+		}
+		img = &llm.ParseImage{MediaType: req.Image.MediaType, Data: req.Image.Data}
+	}
+	s.Logger.Info("interview parse start",
+		"user_id", u.ID, "app_id", appID,
+		"has_image", img != nil, "text_chars", len(text))
+
+	ev, err := s.LLM.ParseEvent(r.Context(), text, img)
 	if err != nil {
-		writeJSONError(w, http.StatusUnprocessableEntity, "could not parse calendar: "+err.Error())
+		s.Logger.Info("interview parse failed", "err", err)
+		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	if len(events) == 0 {
-		writeJSONError(w, http.StatusUnprocessableEntity, "no VEVENT found — is this an .ics calendar invite?")
+	dto, err := llmEventToDTO(ev)
+	if err != nil {
+		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	writeJSON(w, http.StatusOK, icsParseResponse{Events: []parsedEventDTO{dto}})
+}
 
-	out := make([]parsedEventDTO, 0, len(events))
-	for _, e := range events {
-		out = append(out, toParsedDTO(e))
+// llmEventToDTO converts the Haiku-parsed event (ISO strings, free-form
+// attendee names) into the parsedEventDTO shape the rest of the pipeline
+// expects (parsed time.Time, person structs).
+func llmEventToDTO(ev *llm.ParsedEvent) (parsedEventDTO, error) {
+	d := parsedEventDTO{
+		Source:      "ai",
+		Summary:     ev.Summary,
+		Location:    ev.Location,
+		Description: ev.Description,
+		AllDay:      ev.AllDay,
+		Attendees:   []person{},
 	}
-	writeJSON(w, http.StatusOK, icsParseResponse{Events: out})
+	if ev.StartsAt != "" {
+		t, err := parseFlexibleTime(ev.StartsAt)
+		if err != nil {
+			return d, errors.New("model returned a start time we couldn't parse: " + ev.StartsAt)
+		}
+		d.StartsAt = t
+	} else {
+		return d, errors.New("model didn't return a start time")
+	}
+	if ev.EndsAt != "" {
+		t, err := parseFlexibleTime(ev.EndsAt)
+		if err == nil {
+			d.EndsAt = &t
+		}
+	}
+	for _, a := range ev.Attendees {
+		a = strings.TrimSpace(a)
+		if a == "" {
+			continue
+		}
+		if strings.Contains(a, "@") {
+			d.Attendees = append(d.Attendees, person{Email: a})
+		} else {
+			d.Attendees = append(d.Attendees, person{Name: a})
+		}
+	}
+	return d, nil
+}
+
+// parseFlexibleTime accepts the common ISO 8601 shapes the model is likely to
+// return — full RFC3339, "YYYY-MM-DDTHH:MM:SS", date-only.
+func parseFlexibleTime(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	for _, layout := range []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, errors.New("unrecognized time format")
 }
 
 func toParsedDTO(e ics.Event) parsedEventDTO {

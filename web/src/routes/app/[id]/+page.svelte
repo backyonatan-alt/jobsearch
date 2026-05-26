@@ -14,11 +14,50 @@
   // Interviews tab state
   let interviews = $state([]);
   let interviewsLoading = $state(false);
+  // Left zone — .ics
   let icsText = $state('');
+  // Right zone — AI (screenshot or email body text)
+  let aiText = $state('');
+  let aiImage = $state(null); // { name, mediaType, size, file }
+  let aiDragOver = $state(false);
+  // Shared parse state
   let icsParsing = $state(false);
   let icsParseError = $state('');
   let icsPreview = $state([]);
   let icsSaving = $state(false);
+  const AI_ALLOWED_IMG = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  const AI_MAX_BYTES = 6 * 1024 * 1024;
+  function setAiImage(f) {
+    if (!f) return;
+    if (!AI_ALLOWED_IMG.includes(f.type)) { icsParseError = 'Only PNG / JPEG / GIF / WebP screenshots are supported.'; return; }
+    if (f.size > AI_MAX_BYTES) { icsParseError = 'Screenshot too large (6 MB max).'; return; }
+    icsParseError = '';
+    aiImage = { name: f.name || 'pasted.png', mediaType: f.type, size: f.size, file: f };
+  }
+  function onAiDrop(e) {
+    e.preventDefault();
+    aiDragOver = false;
+    setAiImage(e.dataTransfer?.files?.[0]);
+  }
+  function onAiDragOver(e) {
+    if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); aiDragOver = true; }
+  }
+  function onAiPaste(e) {
+    const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+    if (item) setAiImage(item.getAsFile());
+  }
+  function fileToBase64(f) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onerror = () => reject(new Error('Could not read file.'));
+      r.onload = () => {
+        const s = String(r.result || '');
+        const i = s.indexOf(',');
+        resolve(i === -1 ? '' : s.slice(i + 1));
+      };
+      r.readAsDataURL(f);
+    });
+  }
 
   // Inline-action state
   let showStatusMenu = $state(false);
@@ -56,6 +95,25 @@
       loading = false;
     }
   }
+
+  // Auto-trigger dossier on first load. Fires once per page-mount only when:
+  // the dossier is genuinely absent (load returned no_dossier), the app is in
+  // a stage that benefits from a brief (screen/interview/offer), and we
+  // haven't already kicked one off this session for this app id.
+  let autoTriggered = $state(false);
+  $effect(() => {
+    if (
+      !autoTriggered &&
+      !dossierLoading &&
+      !dossierAvailable &&
+      !generating &&
+      dossierEligible &&
+      app
+    ) {
+      autoTriggered = true;
+      generateDossier();
+    }
+  });
 
   async function loadDossier() {
     dossierLoading = true;
@@ -138,6 +196,41 @@
     } finally {
       icsParsing = false;
     }
+  }
+
+  // Parse the AI zone — sends image and/or text to the unified parse endpoint.
+  async function parseAi() {
+    if (icsParsing) return;
+    icsParseError = '';
+    icsPreview = [];
+    if (!aiImage && !aiText.trim()) {
+      icsParseError = 'Drop a screenshot or paste the event text first.';
+      return;
+    }
+    icsParsing = true;
+    try {
+      const payload = {};
+      if (aiText.trim()) payload.text = aiText.trim();
+      if (aiImage) {
+        const data = await fileToBase64(aiImage.file);
+        payload.image = { media_type: aiImage.mediaType, data };
+      }
+      const r = await api(`/api/applications/${id}/interviews/parse`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      icsPreview = r.events ?? [];
+      if (icsPreview.length === 0) icsParseError = "Couldn't extract an event.";
+    } catch (e) {
+      icsParseError = e.message || 'Could not parse.';
+    } finally {
+      icsParsing = false;
+    }
+  }
+  async function onAiFile(e) {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    setAiImage(f);
   }
 
   async function saveParsedEvents() {
@@ -458,6 +551,55 @@
           </div>
         {/if}
         {#if dossierAvailable}
+          <!-- ABOUT COMPANY — compact card above the interviewer block. -->
+          {#if dossier.content.company}
+            {@const c = dossier.content.company}
+            <div class="block company-block">
+              <div class="block-hd">
+                <h2>About {app.co}</h2>
+                <span class="ai-tag">AI · refreshed {dossier.generatedAgo}</span>
+              </div>
+              {#if c.blurb}<p class="company-blurb">{c.blurb}</p>{/if}
+              {#if c.direction}<p class="company-direction">{c.direction}</p>{/if}
+              {#if c.hq || c.employees || c.stage || c.founded}
+                <div class="facts-grid">
+                  {#if c.hq}       <div class="f-cell"><div class="f-lbl">HQ</div><div class="f-val">{c.hq}</div></div>{/if}
+                  {#if c.employees}<div class="f-cell"><div class="f-lbl">Employees</div><div class="f-val">{c.employees}</div></div>{/if}
+                  {#if c.stage}    <div class="f-cell"><div class="f-lbl">Stage</div><div class="f-val">{c.stage}</div></div>{/if}
+                  {#if c.founded}  <div class="f-cell"><div class="f-lbl">Founded</div><div class="f-val">{c.founded}</div></div>{/if}
+                </div>
+              {/if}
+              {#if c.process?.length}
+                <div class="sub-hd">
+                  <h3>Typical interview process</h3>
+                  <span class="ai-tag-mute">from Glassdoor / Blind / levels.fyi</span>
+                </div>
+                <ol class="process-list">
+                  {#each c.process as p, i}
+                    <li>
+                      <span class="step-n">{i + 1}</span>
+                      <div>
+                        <div class="step-kind">{p.kind}</div>
+                        {#if p.detail}<div class="step-detail">{p.detail}</div>{/if}
+                      </div>
+                    </li>
+                  {/each}
+                </ol>
+              {/if}
+              {#if c.watch_fors?.length}
+                <div class="sub-hd">
+                  <h3>Watch-fors for this loop</h3>
+                  <span class="ai-tag-mute">AI · synthesized</span>
+                </div>
+                <ul class="watch-list">
+                  {#each c.watch_fors as w}
+                    <li><span class="w-dot">▸</span><span>{w}</span></li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {/if}
+
           <!-- INTERVIEWER -->
           {#if dossier.content.interviewer?.name}
             <div class="block person-block">
@@ -640,47 +782,94 @@
           </div>
         {/if}
       {:else if tab === 'interviews'}
-        <div class="ics-card">
-          <h3>Add an interview from your calendar</h3>
-          <p class="ics-hint">
-            Drop in a <code>.ics</code> file (calendar export) or paste the raw text.
-            We'll extract the event, link it to this application, and surface it in the brief.
-          </p>
-          <div class="ics-row">
-            <label class="btn ics-file">
-              Choose .ics file
-              <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} style="display:none" />
-            </label>
-            <span class="ics-sep">or paste below</span>
+        <div class="add-card">
+          <div class="add-hd">
+            <h3>Add an interview</h3>
+            <p>Drop a calendar file, paste a screenshot, or just paste the email body — we'll extract the event.</p>
           </div>
-          <textarea
-            class="ics-textarea"
-            rows="4"
-            placeholder="BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT&#10;…"
-            bind:value={icsText}
-          ></textarea>
-          <div class="ics-actions">
-            <button class="btn btn-primary" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
-              {icsParsing ? 'Parsing…' : 'Parse'}
-            </button>
-            {#if icsPreview.length > 0}
-              <button class="btn" onclick={saveParsedEvents} disabled={icsSaving}>
-                {icsSaving ? 'Saving…' : `Save ${icsPreview.length} event${icsPreview.length === 1 ? '' : 's'}`}
+          <div class="zones">
+            <!-- LEFT — .ics file + raw text -->
+            <div class="zone">
+              <div class="zone-hd">
+                <span class="zone-ic">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg>
+                </span>
+                <div>
+                  <div class="zone-title">Calendar file</div>
+                  <div class="zone-sub">.ics from Google / Outlook / Apple Calendar</div>
+                </div>
+              </div>
+              <label class="drop drop-file">
+                <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
+                <span class="drop-l1">Drop .ics file</span>
+                <span class="drop-l2">or click to browse</span>
+                <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} style="display:none" />
+              </label>
+              <div class="or">or paste raw .ics text below</div>
+              <textarea class="ai-ta" rows="3" placeholder={"BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT…"} bind:value={icsText}></textarea>
+              <button class="btn btn-primary zone-parse" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
+                {icsParsing ? 'Parsing…' : 'Parse .ics'}
               </button>
-            {/if}
+            </div>
+
+            <!-- RIGHT — screenshot + email text -->
+            <div class="zone">
+              <div class="zone-hd">
+                <span class="zone-ic accent">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+                </span>
+                <div>
+                  <div class="zone-title">Screenshot or email text<span class="ai-pill">AI</span></div>
+                  <div class="zone-sub">Gmail invite, Calendar screenshot, anything readable</div>
+                </div>
+              </div>
+              <label
+                class="drop drop-image"
+                class:drag={aiDragOver}
+                ondragover={onAiDragOver}
+                ondragleave={() => (aiDragOver = false)}
+                ondrop={onAiDrop}
+              >
+                {#if aiImage}
+                  <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+                  <span class="drop-l1">{aiImage.name}</span>
+                  <span class="drop-l2">{Math.round(aiImage.size / 1024)} KB · click to replace</span>
+                {:else}
+                  <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+                  <span class="drop-l1">Drop a screenshot</span>
+                  <span class="drop-l2"><kbd>⌘V</kbd> works too</span>
+                {/if}
+                <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onchange={onAiFile} style="display:none" />
+              </label>
+              <div class="or">or paste the email body below</div>
+              <textarea
+                class="ai-ta"
+                rows="3"
+                placeholder={"You're invited to: Stripe — Technical screen&#10;When: Tue, May 28, 2:00 PM EDT&#10;Where: Google Meet"}
+                bind:value={aiText}
+                onpaste={onAiPaste}
+              ></textarea>
+              <button class="btn btn-primary zone-parse" onclick={parseAi} disabled={icsParsing || (!aiImage && !aiText.trim())}>
+                {icsParsing ? 'Parsing…' : 'Parse with AI'}
+              </button>
+            </div>
           </div>
-          {#if icsParseError}<p class="dossier-err" style="margin-top: 10px">{icsParseError}</p>{/if}
+
+          {#if icsParseError}<p class="dossier-err" style="margin-top: 14px">{icsParseError}</p>{/if}
 
           {#if icsPreview.length > 0}
             <div class="ics-preview">
               <h4>Preview</h4>
               {#each icsPreview as ev}
-                <div class="ics-preview-row">
-                  <div class="iv-when">{fmtEventWhen(ev)}</div>
-                  <div class="iv-summary">{ev.summary || 'Untitled event'}</div>
-                  {#if ev.location}<div class="iv-loc">📍 {ev.location}</div>{/if}
+                <div class="prev-row">
+                  <div class="prev-summary">{ev.summary || 'Untitled event'}</div>
+                  <div class="prev-when">{fmtEventWhen(ev)}</div>
+                  {#if ev.location}<div class="prev-loc">📍 {ev.location}</div>{/if}
                 </div>
               {/each}
+              <button class="btn btn-primary" onclick={saveParsedEvents} disabled={icsSaving}>
+                {icsSaving ? 'Saving…' : `Save ${icsPreview.length} event${icsPreview.length === 1 ? '' : 's'}`}
+              </button>
             </div>
           {/if}
         </div>
@@ -901,6 +1090,29 @@
     margin: 14px 0;
   }
   .snap-lbl { font-size: 11.5px; color: var(--accent-text); font-weight: 600; margin-bottom: 4px; }
+
+  /* COMPANY CARD — sits above the interviewer block on the Brief tab. */
+  .company-block .company-blurb { font-size: 14.5px; line-height: 1.55; color: var(--ink); margin: 0 0 6px; font-weight: 500; }
+  .company-block .company-direction { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 14px; }
+  .company-block .facts-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
+  .company-block .f-cell { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+  .company-block .f-lbl { font-size: 11px; color: var(--mute); font-weight: 500; }
+  .company-block .f-val { font-size: 13px; color: var(--ink); font-weight: 600; margin-top: 2px; }
+  .company-block .sub-hd { display: flex; align-items: center; gap: 10px; margin: 18px 0 10px; padding-top: 14px; border-top: 1px dashed var(--rule); }
+  .company-block .sub-hd h3 { font-size: 13.5px; font-weight: 600; margin: 0; letter-spacing: -0.005em; color: var(--ink); }
+  .company-block .process-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .company-block .process-list li { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px dashed var(--rule); }
+  .company-block .process-list li:last-child { border-bottom: 0; }
+  .company-block .step-n { width: 22px; height: 22px; border-radius: 50%; background: var(--accent-tint); color: var(--accent-text); display: grid; place-items: center; font-size: 11px; font-weight: 600; font-feature-settings: "tnum"; }
+  .company-block .step-kind { font-size: 13.5px; color: var(--ink); font-weight: 600; }
+  .company-block .step-detail { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
+  .company-block .watch-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .company-block .watch-list li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: baseline; padding: 6px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .company-block .w-dot { color: var(--accent); font-weight: 700; }
+
+  @media (max-width: 720px) {
+    .company-block .facts-grid { grid-template-columns: repeat(2, 1fr); }
+  }
   .snapshot-card p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink); }
 
   /* SIGNALS */
@@ -1029,40 +1241,35 @@
   .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
   .empty-tab p { color: var(--mute); margin: 0; font-size: 13.5px; }
 
-  /* Interviews tab */
-  .ics-card {
-    border: 1px dashed var(--rule-strong);
-    border-radius: 12px;
-    padding: 20px 24px;
-    background: var(--card);
-    margin-bottom: 24px;
-  }
-  .ics-card h3 { font-size: 15px; font-weight: 600; letter-spacing: -0.012em; margin: 0 0 .35rem; color: var(--ink); }
-  .ics-hint { font-size: 13px; color: var(--mute); margin: 0 0 1rem; line-height: 1.5; }
-  .ics-hint code { background: var(--surface-2); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
-  .ics-row { display: flex; align-items: center; gap: 12px; margin-bottom: .75rem; }
-  .ics-file { cursor: pointer; }
-  .ics-sep { color: var(--mute); font-size: 12px; }
-  .ics-textarea {
-    width: 100%;
-    font: inherit;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
-    color: var(--ink);
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 6px;
-    padding: 8px 10px;
-    outline: none;
-    resize: vertical;
-    box-sizing: border-box;
-  }
-  .ics-textarea:focus { border-color: var(--accent); }
-  .ics-actions { display: flex; gap: 8px; margin-top: 10px; }
-  .ics-preview { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--rule); }
-  .ics-preview h4 { font-size: 12px; font-weight: 500; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 8px; }
-  .ics-preview-row { padding: 8px 0; border-bottom: 1px solid var(--rule); }
-  .ics-preview-row:last-of-type { border-bottom: none; }
+  /* Interviews tab — two side-by-side zones (ics + AI). */
+  .add-card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 22px 24px; margin-bottom: 18px; box-shadow: var(--sh-1); }
+  .add-hd { margin-bottom: 16px; }
+  .add-hd h3 { font-size: 16px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em; }
+  .add-hd p { font-size: 13.5px; color: var(--mute); margin: 0; line-height: 1.5; }
+  .zones { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .zone { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .zone-hd { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: center; }
+  .zone-ic { width: 32px; height: 32px; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); display: grid; place-items: center; }
+  .zone-ic.accent { background: var(--accent-tint); color: var(--accent-text); }
+  .zone-title { font-size: 13.5px; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; }
+  .zone-sub { font-size: 12px; color: var(--mute); margin-top: 1px; }
+  .ai-pill { font-size: 10px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border-radius: 4px; padding: 1px 5px; letter-spacing: .04em; }
+  .drop { background: var(--card); border: 1.5px dashed var(--rule-strong); border-radius: 10px; padding: 16px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--mute); transition: border-color 120ms, background 120ms; cursor: pointer; }
+  .drop:hover, .drop.drag { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text); }
+  .drop-l1 { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+  .drop:hover .drop-l1, .drop.drag .drop-l1 { color: var(--accent-text); }
+  .drop-l2 { font-size: 11.5px; color: var(--mute-2); }
+  .drop kbd { font-family: var(--mono); font-size: 10px; background: var(--surface-2); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--ink-2); }
+  .or { font-size: 11.5px; color: var(--mute-2); text-align: center; }
+  .ai-ta { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; outline: none; resize: vertical; box-sizing: border-box; }
+  .ai-ta:focus { border-color: var(--accent); }
+  .zone-parse { margin-top: 4px; align-self: flex-start; }
+  .ics-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
+  .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 10px; }
+  .prev-row { background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .prev-summary { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .prev-when { font-size: 12.5px; color: var(--accent-text); margin-top: 3px; font-weight: 500; }
+  .prev-loc { font-size: 12px; color: var(--mute); margin-top: 4px; }
 
   .iv-list h3 { font-size: 13px; font-weight: 500; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 12px; }
   .iv-card {
@@ -1110,7 +1317,7 @@
     .modal { max-width: 100%; border-radius: 0; min-height: 100vh; padding: 1rem; }
     .fields { grid-template-columns: 1fr; }
     .fields .span-2 { grid-column: auto; }
-    .ics-card { padding: 16px 16px; }
-    .ics-row { flex-direction: column; align-items: stretch; gap: 8px; }
+    .add-card { padding: 16px 16px; }
+    .zones { grid-template-columns: 1fr; gap: 10px; }
   }
 </style>
