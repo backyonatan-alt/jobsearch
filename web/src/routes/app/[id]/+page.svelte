@@ -96,24 +96,52 @@
     }
   }
 
-  // Auto-trigger dossier on first load. Fires once per page-mount only when:
-  // the dossier is genuinely absent (load returned no_dossier), the app is in
-  // a stage that benefits from a brief (screen/interview/offer), and we
-  // haven't already kicked one off this session for this app id.
-  let autoTriggered = $state(false);
+  // Auto-trigger dossier on first visit per app per session. We persist a
+  // session marker per app id so revisiting the same app doesn't refire, and
+  // we don't burn the Anthropic rate limit when the user is QA-flipping
+  // through multiple applications.
+  function hasAutoFired(appId) {
+    if (!appId || typeof sessionStorage === 'undefined') return false;
+    try { return sessionStorage.getItem(`pursuit_auto_dossier_${appId}`) === '1'; }
+    catch { return false; }
+  }
+  function markAutoFired(appId) {
+    if (!appId || typeof sessionStorage === 'undefined') return;
+    try { sessionStorage.setItem(`pursuit_auto_dossier_${appId}`, '1'); } catch {}
+  }
   $effect(() => {
     if (
-      !autoTriggered &&
+      app &&
+      !hasAutoFired(app.id) &&
       !dossierLoading &&
       !dossierAvailable &&
       !generating &&
-      dossierEligible &&
-      app
+      dossierEligible
     ) {
-      autoTriggered = true;
+      markAutoFired(app.id);
       generateDossier();
     }
   });
+
+  // Map noisy backend errors (raw JSON dumps, "http 504" strings) into
+  // human-readable copy on the Brief card. Keeps the UI calm when Anthropic
+  // rate-limits us or the proxy times out mid-search.
+  function friendlyError(msg) {
+    const m = String(msg || '');
+    if (m.includes('rate_limit_error') || m.includes('"type":"error"') && m.includes('429')) {
+      return 'AI usage limit hit for now — wait about a minute and try Generate again. (Cap is 30k input tokens per minute on the current plan.)';
+    }
+    if (m.includes('http 504') || /\btimeout\b/i.test(m)) {
+      return "The web search took longer than the proxy allowed. Try Generate again — usually goes through on a retry.";
+    }
+    if (m.includes('http 503') || m.includes('not configured')) {
+      return 'AI features are temporarily unavailable. Try again in a minute.';
+    }
+    if (m.includes('http 5')) {
+      return 'Something went wrong on our end. Try again in a minute.';
+    }
+    return m || 'Could not generate the brief.';
+  }
 
   async function loadDossier() {
     dossierLoading = true;
@@ -144,7 +172,7 @@
       dossier = d;
       interviewerInput = d.interviewer_name ?? '';
     } catch (e) {
-      dossierError = e.message || 'Could not generate dossier.';
+      dossierError = friendlyError(e.message);
     } finally {
       generating = false;
     }
