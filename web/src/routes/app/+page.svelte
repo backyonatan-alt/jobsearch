@@ -165,7 +165,23 @@
     showOnboarding = forced || fresh;
   }
 
-  function finishOnboarding() { showOnboarding = false; refresh(); }
+  function finishOnboarding() {
+    showOnboarding = false;
+    refresh();
+    // The onboarding overlay drops a sessionStorage flag right before it
+    // closes; pick it up here so the New-application button gets a
+    // one-time tooltip pointing the user to ⌘N.
+    try {
+      if (sessionStorage.getItem('pursuit_first_open') === '1') {
+        showFirstTooltip = true;
+      }
+    } catch {}
+  }
+  let showFirstTooltip = $state(false);
+  function dismissFirstTooltip() {
+    showFirstTooltip = false;
+    try { sessionStorage.removeItem('pursuit_first_open'); } catch {}
+  }
 
   async function createApp(e) {
     e.preventDefault();
@@ -397,9 +413,21 @@
       <span class="kbd">⌘K</span>
     </div>
     <button class="btn">Import</button>
-    <button class="btn btn-primary" onclick={() => (showNewModal = true)}>
-      New application <span class="kbd">⌘N</span>
-    </button>
+    <div class="new-wrap">
+      <button class="btn btn-primary" onclick={() => (showNewModal = true)}>
+        New application <span class="kbd">⌘N</span>
+      </button>
+      {#if showFirstTooltip}
+        <div class="first-tooltip" role="status">
+          <div class="ft-arrow"></div>
+          <div class="ft-body">
+            <b>Add a new application anytime.</b>
+            <span>Click here or hit <kbd>⌘N</kbd> from any screen.</span>
+          </div>
+          <button class="ft-x" onclick={dismissFirstTooltip} aria-label="Dismiss">×</button>
+        </div>
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -940,6 +968,52 @@
   .foot-actions { display: flex; gap: 8px; }
   .foot-actions .btn-primary { display: inline-flex; align-items: center; gap: 6px; }
   .dark-kbd { font-family: var(--mono); font-size: 10.5px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.22); border-radius: 3px; padding: 0 5px; color: rgba(255,255,255,.9); }
+
+  /* First-run tooltip on the New-application button. Set by the onboarding
+     overlay just before it closes; dismissed by the × or auto-cleared on
+     next page mount. */
+  .new-wrap { position: relative; }
+  .first-tooltip {
+    position: absolute;
+    top: calc(100% + 12px);
+    right: 0;
+    width: 260px;
+    background: var(--ink);
+    color: white;
+    border-radius: 10px;
+    padding: 12px 14px 12px 14px;
+    box-shadow: var(--sh-pop);
+    z-index: 50;
+    display: flex; align-items: flex-start; gap: 10px;
+    animation: ft-in 200ms ease;
+  }
+  @keyframes ft-in { from { opacity: 0; transform: translateY(-4px); } }
+  .ft-arrow {
+    position: absolute;
+    top: -6px; right: 26px;
+    width: 12px; height: 12px;
+    background: var(--ink);
+    transform: rotate(45deg);
+    border-radius: 2px;
+  }
+  .ft-body { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; line-height: 1.45; }
+  .ft-body b { font-weight: 600; }
+  .ft-body span { color: rgba(255,255,255,0.7); }
+  .ft-body kbd {
+    font-family: var(--mono); font-size: 10.5px;
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 3px;
+    padding: 0 4px;
+    color: rgba(255,255,255,0.92);
+  }
+  .ft-x {
+    background: transparent; border: 0; color: rgba(255,255,255,0.6);
+    width: 22px; height: 22px; border-radius: 6px;
+    font-size: 16px; line-height: 1; cursor: pointer;
+    align-self: flex-start;
+  }
+  .ft-x:hover { background: rgba(255,255,255,0.1); color: white; }
 
   /* Mobile — stack everything to a single column. */
   @media (max-width: 720px) {
