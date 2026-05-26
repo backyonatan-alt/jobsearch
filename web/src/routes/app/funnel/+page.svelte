@@ -196,58 +196,6 @@
         </div>
       </div>
 
-      <!-- SOURCE + CV — hidden entirely when there's no data so the UI
-           doesn't promise something the user hasn't enabled. -->
-      {#if sourceBars.length > 0 || cvBars.length > 0}
-        <div class="two-col">
-          {#if sourceBars.length > 0}
-            <div class="block">
-              <div class="block-hd">
-                <h2>Conversion by source</h2>
-                <span class="ai-tag">Applied → Offer</span>
-              </div>
-              <div class="bar-list">
-                {#each sourceBars as s}
-                  <div class="bar-row">
-                    <div class="bar-lbl">
-                      <span>{s.name}</span>
-                      <span class="bar-n">({s.n})</span>
-                    </div>
-                    <div class="bar-track">
-                      <div class={`bar-fill f-${s.tone}`} style="width: {(s.rate / maxSource) * 100}%"></div>
-                    </div>
-                    <div class="bar-pct">{s.rate}%</div>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          {#if cvBars.length > 0}
-            <div class="block">
-              <div class="block-hd">
-                <h2>Conversion by CV variant</h2>
-                <span class="ai-tag">Applied → Screen</span>
-              </div>
-              <div class="bar-list">
-                {#each cvBars as c}
-                  <div class="bar-row">
-                    <div class="bar-lbl">
-                      <span>{c.name}</span>
-                      <span class="bar-n">({c.n})</span>
-                    </div>
-                    <div class="bar-track">
-                      <div class={`bar-fill f-${c.tone}`} style="width: {(c.rate / maxCv) * 100}%"></div>
-                    </div>
-                    <div class="bar-pct">{c.rate}%</div>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        </div>
-      {/if}
-
       <!-- TIME IN STAGE -->
       <div class="block">
         <div class="block-hd">
