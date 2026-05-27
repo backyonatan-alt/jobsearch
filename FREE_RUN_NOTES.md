@@ -203,3 +203,4 @@ the moment you notice something; triage later.
 ### Still to design / decide
 
 - **New application modal**: no notes yet, may not need a redesign.
+- `[ux]` **Insights tab is just statistics + data — no real insight.** KPIs, funnel, time-in-stage are useful but feel cold; the page is named "Insights" but doesn't deliver any. Two paths for next session: (a) add genuine AI-derived insights ("Your screen → interview rate dropped 30% on referrals last 2 weeks", "Vercel offers tend to come 12 days after onsite — yours is overdue") above the charts, OR (b) rename the page to "Pipeline" / "Analytics" / "Stats" and stop overpromising. (May 26 2026)
