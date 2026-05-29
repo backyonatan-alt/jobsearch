@@ -34,6 +34,16 @@ Time-bound items. Cross off as completed. Things that don't have a date go in `C
 - [ ] Backup story for Postgres: nightly `pg_dump` → off-VM (S3 or Hetzner Storage Box)
 - [ ] A single Plausible (or GA4) property wired into the frontend
 
+## Product analytics (GA4 — funnel-first)
+
+- [ ] Create GA4 property + web data stream; put the Measurement ID in a `GA4_MEASUREMENT_ID` env var and inject the gtag snippet into the SvelteKit shell (skip in dev / on localhost)
+- [ ] SPA pageview tracking on Svelte client-side navigation (GA4 won't auto-fire on route changes)
+- [ ] Instrument the AI-native moments — one event each: `paste_parse`, `screenshot_parse`, `dossier_open`, `dossier_refresh`, `interview_parse`
+- [ ] Instrument the application funnel — `application_create` + a `status_change` event carrying old→new status (so applied→screen→onsite→offer is reconstructable)
+- [ ] Instrument onboarding + activation — `onboarding_view`, `onboarding_dismiss`, `demo_seed_click`, first-application milestone
+- [ ] Saved GA4 Explorations: application funnel (applied→offer) and AI-feature adoption funnel
+- [ ] Verify events land in GA4 Realtime/DebugView from prod before calling it done (rendered-surface bar: confirm in the GA4 UI, not just that gtag fired)
+
 ## Parked decisions
 
 - Domain name (pursuit.app etc.) — deferred until after beta validates demand. Running on `<ip>.nip.io` with a real Lets-Encrypt cert until then.
