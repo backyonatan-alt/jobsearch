@@ -1,0 +1,104 @@
+/* ═══════════════════════════════════════════════════════════
+   PURSUIT · Phase 1 — ORBIT BRIEF (combined direction)
+   Orbit illustration (1 satellite = the person you'll meet)
+   on the left · Morning-Brief editorial content on the right.
+   The orbit is decorative/focal, NOT a map of the week.
+   ═══════════════════════════════════════════════════════════ */
+
+.ob { height: 100%; display: grid; grid-template-columns: 0.92fr 1.08fr; }
+
+/* ── Left: orbital illustration stage ──────────────────────── */
+.ob .stage {
+  position: relative; overflow: hidden; border-right: 1px solid var(--rule);
+  background:
+    radial-gradient(78% 64% at 46% 40%, oklch(0.97 0.03 258), transparent 72%),
+    var(--surface);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 32px;
+}
+.ob .ringwrap { position: relative; width: 412px; height: 412px; flex-shrink: 0; }
+.ob .ring {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  border-radius: 50%; border: 1px solid oklch(0.7 0.08 258 / 0.30);
+}
+.ob .ring.r1 { width: 196px; height: 196px; }
+.ob .ring.r2 { width: 308px; height: 308px; border-color: oklch(0.72 0.06 258 / 0.22); }
+.ob .ring.r3 { width: 410px; height: 410px; border-style: dashed; border-color: oklch(0.74 0.05 258 / 0.18); animation: ob-spin 90s linear infinite; }
+@keyframes ob-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+/* connector from core to the satellite */
+.ob .connector { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* core = the company / interview */
+.ob .core {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 124px; height: 124px; border-radius: 50%; background: var(--card);
+  box-shadow: 0 24px 52px -16px rgba(40,40,90,0.34), 0 0 0 1px var(--rule), inset 0 1px 2px rgba(255,255,255,0.9);
+  display: flex; align-items: center; justify-content: center; z-index: 3;
+}
+.ob .core::after {
+  content: ""; position: absolute; inset: -9px; border-radius: 50%;
+  border: 1px solid oklch(0.62 0.19 258 / 0.38); animation: ob-pulse 2.8s ease-out infinite;
+}
+@keyframes ob-pulse { 0% { transform: scale(0.93); opacity: 0.7; } 100% { transform: scale(1.16); opacity: 0; } }
+.ob .core .lg { width: 58px; height: 58px; font-size: 22px; border-radius: 15px; }
+
+/* satellite = the person you're about to meet (the ONE dot, brand-mark style) */
+.ob .sat {
+  position: absolute; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 7px;
+  left: 262px; top: 104px;
+}
+.ob .sat .iv-av { width: 50px; height: 50px; font-size: 17px; box-shadow: 0 8px 18px -6px rgba(40,40,90,0.45), 0 0 0 5px var(--surface); }
+.ob .sat .who { text-align: center; }
+.ob .sat .who b { display: block; font-size: 12.5px; font-weight: 500; letter-spacing: -0.01em; }
+.ob .sat .who small { font-size: 11px; color: var(--mute); }
+
+/* caption beneath the orbit */
+.ob .cap { text-align: center; margin-top: 30px; }
+.ob .cap .k { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warm-text); display: inline-flex; align-items: center; gap: 7px; margin-bottom: 12px; }
+.ob .cap .k .d { width: 6px; height: 6px; border-radius: 50%; background: var(--warm); box-shadow: 0 0 0 3px var(--warm-tint); }
+.ob .cap .co { font-size: 20px; font-weight: 500; letter-spacing: -0.02em; }
+.ob .cap .role { font-size: 13.5px; color: var(--mute); margin-top: 3px; }
+.ob .cap .clock {
+  display: inline-flex; align-items: center; gap: 9px; margin-top: 16px; white-space: nowrap;
+  font-family: var(--mono); font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums;
+  background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 7px 15px; box-shadow: var(--sh-1);
+}
+.ob .cap .clock b { color: var(--warm-text); font-weight: 500; }
+
+/* ── Right: editorial brief content ────────────────────────── */
+.ob .brief { overflow-y: auto; }
+.ob .brief-in { max-width: 560px; padding: 44px 48px 44px; }
+.ob .mast { display: flex; align-items: center; justify-content: space-between; padding-bottom: 15px; border-bottom: 1.5px solid var(--ink); margin-bottom: 26px; }
+.ob .mast .ttl { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; }
+.ob .mast .ttl .o { color: var(--accent-text); }
+.ob .mast .dt { font-family: var(--mono); font-size: 11px; color: var(--mute); letter-spacing: 0.04em; text-transform: uppercase; }
+
+.ob h1 { font-size: 30px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.12; margin: 0 0 12px; }
+.ob h1 b { font-weight: 500; }
+.ob .lede { font-size: 14.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 30px; max-width: 50ch; }
+.ob .lede .hot { color: var(--warm-text); font-weight: 500; }
+
+.ob .kick { font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.ob .kick::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+
+/* insight + meta for today's interview (person already shown in orbit) */
+.ob .insight { display: flex; gap: 12px; padding: 15px 16px; background: var(--accent-tint); border-radius: 13px; margin-bottom: 14px; }
+.ob .insight .ic { color: var(--accent-text); flex-shrink: 0; margin-top: 1px; }
+.ob .insight .tx { font-size: 13.5px; line-height: 1.55; color: var(--accent-text); }
+.ob .insight .tx b { font-weight: 600; }
+.ob .meta { font-size: 13px; color: var(--mute); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; white-space: nowrap; }
+.ob .meta > * { flex-shrink: 0; }
+.ob .meta b { color: var(--ink-2); font-weight: 500; }
+.ob .meta .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--mute-2); }
+.ob .cta { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--ink); color: white; border: none; font-size: 13.5px; font-weight: 500; padding: 11px 18px; border-radius: 10px; cursor: pointer; }
+
+.ob .agenda { margin-top: 36px; }
+.ob .ag-row { display: grid; grid-template-columns: 70px 1fr auto; gap: 14px; align-items: center; padding: 13px 2px; border-top: 1px solid var(--rule); font-size: 13.5px; cursor: pointer; }
+.ob .ag-row:hover { background: var(--surface-2); }
+.ob .ag-row .when { font-variant-numeric: tabular-nums; color: var(--mute); }
+.ob .ag-row .when b { color: var(--ink-2); font-weight: 500; }
+.ob .ag-row .co { font-weight: 500; }
+.ob .ag-row .role { color: var(--mute); font-size: 12.5px; }
+.ob .foot { margin-top: 22px; font-size: 12.5px; color: var(--mute); display: inline-flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
+.ob .foot b { color: var(--ink-2); font-weight: 500; }
