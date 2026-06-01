@@ -1,0 +1,153 @@
+/* ═══════════════════════════════════════════════════════════
+   PURSUIT · Phase 1 — LEFT-PANEL OPTIONS
+   Three alternative left treatments for the Orbit Brief.
+   Right side reuses .brief / .brief-in from orbit-brief.css.
+   ═══════════════════════════════════════════════════════════ */
+
+/* base left stage shared bits */
+.ob-alt .lp-stage,
+.ob-alt .cs-stage,
+.ob-alt .pt-stage {
+  position: relative; overflow: hidden; border-right: 1px solid var(--rule);
+}
+
+/* shared "your next interview" tag */
+.lp-tag, .cs-tag, .pt-tag {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--warm-text); display: inline-flex; align-items: center; gap: 7px;
+}
+.lp-tag .d, .cs-tag .d, .pt-tag .d { width: 6px; height: 6px; border-radius: 50%; background: var(--warm); box-shadow: 0 0 0 3px var(--warm-tint); }
+
+/* ───────────────────────────────────────────────────────────
+   A · BOARDING PASS
+   ─────────────────────────────────────────────────────────── */
+.lp-stage {
+  background:
+    radial-gradient(70% 60% at 50% 30%, oklch(0.97 0.03 258), transparent 72%),
+    var(--surface);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px 36px;
+}
+.lp-stage .lp-tag { margin-bottom: 22px; }
+.pass {
+  width: 100%; max-width: 320px; background: var(--card); border-radius: 18px;
+  box-shadow: 0 28px 56px -20px rgba(40,40,90,0.32), 0 0 0 1px var(--rule);
+  padding: 24px 24px 20px; position: relative;
+}
+.pass-top { display: flex; align-items: center; gap: 13px; padding-bottom: 18px; }
+.pass-co { font-size: 16px; font-weight: 500; letter-spacing: -0.01em; line-height: 1.3; }
+.pass-co small { display: block; font-weight: 400; font-size: 12.5px; color: var(--mute); margin-top: 3px; }
+.pass-time { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 0 20px; }
+.pass-time .big { font-size: 52px; font-weight: 300; letter-spacing: -0.04em; line-height: 0.9; font-variant-numeric: tabular-nums; }
+.pass-time .cd { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--warm-text); background: var(--warm-tint); border-radius: 999px; padding: 5px 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* perforation */
+.pass .perf { position: relative; height: 1px; margin: 0 -24px 18px; border-top: 1.5px dashed var(--rule-strong); }
+.pass .perf::before, .pass .perf::after {
+  content: ""; position: absolute; top: -9px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.pass .perf::before { left: -9px; } .pass .perf::after { right: -9px; }
+.pass-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 14px; margin-bottom: 20px; }
+.pass-grid .f label { display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 5px; }
+.pass-grid .f .v { font-size: 13.5px; font-weight: 500; color: var(--ink); display: inline-flex; align-items: center; gap: 8px; }
+.pass-grid .f .v .iv-av { width: 22px; height: 22px; font-size: 9.5px; }
+.pass .barcode { height: 34px; border-radius: 6px;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 4px, var(--ink) 4px 5px, transparent 5px 9px, var(--ink) 9px 12px, transparent 12px 14px);
+  opacity: 0.82; }
+
+/* ───────────────────────────────────────────────────────────
+   B · PIPELINE PULSE (revised) — pipeline status + small tasks
+   ─────────────────────────────────────────────────────────── */
+.pulse-stage {
+  background:
+    radial-gradient(72% 50% at 50% 0%, oklch(0.97 0.028 258), transparent 70%),
+    var(--surface);
+  display: flex; flex-direction: column; justify-content: flex-start;
+  padding: 46px 40px;
+}
+.pulse-stage .pulse-tag { margin-bottom: 20px; }
+
+/* one cohesive stat card, divided — not three plain boxes */
+.pulse-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  background: var(--card); border: 1px solid var(--rule); border-radius: 14px;
+  box-shadow: 0 12px 30px -16px rgba(40,40,90,0.22); margin-bottom: 30px; overflow: hidden;
+}
+.pulse-stats .st { padding: 18px 16px 16px; text-align: center; position: relative; }
+.pulse-stats .st + .st::before { content: ""; position: absolute; left: 0; top: 16px; bottom: 16px; width: 1px; background: var(--rule); }
+.pulse-stats .num { display: block; font-size: 34px; font-weight: 400; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.pulse-stats .st.warn .num { color: var(--warm-text); }
+.pulse-stats .lbl { display: block; font-size: 11.5px; color: var(--mute); margin-top: 7px; }
+
+.pulse-sec { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.pulse-sec .t { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); }
+.pulse-sec .c { font-size: 11px; color: var(--mute-2); }
+
+.pulse-list { display: flex; flex-direction: column; }
+.pulse-row {
+  display: grid; grid-template-columns: 30px 1fr auto auto; gap: 12px; align-items: center;
+  padding: 12px 4px; border-top: 1px solid var(--rule);
+}
+.pulse-row .wx { line-height: 1.3; min-width: 0; }
+.pulse-row .wx b { font-size: 13.5px; font-weight: 500; }
+.pulse-row .wx small { display: block; font-size: 12px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pulse-row .days { font-family: var(--mono); font-size: 12.5px; color: var(--mute); font-variant-numeric: tabular-nums; }
+.pulse-row.quiet .days { color: var(--warm-text); font-weight: 500; }
+.pulse-row .nudge {
+  font-size: 12px; font-weight: 500; color: var(--ink-2); background: var(--card);
+  border: 1px solid var(--rule-strong); border-radius: 7px; padding: 5px 12px; cursor: pointer;
+}
+.pulse-row .nudge:hover { background: var(--surface-2); }
+.pulse-row .ok { width: 64px; display: flex; justify-content: center; }
+.pulse-row .okdot { width: 7px; height: 7px; border-radius: 50%; background: var(--positive); box-shadow: 0 0 0 3px var(--positive-tint); }
+
+.pulse-foot {
+  display: flex; align-items: center; gap: 13px;
+  margin-top: 22px; padding: 13px 14px; background: var(--card);
+  border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--sh-1);
+}
+.pulse-foot .fic {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px; display: flex;
+  align-items: center; justify-content: center; background: var(--warm-tint); color: var(--warm-text);
+}
+.pulse-foot .ftx { flex: 1; font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
+.pulse-foot .ftx b { font-weight: 600; }
+.pulse-foot .ftx small { display: block; color: var(--mute); font-size: 11.5px; margin-top: 1px; }
+.pulse-foot .pulse-act {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  font-size: 12.5px; font-weight: 500; color: #fff; background: var(--ink);
+  border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+}
+.pulse-foot .pulse-act:hover { background: var(--ink-2); }
+
+/* ───────────────────────────────────────────────────────────
+   C · THE PORTRAIT
+   ─────────────────────────────────────────────────────────── */
+.pt-stage { padding: 0; }
+.pt-photo {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(130% 90% at 30% 12%, oklch(0.74 0.13 262), oklch(0.42 0.16 268) 58%, oklch(0.26 0.10 270));
+  display: flex; align-items: center; justify-content: center;
+}
+.pt-initials {
+  font-size: 168px; font-weight: 300; color: rgba(255,255,255,0.16); letter-spacing: -0.04em;
+  position: absolute; top: 24%; transform: translateY(-50%); user-select: none;
+}
+.pt-veil { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,12,40,0.18) 0%, transparent 32%, rgba(10,12,40,0.42) 72%, rgba(10,12,40,0.78) 100%); }
+.pt-tag {
+  position: absolute; top: 26px; left: 28px; color: white;
+  background: rgba(255,255,255,0.14); backdrop-filter: blur(6px);
+  border-radius: 999px; padding: 7px 14px; font-variant-numeric: tabular-nums;
+}
+.pt-tag .d { box-shadow: 0 0 0 3px rgba(255,255,255,0.2); }
+.pt-overlay { position: absolute; left: 0; right: 0; bottom: 0; padding: 30px 30px 32px; color: white; }
+.pt-name { font-size: 30px; font-weight: 500; letter-spacing: -0.025em; }
+.pt-role { font-size: 14px; color: rgba(255,255,255,0.78); margin-top: 4px; }
+.pt-strip {
+  display: flex; align-items: center; gap: 12px; margin-top: 22px; padding-top: 20px;
+  border-top: 1px solid rgba(255,255,255,0.18);
+}
+.pt-co { font-size: 14.5px; font-weight: 500; line-height: 1.35; }
+.pt-co small { display: block; font-weight: 400; font-size: 12.5px; color: rgba(255,255,255,0.7); margin-top: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pt-tag { white-space: nowrap; }
