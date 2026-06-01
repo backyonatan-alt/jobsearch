@@ -1,32 +1,83 @@
 <script>
-  import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
-  import { toDisplayApp, STATUS_LABEL, STATUSES, fmtLongDate, daysSince } from '$lib/app-helpers.js';
-  import { buildTimelineFromApplication } from '$lib/dossier-sample.js';
+  import { isPreview, mockApi } from '$lib/preview-mode.js';
+  import {
+    toDisplayApp, STATUS_LABEL, STATUSES,
+    fmtLongDate, fmtRelativeDate, daysSince, isStale
+  } from '$lib/app-helpers.js';
+
+  const call = isPreview() ? mockApi : api;
 
   let app = $state(null);
   let loading = $state(true);
   let notFound = $state(false);
-  let tab = $state('brief');
 
-  // Interviews tab state
+  // Interviews
   let interviews = $state([]);
   let interviewsLoading = $state(false);
-  // Left zone — .ics
+
+  // Add-event flow (relocated — opens inline below the timeline)
+  let showAddEvent = $state(false);
   let icsText = $state('');
-  // Right zone — AI (screenshot or email body text)
   let aiText = $state('');
   let aiImage = $state(null); // { name, mediaType, size, file }
   let aiDragOver = $state(false);
-  // Shared parse state
   let icsParsing = $state(false);
   let icsParseError = $state('');
   let icsPreview = $state([]);
   let icsSaving = $state(false);
   const AI_ALLOWED_IMG = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   const AI_MAX_BYTES = 6 * 1024 * 1024;
+
+  // Inline-action state
+  let showStatusMenu = $state(false);
+  let showEditModal = $state(false);
+  let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', salary_note: '', hiring_manager_name: '', hiring_manager_linkedin: '' });
+  let saving = $state(false);
+
+  // Follow-up (records locally + toast; sends nothing)
+  let followUps = $state([]);
+  let toast = $state('');
+  let toastTimer = null;
+
+  const id = $derived(page.params.id);
+
+  $effect(() => {
+    void id;
+    loadApp();
+    loadInterviews();
+  });
+
+  async function loadApp() {
+    loading = true;
+    notFound = false;
+    try {
+      const raw = await call(`/api/applications/${id}`);
+      app = toDisplayApp(raw);
+    } catch (e) {
+      if (e.message === 'unauthorized') return;
+      if (e.message.includes('not found') || e.message.includes('404')) notFound = true;
+      else console.error(e);
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function loadInterviews() {
+    interviewsLoading = true;
+    try {
+      interviews = await call(`/api/applications/${id}/interviews`);
+    } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+      interviews = [];
+    } finally {
+      interviewsLoading = false;
+    }
+  }
+
+  // ── Add-event parse/save flow (preserved) ────────────────────
   function setAiImage(f) {
     if (!f) return;
     if (!AI_ALLOWED_IMG.includes(f.type)) { icsParseError = 'Only PNG / JPEG / GIF / WebP screenshots are supported.'; return; }
@@ -34,14 +85,8 @@
     icsParseError = '';
     aiImage = { name: f.name || 'pasted.png', mediaType: f.type, size: f.size, file: f };
   }
-  function onAiDrop(e) {
-    e.preventDefault();
-    aiDragOver = false;
-    setAiImage(e.dataTransfer?.files?.[0]);
-  }
-  function onAiDragOver(e) {
-    if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); aiDragOver = true; }
-  }
+  function onAiDrop(e) { e.preventDefault(); aiDragOver = false; setAiImage(e.dataTransfer?.files?.[0]); }
+  function onAiDragOver(e) { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); aiDragOver = true; } }
   function onAiPaste(e) {
     const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
     if (item) setAiImage(item.getAsFile());
@@ -58,165 +103,23 @@
       r.readAsDataURL(f);
     });
   }
-
-  // Inline-action state
-  let showStatusMenu = $state(false);
-  let showEditModal = $state(false);
-  let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', salary_note: '', hiring_manager_name: '', hiring_manager_linkedin: '' });
-  let saving = $state(false);
-
-  // Dossier state
-  let dossier = $state(null);
-  let dossierLoading = $state(false);
-  let dossierError = $state('');
-  let interviewerInput = $state('');
-  let generating = $state(false);
-
-  const id = $derived(page.params.id);
-
-  $effect(() => {
-    void id;
-    loadApp();
-    loadDossier();
-    loadInterviews();
-  });
-
-  async function loadApp() {
-    loading = true;
-    notFound = false;
-    try {
-      const raw = await api(`/api/applications/${id}`);
-      app = toDisplayApp(raw);
-    } catch (e) {
-      if (e.message === 'unauthorized') return;
-      if (e.message.includes('not found') || e.message.includes('404')) notFound = true;
-      else console.error(e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  // Auto-trigger dossier on first visit per app per session. We persist a
-  // session marker per app id so revisiting the same app doesn't refire, and
-  // we don't burn the Anthropic rate limit when the user is QA-flipping
-  // through multiple applications.
-  function hasAutoFired(appId) {
-    if (!appId || typeof sessionStorage === 'undefined') return false;
-    try { return sessionStorage.getItem(`pursuit_auto_dossier_${appId}`) === '1'; }
-    catch { return false; }
-  }
-  function markAutoFired(appId) {
-    if (!appId || typeof sessionStorage === 'undefined') return;
-    try { sessionStorage.setItem(`pursuit_auto_dossier_${appId}`, '1'); } catch {}
-  }
-  $effect(() => {
-    if (
-      app &&
-      !hasAutoFired(app.id) &&
-      !dossierLoading &&
-      !dossierAvailable &&
-      !generating &&
-      dossierEligible
-    ) {
-      markAutoFired(app.id);
-      generateDossier();
-    }
-  });
-
-  // Map noisy backend errors (raw JSON dumps, "http 504" strings) into
-  // human-readable copy on the Brief card. Keeps the UI calm when Anthropic
-  // rate-limits us or the proxy times out mid-search.
-  function friendlyError(msg) {
-    const m = String(msg || '');
-    if (m.includes('rate_limit_error') || m.includes('"type":"error"') && m.includes('429')) {
-      return 'AI usage limit hit for now — wait about a minute and try Generate again. (Cap is 30k input tokens per minute on the current plan.)';
-    }
-    if (m.includes('http 504') || /\btimeout\b/i.test(m)) {
-      return "The web search took longer than the proxy allowed. Try Generate again — usually goes through on a retry.";
-    }
-    if (m.includes('http 503') || m.includes('not configured')) {
-      return 'AI features are temporarily unavailable. Try again in a minute.';
-    }
-    if (m.includes('http 5')) {
-      return 'Something went wrong on our end. Try again in a minute.';
-    }
-    return m || 'Could not generate the brief.';
-  }
-
-  async function loadDossier() {
-    dossierLoading = true;
-    dossierError = '';
-    try {
-      const d = await api(`/api/applications/${id}/dossier`);
-      dossier = d;
-      interviewerInput = d.interviewer_name ?? '';
-    } catch (e) {
-      if (!String(e.message).toLowerCase().includes('no dossier') && e.message !== 'unauthorized') {
-        console.error(e);
-      }
-      dossier = null;
-    } finally {
-      dossierLoading = false;
-    }
-  }
-
-  async function generateDossier() {
-    if (generating) return;
-    generating = true;
-    dossierError = '';
-    try {
-      const d = await api(`/api/applications/${id}/dossier/refresh`, {
-        method: 'POST',
-        body: JSON.stringify({ interviewer_name: interviewerInput.trim() })
-      });
-      dossier = d;
-      interviewerInput = d.interviewer_name ?? '';
-    } catch (e) {
-      dossierError = friendlyError(e.message);
-    } finally {
-      generating = false;
-    }
-  }
-
-  async function loadInterviews() {
-    interviewsLoading = true;
-    try {
-      interviews = await api(`/api/applications/${id}/interviews`);
-    } catch (e) {
-      if (e.message !== 'unauthorized') console.error(e);
-      interviews = [];
-    } finally {
-      interviewsLoading = false;
-    }
-  }
-
   async function onIcsFile(e) {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
-    if (f.size > 256 * 1024) {
-      icsParseError = 'File too large (256 KB max).';
-      return;
-    }
+    if (f.size > 256 * 1024) { icsParseError = 'File too large (256 KB max).'; return; }
     icsText = await f.text();
     await parseIcs();
   }
-
   async function parseIcs() {
     if (icsParsing) return;
     icsParseError = '';
     icsPreview = [];
     const body = icsText.trim();
-    if (!body) {
-      icsParseError = 'Paste the .ics contents or pick a file.';
-      return;
-    }
+    if (!body) { icsParseError = 'Paste the .ics contents or pick a file.'; return; }
     icsParsing = true;
     try {
-      const r = await api(`/api/applications/${id}/interviews/parse`, {
-        method: 'POST',
-        body: JSON.stringify({ ics: body })
-      });
+      const r = await call(`/api/applications/${id}/interviews/parse`, { method: 'POST', body: JSON.stringify({ ics: body }) });
       icsPreview = r.events ?? [];
       if (icsPreview.length === 0) icsParseError = 'No events found in that file.';
     } catch (e) {
@@ -225,16 +128,11 @@
       icsParsing = false;
     }
   }
-
-  // Parse the AI zone — sends image and/or text to the unified parse endpoint.
   async function parseAi() {
     if (icsParsing) return;
     icsParseError = '';
     icsPreview = [];
-    if (!aiImage && !aiText.trim()) {
-      icsParseError = 'Drop a screenshot or paste the event text first.';
-      return;
-    }
+    if (!aiImage && !aiText.trim()) { icsParseError = 'Drop a screenshot or paste the event text first.'; return; }
     icsParsing = true;
     try {
       const payload = {};
@@ -243,10 +141,7 @@
         const data = await fileToBase64(aiImage.file);
         payload.image = { media_type: aiImage.mediaType, data };
       }
-      const r = await api(`/api/applications/${id}/interviews/parse`, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
+      const r = await call(`/api/applications/${id}/interviews/parse`, { method: 'POST', body: JSON.stringify(payload) });
       icsPreview = r.events ?? [];
       if (icsPreview.length === 0) icsParseError = "Couldn't extract an event.";
     } catch (e) {
@@ -260,89 +155,42 @@
     e.target.value = '';
     setAiImage(f);
   }
-
   async function saveParsedEvents() {
     if (icsSaving || icsPreview.length === 0) return;
     icsSaving = true;
     try {
       for (const ev of icsPreview) {
-        await api(`/api/applications/${id}/interviews`, {
-          method: 'POST',
-          body: JSON.stringify(ev)
-        });
+        await call(`/api/applications/${id}/interviews`, { method: 'POST', body: JSON.stringify(ev) });
       }
-      icsText = '';
+      icsText = ''; aiText = ''; aiImage = null;
       icsPreview = [];
+      showAddEvent = false;
       await loadInterviews();
-      await loadDossier();
     } catch (e) {
       icsParseError = e.message || 'Could not save events.';
     } finally {
       icsSaving = false;
     }
   }
-
   async function deleteInterview(iv) {
     if (!confirm(`Delete "${iv.summary}"?`)) return;
-    await api(`/api/applications/${id}/interviews/${iv.id}`, { method: 'DELETE' });
+    await call(`/api/applications/${id}/interviews/${iv.id}`, { method: 'DELETE' });
     await loadInterviews();
-    await loadDossier();
   }
 
-  function fmtEventWhen(ev) {
-    const d = new Date(ev.starts_at);
-    if (ev.all_day) {
-      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
-    }
-    const date = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    let suffix = '';
-    if (ev.ends_at) {
-      const end = new Date(ev.ends_at);
-      const mins = Math.round((end - d) / 60000);
-      if (mins > 0) suffix = ` · ${mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`}`;
-    }
-    return `${date}, ${time}${suffix}`;
+  function openAddEvent() {
+    showAddEvent = true;
+    icsParseError = '';
+    icsPreview = [];
   }
 
-  function isPast(ev) {
-    return new Date(ev.starts_at) < new Date();
-  }
-
-  // Meeting hero formatters — used when the dossier has a real interview
-  // linked. starts_at/ends_at are ISO timestamps from the server; format in
-  // the viewer's TZ so the hero matches the Scheduled list below.
-  function meetingWhen(meeting) {
-    if (!meeting?.starts_at) return meeting?.when ?? 'Upcoming · time TBD';
-    const d = new Date(meeting.starts_at);
-    if (meeting.all_day) {
-      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
-    }
-    const now = new Date();
-    const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
-    const days = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
-    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    if (days === 0) return `Today · ${time}`;
-    if (days === 1) return `Tomorrow · ${time}`;
-    if (days > 1 && days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'long' })} · ${time}`;
-    if (days < 0) return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time} (past)`;
-    return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
-  }
-
-  function meetingDuration(meeting) {
-    if (!meeting?.starts_at || !meeting?.ends_at) return meeting?.duration ?? '—';
-    const mins = Math.round((new Date(meeting.ends_at) - new Date(meeting.starts_at)) / 60000);
-    if (mins <= 0) return meeting.duration ?? '—';
-    return mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`;
-  }
-
+  // ── Status / edit / delete (preserved) ───────────────────────
   async function setStatus(newStatus) {
     showStatusMenu = false;
     if (!app || newStatus === app.status) return;
-    await api(`/api/applications/${id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
+    await call(`/api/applications/${id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
     await loadApp();
   }
-
   function openEdit() {
     if (!app) return;
     edit = {
@@ -358,69 +206,165 @@
     };
     showEditModal = true;
   }
-
   async function saveEdit(e) {
     e.preventDefault();
     saving = true;
     try {
       const payload = { ...edit };
       for (const k of Object.keys(payload)) if (!payload[k]) delete payload[k];
-      await api(`/api/applications/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+      await call(`/api/applications/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
       showEditModal = false;
       await loadApp();
     } finally {
       saving = false;
     }
   }
-
   async function deleteApp() {
     if (!app) return;
     if (!confirm(`Delete the ${app.co} application? This can't be undone.`)) return;
-    await api(`/api/applications/${id}`, { method: 'DELETE' });
+    await call(`/api/applications/${id}`, { method: 'DELETE' });
     goto('/app', { replaceState: true });
   }
-
   function back() { goto('/app'); }
 
-  // Brief is available the moment an application is on file. The only
-  // exceptions are closed apps — no point burning an AI call on a dead
-  // pipeline. Auto-trigger inherits the same gate.
-  const dossierEligible = $derived(app && !['rejected', 'withdrawn'].includes(app.status));
-  const dossierAvailable = $derived(!!dossier);
+  function openPlaybook() { goto(`/app/${id}/playbook`); }
+
+  // ── Follow-up (records locally, shows toast — sends nothing) ──
+  function logFollowUp() {
+    followUps = [...followUps, { at: new Date().toISOString() }];
+    showToast("Follow-up logged — we've reset the clock");
+  }
+  function showToast(msg) {
+    toast = msg;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast = ''; }, 2600);
+  }
+
+  // ── Derived view data ────────────────────────────────────────
   function initialsOf(name) {
     return (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase();
   }
-  const interviewerInitials = $derived(initialsOf(dossier?.content?.interviewer?.name));
   const hiringManagerInitials = $derived(initialsOf(app?.raw?.hiring_manager_name));
 
-  const timeline = $derived.by(() => app ? buildTimelineFromApplication(app.raw) : []);
-
-  // Stage index for the "Current stage" stat card (1 of 4).
-  const STAGE_ORDER = ['applied', 'screen', 'interview', 'offer'];
-  const stageIdx = $derived(app ? STAGE_ORDER.indexOf(app.status) : -1);
-
-  // Days in pipeline: days since applied_at.
-  const daysInPipe = $derived(app ? daysSince(app.raw.applied_at) : null);
-
   const appliedLong = $derived(app ? fmtLongDate(app.raw.applied_at) : '');
-  // Host shown next to the "View" link. For known job boards (LinkedIn,
-  // Greenhouse, Workday, etc.) we say "original posting" instead — the user
-  // doesn't think of the JD as "on LinkedIn", they think of it as the job
-  // posting page.
-  const JOB_BOARD_HOSTS = new Set([
-    'linkedin.com', 'indeed.com', 'glassdoor.com', 'monster.com', 'ziprecruiter.com',
-    'wellfound.com', 'angel.co', 'builtin.com', 'greenhouse.io', 'lever.co',
-    'ashbyhq.com', 'workday.com', 'workable.com', 'smartrecruiters.com'
-  ]);
-  const jdLinkLabel = $derived.by(() => {
-    if (!app?.raw?.jd_url) return '';
-    try {
-      const h = new URL(app.raw.jd_url).hostname.toLowerCase().replace(/^www\./, '');
-      if (JOB_BOARD_HOSTS.has(h) || /\.(myworkdayjobs|greenhouse|lever|ashbyhq|workable)\.(com|io|co)$/.test(h)) {
-        return 'View original posting';
-      }
-      return 'View on ' + h;
-    } catch { return 'View posting'; }
+
+  // Next event = the soonest interview dated now-or-later.
+  const upcoming = $derived.by(() => {
+    const now = Date.now();
+    const future = (interviews || [])
+      .filter(iv => iv?.starts_at && new Date(iv.starts_at).getTime() >= now)
+      .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+    return future[0] || null;
+  });
+
+  const awaiting = $derived(app && ['applied', 'screen'].includes(app.status));
+  const quiet = $derived(app ? isStale(app.raw) : false);
+  const lastActivityDays = $derived(app ? daysSince(app.raw.updated_at ?? app.raw.applied_at) : null);
+  const waitDays = $derived(app ? daysSince(app.raw.applied_at) : null);
+
+  function evWhen(iv) {
+    if (!iv?.starts_at) return '';
+    const d = new Date(iv.starts_at);
+    if (iv.all_day) return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
+    const now = new Date();
+    const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+    const days = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
+    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    if (days === 0) return `Today · ${time}`;
+    if (days === 1) return `Tomorrow · ${time}`;
+    if (days > 1 && days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'long' })} · ${time}`;
+    return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
+  }
+  function evRelative(iv) {
+    if (!iv?.starts_at) return 'upcoming';
+    const now = new Date();
+    const d = new Date(iv.starts_at);
+    const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+    const days = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
+    if (days <= 0) return 'today';
+    if (days === 1) return 'tomorrow';
+    if (days < 7) return `in ${days} days`;
+    if (days < 14) return 'next week';
+    return `in ${days} days`;
+  }
+  function evDuration(iv) {
+    if (!iv?.starts_at || !iv?.ends_at) return null;
+    const mins = Math.round((new Date(iv.ends_at) - new Date(iv.starts_at)) / 60000);
+    if (mins <= 0) return null;
+    return mins;
+  }
+  function evWho(iv) {
+    const att = iv?.attendees;
+    if (!att) return '';
+    if (typeof att === 'string') return att;
+    if (Array.isArray(att)) {
+      const first = att.find(a => a?.name) || att[0];
+      return first?.name || first?.email || '';
+    }
+    return '';
+  }
+
+  function fmtEventWhen(ev) {
+    const d = new Date(ev.starts_at);
+    if (ev.all_day) return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
+    const date = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    let suffix = '';
+    if (ev.ends_at) {
+      const end = new Date(ev.ends_at);
+      const mins = Math.round((end - d) / 60000);
+      if (mins > 0) suffix = ` · ${mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`}`;
+    }
+    return `${date}, ${time}${suffix}`;
+  }
+  function isPast(ev) { return new Date(ev.starts_at) < new Date(); }
+
+  const monoDate = (iso) => iso ? new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) : '';
+
+  // Activity timeline — derived honestly from real data. We DON'T fabricate
+  // events: just the application being submitted, each interview on file, the
+  // logged follow-ups, and the current status as the head of the line.
+  const timeline = $derived.by(() => {
+    if (!app) return [];
+    const rows = [];
+    const submittedAt = app.raw.applied_at || app.raw.created_at;
+    if (submittedAt) {
+      rows.push({
+        ts: new Date(submittedAt).getTime(),
+        date: monoDate(submittedAt),
+        title: 'Application submitted',
+        note: app.cv && app.cv !== '—' ? `CV ${app.cv}` : (app.source && app.source !== '—' ? `via ${app.source}` : ''),
+        tag: 'positive'
+      });
+    }
+    for (const iv of (interviews || [])) {
+      if (!iv?.starts_at) continue;
+      rows.push({
+        ts: new Date(iv.starts_at).getTime(),
+        date: monoDate(iv.starts_at),
+        title: iv.summary || 'Interview',
+        note: isPast(iv) ? 'Past event' : 'Scheduled',
+        tag: 'accent'
+      });
+    }
+    for (const f of followUps) {
+      rows.push({
+        ts: new Date(f.at).getTime(),
+        date: monoDate(f.at),
+        title: 'Follow-up logged',
+        note: 'You reached out directly',
+        tag: ''
+      });
+    }
+    rows.push({
+      ts: app.raw.updated_at ? new Date(app.raw.updated_at).getTime() : Date.now(),
+      date: monoDate(app.raw.updated_at) || 'Now',
+      title: `Status · ${STATUS_LABEL[app.status]}`,
+      note: 'Current stage',
+      tag: app.status === 'offer' ? 'offer' : app.status === 'interview' ? 'accent'
+        : (app.status === 'rejected' || app.status === 'withdrawn') ? 'danger' : 'positive'
+    });
+    return rows.sort((a, b) => b.ts - a.ts);
   });
 </script>
 
@@ -443,11 +387,7 @@
       {#if showStatusMenu}
         <div class="status-menu" role="menu" onclick={(e) => e.stopPropagation()}>
           {#each STATUSES as s}
-            <button
-              class="status-menu-item"
-              class:current={app?.status === s}
-              onclick={() => setStatus(s)}
-            >
+            <button class="status-menu-item" class:current={app?.status === s} onclick={() => setStatus(s)}>
               <span class={`pill ${s}`} style="margin: 0"><span class="pdot"></span>{STATUS_LABEL[s]}</span>
               {#if app?.status === s}<span class="check">✓</span>{/if}
             </button>
@@ -465,7 +405,7 @@
 {/if}
 
 <div class="body">
-  <div class="body-inner">
+  <div class="det">
     {#if loading}
       <p style="color:var(--mute)">Loading…</p>
     {:else if notFound || !app}
@@ -475,508 +415,280 @@
       </div>
     {:else}
 
-      <!-- HERO STRIP -->
-      <div class="hero">
-        <div class="hero-top">
-          {#if app.logoSrc}
-            <img class="logo-big" src={app.logoSrc} alt={app.co} />
-          {:else}
-            <span class={`logo-big letter ${app.logoCls}`}>{app.coShort}</span>
-          {/if}
-          <div class="hero-text">
-            <div class="co-row">
-              <h1>{app.co}</h1>
-              <span class={`pill ${app.status}`}><span class="pdot"></span>{STATUS_LABEL[app.status]}</span>
-            </div>
-            <div class="role-line">{app.role}</div>
+      <!-- HEADER -->
+      <div class="det-hd">
+        {#if app.logoSrc}
+          <img class="logo-big" src={app.logoSrc} alt={app.co} />
+        {:else}
+          <span class={`logo-big letter ${app.logoCls}`}>{app.coShort}</span>
+        {/if}
+        <div class="meta">
+          <div class="co">{app.co}</div>
+          <div class="role">{app.role}</div>
+          <div class="sub">
+            {#if app.raw.applied_at}<span>Applied <b>{appliedLong}</b></span>{/if}
+            {#if app.source && app.source !== '—'}<span>Source <b>{app.source}</b></span>{/if}
+            {#if app.cv && app.cv !== '—'}<span>CV <b>{app.cv}</b></span>{/if}
           </div>
-          {#if app.raw.jd_url}
-            <a class="src-link" href={app.raw.jd_url} target="_blank" rel="noopener">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 11l6-6M6 5h5v5"/></svg>
-              {jdLinkLabel}
-            </a>
-          {/if}
         </div>
-        <div class="facts">
-          {#if app.raw.location}
-            <span class="fact"><span class="fdot d-loc"></span>{app.raw.location}</span>
-          {/if}
-          {#if app.raw.applied_at}
-            <span class="fact"><span class="fdot d-app"></span>Applied {appliedLong}</span>
-          {/if}
-          {#if app.source && app.source !== '—'}
-            <span class="fact"><span class="fdot d-src"></span>{app.source}</span>
-          {/if}
-          {#if app.cv && app.cv !== '—'}
-            <span class="fact"><span class="fdot d-cv"></span>CV {app.cv}</span>
-          {/if}
-          {#if app.raw.salary_note}
-            <span class="fact"><span class="fdot d-sal"></span>{app.raw.salary_note}</span>
-          {/if}
-        </div>
+        <span class={`pill ${app.status}`}><span class="pdot"></span>{STATUS_LABEL[app.status]}</span>
       </div>
 
-      <!-- UP NEXT (only when we have a dossier with a meeting) -->
-      {#if dossier?.meeting && (dossier.meeting.starts_at || dossier.meeting.when)}
-        <div class="upnext">
-          <div class="up-left">
-            <span class="up-tag"><span class="up-pulse"></span>Up next</span>
-            <h3>{meetingWhen(dossier.meeting)}</h3>
-            <div class="up-meta">
-              <span>{meetingDuration(dossier.meeting)}</span>
-              {#if dossier.meeting.medium}<span class="dot">·</span><span>{dossier.meeting.medium}</span>{/if}
-              {#if dossier.meeting.panel}<span class="dot">·</span><span>{dossier.meeting.panel}</span>{/if}
-            </div>
-          </div>
-          <div class="up-right">
-            <button class="btn-prep">Open prep ↓</button>
-          </div>
-        </div>
-      {/if}
-
-      <!-- STATS -->
-      <div class="stats">
-        <div class="stat tone-accent">
-          <span class="ribbon"></span>
-          <div class="stat-lbl">Days in pipeline</div>
-          <div class="stat-n">{daysInPipe ?? '—'}</div>
-          <div class="stat-sub">{app.raw.applied_at ? `Applied ${appliedLong}` : 'Not yet applied'}</div>
-        </div>
-        <div class="stat tone-positive">
-          <span class="ribbon"></span>
-          <div class="stat-lbl">Current stage</div>
-          <div class="stat-n">
-            {stageIdx >= 0 ? stageIdx + 1 : '—'}<span class="of">/ 4</span>
-          </div>
-          <div class="stat-sub">{STATUS_LABEL[app.status]}</div>
-        </div>
-        <div class="stat tone-warm">
-          <span class="ribbon"></span>
-          <div class="stat-lbl">Match score</div>
-          <div class="stat-n">—</div>
-          <div class="stat-sub">{app.cv && app.cv !== '—' ? `CV ${app.cv} vs. JD` : 'Tag a CV variant to score'}</div>
-        </div>
-      </div>
-
-      <!-- TABS -->
-      <div class="tabs">
-        <button class={`tab ${tab === 'brief' ? 'active' : ''}`} onclick={() => (tab = 'brief')}>
-          Brief <span class="t-tag">AI</span>
-        </button>
-        <button class={`tab ${tab === 'interviews' ? 'active' : ''}`} onclick={() => (tab = 'interviews')}>
-          Interviews <span class="t-tag">{interviews.length}</span>
-        </button>
-        <button class={`tab ${tab === 'timeline' ? 'active' : ''}`} onclick={() => (tab = 'timeline')}>
-          Timeline <span class="t-tag">{timeline.length}</span>
-        </button>
-        <button class={`tab ${tab === 'notes' ? 'active' : ''}`} onclick={() => (tab = 'notes')}>Notes</button>
-        <button class={`tab ${tab === 'files' ? 'active' : ''}`} onclick={() => (tab = 'files')}>Files</button>
-      </div>
-
-      {#if tab === 'brief'}
-        <!-- HIRING MANAGER — always rendered (when set), regardless of dossier state. -->
-        {#if app.raw.hiring_manager_name || app.raw.hiring_manager_linkedin}
-          <div class="block person-block">
-            <div class="block-hd">
-              <h2>Hiring manager</h2>
-              <span class="ai-tag-mute">from posting</span>
-            </div>
-            <div class="person">
-              <div class="p-av t-warm">{hiringManagerInitials || '—'}</div>
-              <div class="p-info">
-                <h4>{app.raw.hiring_manager_name || 'Name not set'}</h4>
-                {#if app.raw.role}<div class="p-role">{app.role}</div>{/if}
+      <!-- TWO-COLUMN GRID -->
+      <div class="det-grid">
+        <!-- MAIN -->
+        <div>
+          {#if upcoming}
+            <div class="det-next">
+              <div class="k"><span class="d"></span>Next step · {evRelative(upcoming)}</div>
+              <div class="ttl">{upcoming.summary || 'Interview'} · {evWhen(upcoming)}</div>
+              <div class="mt">
+                {#if evWho(upcoming)}<span><b>{evWho(upcoming)}</b></span>{/if}
+                {#if upcoming.location}<span>{upcoming.location}</span>{/if}
+                {#if evDuration(upcoming)}<span>{evDuration(upcoming)} min</span>{/if}
               </div>
-              {#if app.raw.hiring_manager_linkedin}
-                <a class="p-li" href={app.raw.hiring_manager_linkedin} target="_blank" rel="noopener">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
-                  LinkedIn
+              <div class="row">
+                <button class="cta" onclick={openPlaybook}>Open the playbook
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button class="ghost" onclick={openAddEvent}>Add to calendar</button>
+              </div>
+            </div>
+          {:else if awaiting}
+            <div class="det-next muted">
+              <div class="k"><span class="d" style={`background:${quiet ? 'var(--warm)' : 'var(--mute-2)'}`}></span>{quiet ? 'Gone quiet' : 'Waiting to hear back'}</div>
+              <div class="ttl">{STATUS_LABEL[app.status]}</div>
+              <div class="mt">
+                {#if quiet && waitDays != null}
+                  <span>No reply in <b class="warn">{waitDays} days</b> — it might be a good time to reach out to them directly.</span>
+                {:else}
+                  <span>Still in the pipeline. We'll surface a nudge if it goes quiet.</span>
+                {/if}
+              </div>
+              <div class="row">
+                <button class="cta dark" onclick={logFollowUp}>Log a follow-up
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+          {:else}
+            <div class="det-next muted">
+              <div class="k"><span class="d" style="background:var(--mute-2)"></span>No upcoming step</div>
+              <div class="ttl">{STATUS_LABEL[app.status]}</div>
+              <div class="mt"><span>Nothing scheduled right now.</span></div>
+              <div class="row">
+                <button class="cta dark" onclick={openAddEvent}>Log an event
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+          {/if}
+
+          <div class="sec-lbl">Activity</div>
+          {#if timeline.length > 0}
+            <div class="tl">
+              {#each timeline as e}
+                <div class={`tlrow ${e.tag}`}>
+                  <span class="pt"></span>
+                  <div class="d">{e.date}</div>
+                  <div class="t">{e.title}</div>
+                  {#if e.note}<div class="n">{e.note}</div>{/if}
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p style="color:var(--mute); font-size:13px;">No activity yet.</p>
+          {/if}
+
+          <!-- Interviews on file + add flow -->
+          <div class="iv-section">
+            <div class="iv-hd">
+              <div class="sec-lbl" style="margin:0">Interviews <span class="iv-count">{interviews.length}</span></div>
+              <button class="iv-add-btn" onclick={openAddEvent}>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
+                Add event
+              </button>
+            </div>
+
+            {#if interviewsLoading}
+              <p style="color:var(--mute); font-size:13px;">Loading…</p>
+            {:else if interviews.length > 0}
+              {#each interviews as iv (iv.id)}
+                <div class="iv-card" class:past={isPast(iv)}>
+                  <div class="iv-card-main">
+                    <div class="iv-when">{fmtEventWhen(iv)}</div>
+                    <div class="iv-summary">{iv.summary || 'Untitled event'}</div>
+                    {#if iv.location}<div class="iv-loc">📍 {iv.location}</div>{/if}
+                  </div>
+                  <button class="btn btn-danger" onclick={() => deleteInterview(iv)} title="Delete">Delete</button>
+                </div>
+              {/each}
+            {:else}
+              <p style="color:var(--mute); font-size:13px;">No interviews on file yet.</p>
+            {/if}
+
+            {#if showAddEvent}
+              <div class="add-card">
+                <div class="add-hd">
+                  <h3>Add an interview</h3>
+                  <p>Drop a calendar file, paste a screenshot, or just paste the email body — we'll extract the event.</p>
+                </div>
+                <div class="zones">
+                  <!-- LEFT — .ics -->
+                  <div class="zone">
+                    <div class="zone-hd">
+                      <span class="zone-ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg></span>
+                      <div>
+                        <div class="zone-title">Calendar file</div>
+                        <div class="zone-sub">.ics from Google / Outlook / Apple</div>
+                      </div>
+                    </div>
+                    <label class="drop drop-file">
+                      <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
+                      <span class="drop-l1">Drop .ics file</span>
+                      <span class="drop-l2">or click to browse</span>
+                      <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} style="display:none" />
+                    </label>
+                    <div class="or">or paste raw .ics text below</div>
+                    <textarea class="ai-ta" rows="3" placeholder={"BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT…"} bind:value={icsText}></textarea>
+                    <button class="btn btn-primary zone-parse" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
+                      {icsParsing ? 'Parsing…' : 'Parse .ics'}
+                    </button>
+                  </div>
+
+                  <!-- RIGHT — screenshot/text AI -->
+                  <div class="zone">
+                    <div class="zone-hd">
+                      <span class="zone-ic accent"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg></span>
+                      <div>
+                        <div class="zone-title">Screenshot or email text<span class="ai-pill">AI</span></div>
+                        <div class="zone-sub">Gmail invite, Calendar screenshot, anything readable</div>
+                      </div>
+                    </div>
+                    <label class="drop drop-image" class:drag={aiDragOver} ondragover={onAiDragOver} ondragleave={() => (aiDragOver = false)} ondrop={onAiDrop}>
+                      {#if aiImage}
+                        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+                        <span class="drop-l1">{aiImage.name}</span>
+                        <span class="drop-l2">{Math.round(aiImage.size / 1024)} KB · click to replace</span>
+                      {:else}
+                        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+                        <span class="drop-l1">Drop a screenshot</span>
+                        <span class="drop-l2"><kbd>⌘V</kbd> works too</span>
+                      {/if}
+                      <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onchange={onAiFile} style="display:none" />
+                    </label>
+                    <div class="or">or paste the email body below</div>
+                    <textarea class="ai-ta" rows="3" placeholder={"You're invited to: Stripe — Technical screen&#10;When: Tue, May 28, 2:00 PM EDT&#10;Where: Google Meet"} bind:value={aiText} onpaste={onAiPaste}></textarea>
+                    <button class="btn btn-primary zone-parse" onclick={parseAi} disabled={icsParsing || (!aiImage && !aiText.trim())}>
+                      {icsParsing ? 'Parsing…' : 'Parse with AI'}
+                    </button>
+                  </div>
+                </div>
+
+                {#if icsParseError}<p class="dossier-err" style="margin-top: 14px">{icsParseError}</p>{/if}
+
+                {#if icsPreview.length > 0}
+                  <div class="ics-preview">
+                    <h4>Preview</h4>
+                    {#each icsPreview as ev}
+                      <div class="prev-row">
+                        <div class="prev-summary">{ev.summary || 'Untitled event'}</div>
+                        <div class="prev-when">{fmtEventWhen(ev)}</div>
+                        {#if ev.location}<div class="prev-loc">📍 {ev.location}</div>{/if}
+                      </div>
+                    {/each}
+                    <button class="btn btn-primary" onclick={saveParsedEvents} disabled={icsSaving}>
+                      {icsSaving ? 'Saving…' : `Save ${icsPreview.length} event${icsPreview.length === 1 ? '' : 's'}`}
+                    </button>
+                  </div>
+                {/if}
+
+                <button class="add-cancel" onclick={() => (showAddEvent = false)}>Close</button>
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <!-- SIDE -->
+        <div>
+          <!-- Contact -->
+          <div class="side-card">
+            <div class="ttl">Contact</div>
+            {#if app.raw.hiring_manager_name}
+              <div class="person">
+                <span class="iv-av sm">{hiringManagerInitials || '—'}</span>
+                <div>
+                  <div class="nm">{app.raw.hiring_manager_name}</div>
+                  <div class="ro">Hiring manager</div>
+                </div>
+                {#if app.raw.hiring_manager_linkedin}
+                  <a class="p-li" href={app.raw.hiring_manager_linkedin} target="_blank" rel="noopener" title="LinkedIn">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
+                  </a>
+                {/if}
+              </div>
+            {:else}
+              <div class="person"><div><div class="nm" style="color:var(--mute)">No contact yet</div></div></div>
+            {/if}
+          </div>
+
+          <!-- Details -->
+          <div class="side-card">
+            <div class="ttl">Details</div>
+            <div class="kv"><span class="l">Status</span><span class="v">{STATUS_LABEL[app.status]}</span></div>
+            <div class="kv"><span class="l">Last activity</span><span class="v">{fmtRelativeDate(app.raw.updated_at ?? app.raw.applied_at)}</span></div>
+            <div class="kv"><span class="l">Source</span><span class="v">{app.source}</span></div>
+            <div class="kv"><span class="l">Résumé</span><span class="v">{app.cv}</span></div>
+          </div>
+
+          <!-- Actions -->
+          <div class="side-card">
+            <div class="ttl">Actions</div>
+            <div class="side-act">
+              {#if awaiting}
+                <button class="warn" onclick={logFollowUp}>
+                  <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12v8H2zM2 4l6 5 6-5"/></svg></span>
+                  Log a follow-up
+                </button>
+              {/if}
+              <button onclick={openEdit}>
+                <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2l3 3-8 8H3v-3z"/></svg></span>
+                Add a note
+              </button>
+              <button onclick={openAddEvent}>
+                <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg></span>
+                Log an event
+              </button>
+              {#if app.raw.jd_url}
+                <a class="act-link" href={app.raw.jd_url} target="_blank" rel="noopener">
+                  <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 11l6-6M6 5h5v5"/></svg></span>
+                  Open job post
                 </a>
               {/if}
             </div>
           </div>
-        {/if}
-        {#if dossierAvailable}
-          <!-- ABOUT COMPANY — compact card above the interviewer block. -->
-          {#if dossier.content.company}
-            {@const c = dossier.content.company}
-            <div class="block company-block">
-              <div class="block-hd">
-                <h2>About {app.co}</h2>
-                <span class="ai-tag">AI · refreshed {dossier.generatedAgo}</span>
-              </div>
-              {#if c.blurb}<p class="company-blurb">{c.blurb}</p>{/if}
-              {#if c.direction}<p class="company-direction">{c.direction}</p>{/if}
-              {#if c.hq || c.employees || c.stage || c.founded}
-                <div class="facts-grid">
-                  {#if c.hq}       <div class="f-cell"><div class="f-lbl">HQ</div><div class="f-val">{c.hq}</div></div>{/if}
-                  {#if c.employees}<div class="f-cell"><div class="f-lbl">Employees</div><div class="f-val">{c.employees}</div></div>{/if}
-                  {#if c.stage}    <div class="f-cell"><div class="f-lbl">Stage</div><div class="f-val">{c.stage}</div></div>{/if}
-                  {#if c.founded}  <div class="f-cell"><div class="f-lbl">Founded</div><div class="f-val">{c.founded}</div></div>{/if}
-                </div>
-              {/if}
-              {#if c.process?.length}
-                <div class="sub-hd">
-                  <h3>Typical interview process</h3>
-                  <span class="ai-tag-mute">from Glassdoor / Blind / levels.fyi</span>
-                </div>
-                <ol class="process-list">
-                  {#each c.process as p, i}
-                    <li>
-                      <span class="step-n">{i + 1}</span>
-                      <div>
-                        <div class="step-kind">{p.kind}</div>
-                        {#if p.detail}<div class="step-detail">{p.detail}</div>{/if}
-                      </div>
-                    </li>
-                  {/each}
-                </ol>
-              {/if}
-              {#if c.watch_fors?.length}
-                <div class="sub-hd">
-                  <h3>Watch-fors for this loop</h3>
-                  <span class="ai-tag-mute">AI · synthesized</span>
-                </div>
-                <ul class="watch-list">
-                  {#each c.watch_fors as w}
-                    <li><span class="w-dot">▸</span><span>{w}</span></li>
-                  {/each}
-                </ul>
-              {/if}
-            </div>
-          {/if}
 
-          <!-- INTERVIEWER -->
-          {#if dossier.content.interviewer?.name}
-            <div class="block person-block">
-              <div class="block-hd">
-                <h2>Your interviewer</h2>
-                <span class="ai-tag">AI · refreshed {dossier.generatedAgo}</span>
-                <button class="regen" onclick={generateDossier} disabled={generating} title="Regenerate">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
-                  {generating ? '…' : 'Refresh'}
-                </button>
-              </div>
-              <div class="person">
-                <div class="p-av t-accent">{interviewerInitials}</div>
-                <div class="p-info">
-                  <h4>{dossier.content.interviewer.name}</h4>
-                  {#if dossier.content.interviewer.role}
-                    <div class="p-role">{dossier.content.interviewer.role}</div>
-                  {/if}
-                </div>
-                {#each dossier.content.interviewer.links ?? [] as l}
-                  <a class="p-li" href={l.href} target="_blank" rel="noopener">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
-                    {l.label}
-                  </a>
-                {/each}
-              </div>
-              {#if dossier.content.interviewer.prior?.length}
-                <div class="prior-row">
-                  <span class="p-lbl">Prior</span>
-                  {#each dossier.content.interviewer.prior as p}<span class="prior-chip">{p}</span>{/each}
-                </div>
-              {/if}
-            </div>
-          {/if}
-
-          <!-- SNAPSHOT -->
-          {#if dossier.content.snapshot}
-            <div class="snapshot-card">
-              <div class="snap-lbl">In one line</div>
-              <p>{@html dossier.content.snapshot}</p>
-            </div>
-          {/if}
-
-          <!-- BACKGROUND -->
-          {#if dossier.content.background}
-            <div class="block">
-              <div class="block-hd">
-                <h2>Background</h2>
-                <span class="ai-tag">AI · web research</span>
-              </div>
-              <p class="prose">{dossier.content.background}</p>
-            </div>
-          {/if}
-
-          <!-- RECENT POSTS & TALKS -->
-          {#if dossier.content.signals?.length}
-            <div class="block">
-              <div class="block-hd">
-                <h2>Recent posts &amp; talks</h2>
-                <span class="ai-tag">last 90 days</span>
-              </div>
-              <div class="signals-row">
-                {#each dossier.content.signals as s}
-                  <div class="signal">
-                    {#if s.source}
-                      {@const sHost = (() => { try { return new URL(s.source.startsWith('http') ? s.source : `https://${s.source}`).hostname.replace(/^www\./,''); } catch { return s.source; } })()}
-                      <img class="sig-logo" src={`https://www.google.com/s2/favicons?sz=128&domain=${sHost}`} alt="" />
-                    {/if}
-                    <div class="sig-meta">
-                      {#if s.kind}<span class="sig-kind">{s.kind}</span>{/if}
-                      {#if s.date}<span class="sig-date">{s.date}</span>{/if}
-                    </div>
-                    <div class="sig-body">{s.body}</div>
-                    {#if s.source}<div class="sig-src">{s.source}</div>{/if}
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          <!-- HOW TO APPROACH -->
-          {#if dossier.content.lands?.length || dossier.content.avoid?.length}
-            <div class="block">
-              <div class="block-hd">
-                <h2>How to approach this interview</h2>
-                <span class="ai-tag">AI · interviewer-specific</span>
-              </div>
-              <div class="approach-grid">
-                <div class="approach-col">
-                  <div class="approach-hd">
-                    <span class="approach-glyph ok">
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg>
-                    </span>
-                    Lead with
-                  </div>
-                  <ul class="approach-list">{#each dossier.content.lands ?? [] as l}
-                    <li>
-                      <span class="approach-marker ok">
-                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg>
-                      </span>
-                      <span>{l}</span>
-                    </li>
-                  {/each}</ul>
-                </div>
-                <div class="approach-col">
-                  <div class="approach-hd">
-                    <span class="approach-glyph no">
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>
-                    </span>
-                    Steer clear of
-                  </div>
-                  <ul class="approach-list">{#each dossier.content.avoid ?? [] as a}
-                    <li>
-                      <span class="approach-marker no">
-                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>
-                      </span>
-                      <span>{a}</span>
-                    </li>
-                  {/each}</ul>
-                </div>
-              </div>
-            </div>
-          {/if}
-
-          <!-- QUESTIONS -->
-          {#if dossier.content.questions?.length}
-            <div class="block">
-              <div class="block-hd">
-                <h2>Questions worth asking</h2>
-                <span class="ai-tag">ranked by signal</span>
-              </div>
-              <ol class="q-list">
-                {#each dossier.content.questions as q, i}
-                  <li>
-                    <span class="qn">{i + 1}</span>
-                    <div>
-                      <div class="q">"{q.q}"</div>
-                      {#if q.why}<div class="why">{q.why}</div>{/if}
-                    </div>
-                  </li>
-                {/each}
-              </ol>
-            </div>
-          {/if}
-
-          <div class="disclaimer">
-            Synthesised from public posts, talks, and papers · refreshed {dossier.generatedAgo} · always verify before you walk in
+          <!-- Playbook link -->
+          <div class="side-card playbook-card">
+            <div class="ttl">Interview playbook<span class="ai-pill">AI</span></div>
+            <p class="playbook-blurb">Claude's prep brief — the company, their process, and a read on your interviewer.</p>
+            <button class="playbook-link" onclick={openPlaybook}>
+              Open the playbook
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
           </div>
-        {:else if generating}
-          <div class="generating-card">
-            <div class="big-spinner"></div>
-            <h3>Researching {app.co}{interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
-            <p>Claude is searching the web for recent posts, talks, and the company's current direction. Typically 30–60 seconds.</p>
-          </div>
-        {:else}
-          <div class="generate-card">
-            <h3>Generate the brief</h3>
-            <p>
-              Claude reads the web — recent essays, talks, papers, company news —
-              and writes you a focused briefing — the company, their typical interview process, and (optional) a person-specific read on a named interviewer. Name
-              the interviewer for a person-specific brief.
-            </p>
-            <div class="generate-row">
-              <input
-                type="text"
-                placeholder="Interviewer name (optional) — e.g. Dario Amodei"
-                bind:value={interviewerInput}
-                disabled={generating}
-              />
-              <button class="btn btn-primary" onclick={generateDossier} disabled={generating || !dossierEligible}>
-                Generate
-              </button>
-            </div>
-            {#if !dossierEligible}
-              <p class="muted-note">This application is closed — re-open it to a live status if you want a brief.</p>
-            {/if}
-            {#if dossierError}
-              <p class="dossier-err">{dossierError}</p>
-            {/if}
-          </div>
-        {/if}
-      {:else if tab === 'interviews'}
-        <div class="add-card">
-          <div class="add-hd">
-            <h3>Add an interview</h3>
-            <p>Drop a calendar file, paste a screenshot, or just paste the email body — we'll extract the event.</p>
-          </div>
-          <div class="zones">
-            <!-- LEFT — .ics file + raw text -->
-            <div class="zone">
-              <div class="zone-hd">
-                <span class="zone-ic">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg>
-                </span>
-                <div>
-                  <div class="zone-title">Calendar file</div>
-                  <div class="zone-sub">.ics from Google / Outlook / Apple Calendar</div>
-                </div>
-              </div>
-              <label class="drop drop-file">
-                <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
-                <span class="drop-l1">Drop .ics file</span>
-                <span class="drop-l2">or click to browse</span>
-                <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} style="display:none" />
-              </label>
-              <div class="or">or paste raw .ics text below</div>
-              <textarea class="ai-ta" rows="3" placeholder={"BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT…"} bind:value={icsText}></textarea>
-              <button class="btn btn-primary zone-parse" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
-                {icsParsing ? 'Parsing…' : 'Parse .ics'}
-              </button>
-            </div>
-
-            <!-- RIGHT — screenshot + email text -->
-            <div class="zone">
-              <div class="zone-hd">
-                <span class="zone-ic accent">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-                </span>
-                <div>
-                  <div class="zone-title">Screenshot or email text<span class="ai-pill">AI</span></div>
-                  <div class="zone-sub">Gmail invite, Calendar screenshot, anything readable</div>
-                </div>
-              </div>
-              <label
-                class="drop drop-image"
-                class:drag={aiDragOver}
-                ondragover={onAiDragOver}
-                ondragleave={() => (aiDragOver = false)}
-                ondrop={onAiDrop}
-              >
-                {#if aiImage}
-                  <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-                  <span class="drop-l1">{aiImage.name}</span>
-                  <span class="drop-l2">{Math.round(aiImage.size / 1024)} KB · click to replace</span>
-                {:else}
-                  <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-                  <span class="drop-l1">Drop a screenshot</span>
-                  <span class="drop-l2"><kbd>⌘V</kbd> works too</span>
-                {/if}
-                <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onchange={onAiFile} style="display:none" />
-              </label>
-              <div class="or">or paste the email body below</div>
-              <textarea
-                class="ai-ta"
-                rows="3"
-                placeholder={"You're invited to: Stripe — Technical screen&#10;When: Tue, May 28, 2:00 PM EDT&#10;Where: Google Meet"}
-                bind:value={aiText}
-                onpaste={onAiPaste}
-              ></textarea>
-              <button class="btn btn-primary zone-parse" onclick={parseAi} disabled={icsParsing || (!aiImage && !aiText.trim())}>
-                {icsParsing ? 'Parsing…' : 'Parse with AI'}
-              </button>
-            </div>
-          </div>
-
-          {#if icsParseError}<p class="dossier-err" style="margin-top: 14px">{icsParseError}</p>{/if}
-
-          {#if icsPreview.length > 0}
-            <div class="ics-preview">
-              <h4>Preview</h4>
-              {#each icsPreview as ev}
-                <div class="prev-row">
-                  <div class="prev-summary">{ev.summary || 'Untitled event'}</div>
-                  <div class="prev-when">{fmtEventWhen(ev)}</div>
-                  {#if ev.location}<div class="prev-loc">📍 {ev.location}</div>{/if}
-                </div>
-              {/each}
-              <button class="btn btn-primary" onclick={saveParsedEvents} disabled={icsSaving}>
-                {icsSaving ? 'Saving…' : `Save ${icsPreview.length} event${icsPreview.length === 1 ? '' : 's'}`}
-              </button>
-            </div>
-          {/if}
         </div>
-
-        <div class="iv-list">
-          <h3>Scheduled</h3>
-          {#if interviewsLoading}
-            <p style="color:var(--mute); font-size:13px;">Loading…</p>
-          {:else if interviews.length === 0}
-            <div class="empty-tab">
-              <h3>No interviews on file</h3>
-              <p>Once you add one above, it appears here and the brief picks it up.</p>
-            </div>
-          {:else}
-            {#each interviews as iv (iv.id)}
-              <div class="iv-card" class:past={isPast(iv)}>
-                <div class="iv-card-main">
-                  <div class="iv-when">{fmtEventWhen(iv)}</div>
-                  <div class="iv-summary">{iv.summary || 'Untitled event'}</div>
-                  {#if iv.location}<div class="iv-loc">📍 {iv.location}</div>{/if}
-                  {#if iv.attendees}<div class="iv-att">👥 {iv.attendees}</div>{/if}
-                </div>
-                <button class="btn btn-danger" onclick={() => deleteInterview(iv)} title="Delete">Delete</button>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      {:else if tab === 'timeline'}
-        {#if timeline.length > 0}
-          <div class="timeline">
-            {#each timeline as e}
-              <div class={`timeline-event ${e.tag || ''}`}>
-                <span class="date">{e.date}</span>
-                <span class="axis"><span class="marker"></span></span>
-                <div class="what">
-                  <div class="label">{e.label}</div>
-                  <div class="note">{e.note}</div>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="empty-tab">
-            <h3>Timeline is empty</h3>
-            <p>Events appear here as the application progresses.</p>
-          </div>
-        {/if}
-      {:else if tab === 'notes'}
-        <div class="empty-tab">
-          <h3>Notes</h3>
-          <p>Free-form notes with autosave — out of scope for this round.</p>
-        </div>
-      {:else if tab === 'files'}
-        <div class="empty-tab">
-          <h3>Files</h3>
-          <p>CV variants attached to this application — out of scope for this round.</p>
-        </div>
-      {/if}
+      </div>
     {/if}
   </div>
 </div>
+
+{#if toast}
+  <div class="toast">
+    <span class="ok"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg></span>
+    {toast}
+  </div>
+{/if}
 
 {#if showEditModal}
   <div class="modal-overlay" onclick={() => (showEditModal = false)} role="presentation">
@@ -1006,259 +718,149 @@
 
 <style>
   .body { padding: 28px; }
-  .body-inner { max-width: 1100px; margin: 0 auto; }
+  .det { max-width: 980px; margin: 0 auto; }
 
-  /* HERO */
-  .hero {
-    background: var(--card);
-    border: 1px solid var(--rule);
-    border-radius: 18px;
-    padding: 22px 24px;
-    margin-bottom: 14px;
-    box-shadow: var(--sh-1);
-  }
-  .hero-top { display: grid; grid-template-columns: 64px 1fr auto; gap: 18px; align-items: center; }
-  .logo-big { width: 64px; height: 64px; border-radius: 14px; background: var(--card); object-fit: contain; padding: 8px; border: 1px solid var(--rule); }
-  .logo-big.letter {
-    display: grid; place-items: center;
-    padding: 0;
-    color: var(--ink); font-size: 24px; font-weight: 600;
-    background: var(--surface-2);
-  }
-  .co-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .co-row h1 { font-size: 28px; font-weight: 600; margin: 0; letter-spacing: -0.025em; }
-  .role-line { font-size: 15px; color: var(--ink-2); margin-top: 2px; font-weight: 500; }
-  .src-link { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--rule); border-radius: 99px; padding: 8px 14px; font-size: 12.5px; font-weight: 500; color: var(--ink); text-decoration: none; transition: border-color 120ms, color 120ms; }
-  .src-link:hover { border-color: var(--accent); color: var(--accent-text); }
-  .facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--rule); }
-  .fact { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); background: var(--card); border: 1px solid var(--rule); padding: 4px 10px; border-radius: 99px; font-weight: 500; }
-  .fdot { width: 6px; height: 6px; border-radius: 50%; background: var(--mute-2); }
-  .d-loc { background: var(--accent); }
-  .d-app { background: var(--positive); }
-  .d-src { background: var(--warm); }
-  .d-cv  { background: var(--mute-2); }
-  .d-sal { background: var(--ink); }
+  /* HEADER */
+  .det-hd { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 30px; }
+  .logo-big { width: 56px; height: 56px; border-radius: 15px; background: var(--card); object-fit: contain; padding: 8px; border: 1px solid var(--rule); flex-shrink: 0; }
+  .logo-big.letter { display: grid; place-items: center; padding: 0; color: var(--ink); font-size: 22px; font-weight: 600; background: var(--surface-2); }
+  .det-hd .meta { flex: 1; min-width: 0; }
+  .det-hd .co { font-size: 24px; font-weight: 600; letter-spacing: -0.025em; }
+  .det-hd .role { font-size: 15px; color: var(--mute); margin-top: 3px; }
+  .det-hd .sub { font-size: 12.5px; color: var(--mute-2); margin-top: 10px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .det-hd .sub b { color: var(--ink-2); font-weight: 500; }
 
-  /* Pills (page-scoped so we don't fight design-system) */
-  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); width: max-content; }
+  /* Pills (page-scoped) */
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); width: max-content; flex-shrink: 0; }
   .pill .pdot { width: 6px; height: 6px; border-radius: 50%; background: var(--mute-2); }
   .pill.wishlist { background: var(--surface-2); color: var(--mute); }
   .pill.applied { background: var(--surface-2); color: var(--ink-2); }
-  .pill.screen { background: var(--positive-tint); color: var(--positive-text); }
-  .pill.screen .pdot { background: var(--positive); }
-  .pill.interview { background: var(--accent-tint); color: var(--accent-text); }
-  .pill.interview .pdot { background: var(--accent); }
-  .pill.offer { background: var(--warm-tint); color: var(--warm-text); }
-  .pill.offer .pdot { background: var(--warm); }
-  .pill.rejected, .pill.withdrawn { background: var(--surface-2); color: var(--mute); }
+  .pill.screen { background: var(--accent-tint); color: var(--accent-text); }
+  .pill.screen .pdot { background: var(--accent); }
+  .pill.interview { background: var(--warm-tint); color: var(--warm-text); }
+  .pill.interview .pdot { background: var(--warm); }
+  .pill.offer { background: var(--positive-tint); color: var(--positive-text); }
+  .pill.offer .pdot { background: var(--positive); }
+  .pill.rejected, .pill.withdrawn { background: var(--danger-tint); color: var(--danger-text); }
+  .pill.rejected .pdot, .pill.withdrawn .pdot { background: var(--danger); }
 
-  /* UP NEXT */
-  .upnext {
-    background: var(--card);
-    border: 1px solid var(--rule);
-    border-radius: 14px;
-    padding: 18px 22px;
-    margin-bottom: 14px;
-    display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
-    box-shadow: var(--sh-1);
-    position: relative;
-    overflow: hidden;
-  }
-  .upnext::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent); }
-  .up-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent-text); background: var(--accent-tint); padding: 4px 10px; border-radius: 99px; font-weight: 500; margin-bottom: 8px; }
-  @keyframes up-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 var(--accent); }
-    50%      { box-shadow: 0 0 0 5px transparent; }
-  }
-  .up-pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: up-pulse 1.6s ease-in-out infinite; }
-  .upnext h3 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
-  .up-meta { margin-top: 4px; font-size: 13px; color: var(--mute); display: flex; flex-wrap: wrap; gap: 0 6px; }
-  .up-meta .dot { color: var(--mute-2); }
-  .btn-prep {
-    background: var(--accent); color: white; border: 0; border-radius: 99px;
-    padding: 10px 18px; font-size: 13.5px; font-weight: 600; cursor: pointer;
-    transition: transform 120ms ease;
-  }
-  .btn-prep:hover { transform: translateY(-1px); }
+  /* GRID */
+  .det-grid { display: grid; grid-template-columns: 1fr 320px; gap: 36px; align-items: start; }
 
-  /* STATS */
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
-  .stat { position: relative; background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px; overflow: hidden; box-shadow: var(--sh-1); }
-  .stat .ribbon { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
-  .stat.tone-accent   .ribbon { background: var(--accent); }
-  .stat.tone-positive .ribbon { background: var(--positive); }
-  .stat.tone-warm     .ribbon { background: var(--warm); }
-  .stat-lbl { font-size: 12.5px; color: var(--mute); margin-bottom: 4px; font-weight: 500; }
-  .stat-n { font-size: 32px; font-weight: 600; letter-spacing: -0.035em; line-height: 1.1; font-feature-settings: "tnum"; }
-  .stat.tone-accent   .stat-n { color: var(--accent-text); }
-  .stat.tone-positive .stat-n { color: var(--positive-text); }
-  .stat.tone-warm     .stat-n { color: var(--warm-text); }
-  .of { font-size: 16px; color: var(--mute); margin-left: 6px; font-weight: 500; }
-  .stat-sub { font-size: 12px; color: var(--mute); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--rule); }
+  /* NEXT-STEP */
+  .det-next { background: var(--ink); color: #fff; border-radius: 16px; padding: 24px; margin-bottom: 26px; position: relative; overflow: hidden; }
+  .det-next.muted { background: var(--surface-2); color: var(--ink); }
+  .det-next .k { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.6); margin-bottom: 14px; display: inline-flex; align-items: center; gap: 8px; }
+  .det-next.muted .k { color: var(--mute); }
+  .det-next .k .d { width: 6px; height: 6px; border-radius: 50%; background: var(--warm); }
+  .det-next .ttl { font-size: 20px; font-weight: 500; letter-spacing: -0.02em; margin-bottom: 6px; }
+  .det-next.muted .ttl { color: var(--ink); }
+  .det-next .mt { font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 20px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .det-next.muted .mt { color: var(--mute); }
+  .det-next .mt b { color: #fff; font-weight: 500; }
+  .det-next.muted .mt b.warn { color: var(--warm-text); }
+  .det-next .row { display: flex; gap: 10px; }
+  .det-next .cta { background: #fff; color: var(--ink); border: none; border-radius: 9px; padding: 11px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+  .det-next .cta.dark { background: var(--ink); color: #fff; }
+  .det-next .ghost { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.18); border-radius: 9px; padding: 11px 16px; font-size: 13.5px; font-weight: 500; cursor: pointer; }
+  .det-next .ghost:hover { background: rgba(255,255,255,0.18); }
 
-  /* TABS */
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin-bottom: 18px; }
-  .tab { background: transparent; border: 0; padding: 10px 14px; font-size: 13.5px; color: var(--mute); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 600; }
-  .tab.active { color: var(--ink); border-bottom-color: var(--ink); }
-  .t-tag { font-size: 11px; background: var(--accent-tint); color: var(--accent-text); padding: 1px 7px; border-radius: 99px; margin-left: 4px; font-weight: 500; }
+  .sec-lbl { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 16px; }
 
-  /* BLOCK */
-  .block { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 20px 22px; margin-bottom: 14px; box-shadow: var(--sh-1); }
-  .block-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-  .block-hd h2 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
-  .ai-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; background: var(--accent-tint); color: var(--accent-text); padding: 3px 10px; border-radius: 99px; font-weight: 500; }
-  .ai-tag-mute { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; background: var(--surface-2); color: var(--mute); padding: 3px 10px; border-radius: 99px; font-weight: 500; }
-  .regen { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--rule); border-radius: 99px; padding: 4px 10px; font-size: 12px; color: var(--ink-2); cursor: pointer; }
-  .regen:hover:not(:disabled) { background: var(--surface-2); }
-  .regen:disabled { opacity: 0.55; cursor: wait; }
-  .prose { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
+  /* TIMELINE */
+  .tl { position: relative; padding-left: 26px; }
+  .tl::before { content: ""; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 1.5px; background: var(--rule); }
+  .tlrow { position: relative; padding-bottom: 22px; }
+  .tlrow:last-child { padding-bottom: 0; }
+  .tlrow .pt { position: absolute; left: -26px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: var(--card); border: 2px solid var(--rule-strong); }
+  .tlrow.accent .pt { border-color: var(--warm); background: var(--warm); box-shadow: 0 0 0 4px var(--warm-tint); }
+  .tlrow.positive .pt { border-color: var(--positive); background: var(--positive); }
+  .tlrow.offer .pt { border-color: var(--positive); background: var(--positive); box-shadow: 0 0 0 4px var(--positive-tint); }
+  .tlrow.danger .pt { border-color: var(--danger); background: var(--danger); }
+  .tlrow .d { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--mute); margin-bottom: 3px; }
+  .tlrow .t { font-size: 13.5px; font-weight: 500; }
+  .tlrow .n { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
 
-  /* PEOPLE */
-  .person-block { padding: 18px 20px; }
-  .person { display: grid; grid-template-columns: 46px 1fr auto; gap: 12px; align-items: center; }
-  .p-av { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 16px; }
-  .p-av.t-accent { background: var(--accent-tint); color: var(--accent-text); }
-  .p-av.t-warm { background: var(--warm-tint); color: var(--warm-text); }
-  .p-info h4 { margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
-  .p-info .p-role { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
-  .p-li { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 99px; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--ink); text-decoration: none; }
-  .p-li svg { color: #0a66c2; }
-  .prior-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--rule); flex-wrap: wrap; }
-  .p-lbl { font-size: 11.5px; color: var(--mute); font-weight: 600; }
-  .prior-chip { font-size: 11.5px; background: var(--surface-2); color: var(--ink-2); padding: 3px 9px; border-radius: 99px; font-weight: 500; }
+  /* SIDE CARDS */
+  .side-card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 18px; box-shadow: var(--sh-1); margin-bottom: 16px; }
+  .side-card .ttl { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 14px; display: inline-flex; align-items: center; gap: 8px; }
+  .side-card .person { display: flex; align-items: center; gap: 12px; }
+  .side-card .person .nm { font-size: 13.5px; font-weight: 500; }
+  .side-card .person .ro { font-size: 12px; color: var(--mute); margin-top: 1px; }
+  .iv-av { background: linear-gradient(155deg, oklch(0.6 0.16 30), oklch(0.46 0.17 32)); color: #fff; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+  .iv-av.sm { width: 38px; height: 38px; font-size: 13px; }
+  .p-li { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; color: #0a66c2; text-decoration: none; flex-shrink: 0; }
+  .side-card .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 9px 0; border-top: 1px solid var(--rule); }
+  .side-card .kv:first-of-type { border-top: none; padding-top: 0; }
+  .side-card .kv .l { color: var(--mute); }
+  .side-card .kv .v { font-weight: 500; }
+  .side-act { display: flex; flex-direction: column; gap: 8px; }
+  .side-act button, .side-act .act-link { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2); background: var(--card); border: 1px solid var(--rule); border-radius: 9px; padding: 11px 13px; cursor: pointer; text-decoration: none; box-sizing: border-box; }
+  .side-act button:hover, .side-act .act-link:hover { background: var(--surface-2); border-color: var(--rule-strong); }
+  .side-act .ic { color: var(--mute); display: inline-flex; }
+  .side-act button.warn { color: var(--warm-text); }
+  .side-act button.warn .ic { color: var(--warm-text); }
 
-  /* SNAPSHOT */
-  .snapshot-card {
-    background: var(--accent-tint);
-    border: 1px solid var(--rule);
-    border-radius: 14px;
-    padding: 16px 20px;
-    margin: 14px 0;
-  }
-  .snap-lbl { font-size: 11.5px; color: var(--accent-text); font-weight: 600; margin-bottom: 4px; }
+  .playbook-card .ai-pill { margin-left: 6px; }
+  .playbook-blurb { font-size: 12.5px; color: var(--mute); line-height: 1.5; margin: 0 0 14px; }
+  .playbook-link { display: inline-flex; align-items: center; gap: 7px; width: 100%; justify-content: center; font: inherit; font-size: 13px; font-weight: 600; color: #fff; background: var(--ink); border: none; border-radius: 9px; padding: 11px 13px; cursor: pointer; }
+  .playbook-link:hover { background: var(--ink-2); }
+  .ai-pill { font-size: 10px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border-radius: 4px; padding: 1px 5px; letter-spacing: .04em; }
 
-  /* COMPANY CARD — sits above the interviewer block on the Brief tab. */
-  .company-block .company-blurb { font-size: 14.5px; line-height: 1.55; color: var(--ink); margin: 0 0 6px; font-weight: 500; }
-  .company-block .company-direction { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 14px; }
-  .company-block .facts-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
-  .company-block .f-cell { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
-  .company-block .f-lbl { font-size: 11px; color: var(--mute); font-weight: 500; }
-  .company-block .f-val { font-size: 13px; color: var(--ink); font-weight: 600; margin-top: 2px; }
-  .company-block .sub-hd { display: flex; align-items: center; gap: 10px; margin: 18px 0 10px; padding-top: 14px; border-top: 1px dashed var(--rule); }
-  .company-block .sub-hd h3 { font-size: 13.5px; font-weight: 600; margin: 0; letter-spacing: -0.005em; color: var(--ink); }
-  .company-block .process-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
-  .company-block .process-list li { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px dashed var(--rule); }
-  .company-block .process-list li:last-child { border-bottom: 0; }
-  .company-block .step-n { width: 22px; height: 22px; border-radius: 50%; background: var(--accent-tint); color: var(--accent-text); display: grid; place-items: center; font-size: 11px; font-weight: 600; font-feature-settings: "tnum"; }
-  .company-block .step-kind { font-size: 13.5px; color: var(--ink); font-weight: 600; }
-  .company-block .step-detail { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
-  .company-block .watch-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
-  .company-block .watch-list li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: baseline; padding: 6px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
-  .company-block .w-dot { color: var(--accent); font-weight: 700; }
+  /* INTERVIEWS SECTION */
+  .iv-section { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  .iv-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .iv-count { font-size: 11px; background: var(--accent-tint); color: var(--accent-text); padding: 1px 7px; border-radius: 99px; margin-left: 4px; font-weight: 500; }
+  .iv-add-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 11px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  .iv-add-btn:hover { background: var(--surface-2); border-color: var(--rule-strong); }
+  .iv-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--rule); border-radius: 10px; background: var(--card); margin-bottom: 8px; box-shadow: var(--sh-1); }
+  .iv-card.past { opacity: 0.6; }
+  .iv-card-main { flex: 1; min-width: 0; }
+  .iv-when { font-size: 12px; color: var(--accent-text); font-weight: 500; margin-bottom: 2px; }
+  .iv-summary { font-size: 14px; color: var(--ink); margin-bottom: 2px; }
+  .iv-loc { font-size: 12px; color: var(--mute); margin-top: 2px; }
 
-  @media (max-width: 720px) {
-    .company-block .facts-grid { grid-template-columns: repeat(2, 1fr); }
-  }
-  .snapshot-card p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink); }
-
-  /* SIGNALS */
-  .signals-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-  .signal {
-    background: var(--surface-2);
-    border: 1px solid var(--rule);
-    border-radius: 12px;
-    padding: 12px 14px;
-    display: grid;
-    grid-template-columns: 28px 1fr;
-    grid-template-rows: auto auto auto;
-    grid-template-areas:
-      "logo meta"
-      "body body"
-      "src  src";
-    gap: 6px 10px;
-  }
-  .sig-logo { grid-area: logo; width: 28px; height: 28px; border-radius: 7px; background: var(--card); object-fit: contain; padding: 3px; border: 1px solid var(--rule); }
-  .sig-meta { grid-area: meta; display: flex; align-items: center; gap: 8px; }
-  .sig-kind { font-size: 11px; color: var(--mute); font-weight: 600; }
-  .sig-date { font-size: 11px; color: var(--mute-2); }
-  .sig-body { grid-area: body; font-size: 13px; color: var(--ink); line-height: 1.4; }
-  .sig-src  { grid-area: src; font-size: 11.5px; color: var(--accent-text); }
-
-  /* APPROACH */
-  .approach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-  .approach-hd { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--ink); }
-  .approach-glyph { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
-  .approach-glyph.ok { background: var(--positive-tint); color: var(--positive-text); }
-  .approach-glyph.no { background: var(--danger-tint); color: var(--danger-text); }
-  .approach-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-  .approach-list li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
-  .approach-marker { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; margin-top: 1px; }
-  .approach-marker.ok { background: var(--positive-tint); color: var(--positive-text); }
-  .approach-marker.no { background: var(--danger-tint); color: var(--danger-text); }
-
-  /* QUESTIONS */
-  .q-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-  .q-list li { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: center; }
-  .qn { width: 24px; height: 24px; border-radius: 50%; background: var(--accent-tint); color: var(--accent-text); display: grid; place-items: center; font-size: 12px; font-weight: 600; font-feature-settings: "tnum"; }
-  .q { font-size: 13.5px; color: var(--ink); font-weight: 500; }
-  .why { font-size: 11.5px; color: var(--mute); margin-top: 3px; }
-
-  .disclaimer { margin: 18px 0 0; font-size: 11.5px; color: var(--mute); padding-top: 14px; border-top: 1px dashed var(--rule); }
-
-  /* GENERATE / GENERATING */
-  .generate-card {
-    border: 1px dashed var(--rule-strong);
-    border-radius: 14px;
-    padding: 28px 32px;
-    background: var(--card);
-    text-align: center;
-  }
-  .generate-card h3 { font-size: 17px; font-weight: 600; letter-spacing: -0.012em; margin: 0 0 .35rem; color: var(--ink); }
-  .generate-card > p { margin: 0 0 1.25rem; color: var(--mute); font-size: 13.5px; line-height: 1.55; max-width: 56ch; margin-left: auto; margin-right: auto; }
-  .generate-row { display: flex; gap: 8px; max-width: 520px; margin: 0 auto; }
-  .generate-row input { flex: 1; font: inherit; font-size: 13.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; outline: none; }
-  .generate-row input:focus { border-color: var(--accent); }
-  .muted-note { color: var(--warm-text); background: var(--warm-tint); border: 1px solid var(--warm-tint); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin: 14px 0 0; }
-  .muted-note b { color: var(--warm-text); font-weight: 700; }
-  /* Disabled primary button — make it visually obvious so users don't think
-     the button is broken when the dossier gate isn't open yet. */
-  .generate-card .btn-primary:disabled { background: var(--rule-strong); border-color: var(--rule-strong); color: var(--mute); cursor: not-allowed; opacity: 1; }
+  /* ADD-EVENT CARD */
+  .add-card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 20px 22px; margin-top: 14px; box-shadow: var(--sh-1); }
+  .add-hd { margin-bottom: 16px; }
+  .add-hd h3 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em; }
+  .add-hd p { font-size: 13px; color: var(--mute); margin: 0; line-height: 1.5; }
+  .zones { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .zone { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .zone-hd { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: center; }
+  .zone-ic { width: 32px; height: 32px; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); display: grid; place-items: center; }
+  .zone-ic.accent { background: var(--accent-tint); color: var(--accent-text); }
+  .zone-title { font-size: 13.5px; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; }
+  .zone-sub { font-size: 12px; color: var(--mute); margin-top: 1px; }
+  .drop { background: var(--card); border: 1.5px dashed var(--rule-strong); border-radius: 10px; padding: 16px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--mute); transition: border-color 120ms, background 120ms; cursor: pointer; }
+  .drop:hover, .drop.drag { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text); }
+  .drop-l1 { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+  .drop:hover .drop-l1, .drop.drag .drop-l1 { color: var(--accent-text); }
+  .drop-l2 { font-size: 11.5px; color: var(--mute-2); }
+  .drop kbd { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; background: var(--surface-2); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--ink-2); }
+  .or { font-size: 11.5px; color: var(--mute-2); text-align: center; }
+  .ai-ta { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; outline: none; resize: vertical; box-sizing: border-box; }
+  .ai-ta:focus { border-color: var(--accent); }
+  .ai-pill { font-size: 10px; }
+  .zone-parse { margin-top: 4px; align-self: flex-start; }
+  .ics-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
+  .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 10px; }
+  .prev-row { background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .prev-summary { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .prev-when { font-size: 12.5px; color: var(--accent-text); margin-top: 3px; font-weight: 500; }
+  .prev-loc { font-size: 12px; color: var(--mute); margin-top: 4px; }
+  .add-cancel { margin-top: 14px; background: transparent; border: none; color: var(--mute); font: inherit; font-size: 12.5px; cursor: pointer; padding: 4px 0; }
+  .add-cancel:hover { color: var(--ink); }
   .dossier-err { color: var(--danger-text); background: var(--danger-tint); border: 1px solid var(--danger-tint); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: .75rem 0 0; }
-  .generating-card {
-    border: 1px solid var(--accent-tint-2);
-    background: var(--accent-tint);
-    border-radius: 14px;
-    padding: 32px;
-    text-align: center;
-  }
-  .generating-card h3 { font-size: 17px; font-weight: 600; letter-spacing: -0.012em; margin: 16px 0 .5rem; color: var(--ink); }
-  .generating-card p { color: var(--mute); font-size: 13.5px; margin: 0; max-width: 56ch; margin-left: auto; margin-right: auto; }
-  .big-spinner { width: 24px; height: 24px; margin: 0 auto; border: 2px solid var(--accent-tint-2); border-top-color: var(--accent); border-radius: 50%; animation: spin 800ms linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* TIMELINE (kept from old) */
-  .timeline { display: flex; flex-direction: column; gap: 0; }
-  .timeline-event { display: grid; grid-template-columns: 80px 16px 1fr; gap: 14px; padding: 12px 0; align-items: flex-start; border-bottom: 1px solid var(--rule); }
-  .timeline-event .date { font-size: 12px; color: var(--mute); padding-top: 2px; }
-  .timeline-event .axis { position: relative; height: 100%; display: flex; justify-content: center; }
-  .timeline-event .marker { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 6px; }
-  .timeline-event .label { font-size: 13.5px; font-weight: 500; color: var(--ink); }
-  .timeline-event .note { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
+  /* TOAST */
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; font-size: 13px; font-weight: 500; padding: 11px 18px; border-radius: 10px; z-index: 200; display: inline-flex; align-items: center; gap: 9px; box-shadow: 0 16px 36px -12px rgba(20,20,50,0.5); animation: rise .2s ease; }
+  .toast .ok { width: 16px; height: 16px; border-radius: 50%; background: var(--positive); display: inline-flex; align-items: center; justify-content: center; }
+  @keyframes rise { from { transform: translate(-50%, 12px); opacity: 0; } }
 
   /* STATUS MENU */
   .status-wrap { position: relative; }
-  .status-menu {
-    position: absolute; top: calc(100% + 6px); right: 0;
-    z-index: 50;
-    background: var(--card);
-    border: 1px solid var(--rule);
-    border-radius: 8px;
-    box-shadow: var(--sh-pop);
-    padding: 4px;
-    min-width: 180px;
-    display: flex; flex-direction: column;
-    gap: 1px;
-  }
+  .status-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--sh-pop); padding: 4px; min-width: 180px; display: flex; flex-direction: column; gap: 1px; }
   .status-menu-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 5px; background: transparent; font: inherit; font-size: 13px; color: var(--ink-2); cursor: pointer; text-align: left; width: 100%; border: 0; }
   .status-menu-item:hover { background: var(--surface-2); }
   .status-menu-item.current { background: var(--surface-2); }
@@ -1280,93 +882,21 @@
   .modal input:focus { border-color: var(--accent); }
   .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .75rem; }
 
-  .empty-tab {
-    border: 1px dashed var(--rule);
-    border-radius: 12px;
-    padding: 32px;
-    text-align: center;
-    background: var(--card);
-  }
+  .empty-tab { border: 1px dashed var(--rule); border-radius: 12px; padding: 32px; text-align: center; background: var(--card); }
   .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
   .empty-tab p { color: var(--mute); margin: 0; font-size: 13.5px; }
 
-  /* Interviews tab — two side-by-side zones (ics + AI). */
-  .add-card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 22px 24px; margin-bottom: 18px; box-shadow: var(--sh-1); }
-  .add-hd { margin-bottom: 16px; }
-  .add-hd h3 { font-size: 16px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em; }
-  .add-hd p { font-size: 13.5px; color: var(--mute); margin: 0; line-height: 1.5; }
-  .zones { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .zone { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-  .zone-hd { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: center; }
-  .zone-ic { width: 32px; height: 32px; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); display: grid; place-items: center; }
-  .zone-ic.accent { background: var(--accent-tint); color: var(--accent-text); }
-  .zone-title { font-size: 13.5px; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; }
-  .zone-sub { font-size: 12px; color: var(--mute); margin-top: 1px; }
-  .ai-pill { font-size: 10px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border-radius: 4px; padding: 1px 5px; letter-spacing: .04em; }
-  .drop { background: var(--card); border: 1.5px dashed var(--rule-strong); border-radius: 10px; padding: 16px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--mute); transition: border-color 120ms, background 120ms; cursor: pointer; }
-  .drop:hover, .drop.drag { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text); }
-  .drop-l1 { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
-  .drop:hover .drop-l1, .drop.drag .drop-l1 { color: var(--accent-text); }
-  .drop-l2 { font-size: 11.5px; color: var(--mute-2); }
-  .drop kbd { font-family: var(--mono); font-size: 10px; background: var(--surface-2); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--ink-2); }
-  .or { font-size: 11.5px; color: var(--mute-2); text-align: center; }
-  .ai-ta { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; outline: none; resize: vertical; box-sizing: border-box; }
-  .ai-ta:focus { border-color: var(--accent); }
-  .zone-parse { margin-top: 4px; align-self: flex-start; }
-  .ics-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
-  .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 10px; }
-  .prev-row { background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
-  .prev-summary { font-size: 13.5px; font-weight: 600; color: var(--ink); }
-  .prev-when { font-size: 12.5px; color: var(--accent-text); margin-top: 3px; font-weight: 500; }
-  .prev-loc { font-size: 12px; color: var(--mute); margin-top: 4px; }
-
-  .iv-list h3 { font-size: 13px; font-weight: 500; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 12px; }
-  .iv-card {
-    display: flex; align-items: flex-start; justify-content: space-between;
-    gap: 16px;
-    padding: 14px 16px;
-    border: 1px solid var(--rule);
-    border-radius: 8px;
-    background: var(--card);
-    margin-bottom: 8px;
-  }
-  .iv-card.past { opacity: 0.6; }
-  .iv-card-main { flex: 1; min-width: 0; }
-  .iv-when { font-size: 12px; color: var(--accent-text); font-weight: 500; margin-bottom: 2px; }
-  .iv-summary { font-size: 14px; color: var(--ink); margin-bottom: 2px; }
-  .iv-loc, .iv-att { font-size: 12px; color: var(--mute); margin-top: 2px; }
-
-  /* Mobile — stack hero and grids; keep tabs scrollable. */
-  @media (max-width: 720px) {
+  /* MOBILE */
+  @media (max-width: 820px) {
     .body { padding: 18px 14px; }
-    .hero { padding: 18px 16px; border-radius: 14px; }
-    .hero-top { grid-template-columns: 48px 1fr; gap: 12px; }
-    .logo-big { width: 48px; height: 48px; border-radius: 12px; padding: 6px; }
-    .logo-big.letter { font-size: 18px; }
-    .co-row h1 { font-size: 22px; }
-    .role-line { font-size: 13.5px; }
-    .src-link { grid-column: 1 / -1; justify-self: start; margin-top: 4px; padding: 6px 10px; font-size: 12px; }
-    .facts { gap: 4px; }
-    .fact { font-size: 11.5px; padding: 3px 8px; }
-    .upnext { grid-template-columns: 1fr; padding: 14px 16px; }
-    .upnext h3 { font-size: 16px; }
-    .stats { grid-template-columns: 1fr; gap: 8px; margin-bottom: 18px; }
-    .stat { padding: 14px 16px; }
-    .stat-n { font-size: 26px; }
-    .tabs { overflow-x: auto; flex-wrap: nowrap; }
-    .tab { white-space: nowrap; padding: 10px 12px; font-size: 13px; }
-    .block { padding: 16px 16px; }
-    .block-hd { flex-wrap: wrap; }
-    .person { grid-template-columns: 40px 1fr; row-gap: 8px; }
-    .p-li { grid-column: 1 / -1; justify-self: start; }
-    .signals-row { grid-template-columns: 1fr; }
-    .approach-grid { grid-template-columns: 1fr; gap: 18px; }
-    .q-list li { grid-template-columns: 24px 1fr; }
+    .det-grid { grid-template-columns: 1fr; gap: 24px; }
+    .det-hd { gap: 12px; }
+    .logo-big { width: 48px; height: 48px; }
+    .det-hd .co { font-size: 21px; }
+    .zones { grid-template-columns: 1fr; gap: 10px; }
     .modal-overlay { padding: 0; }
     .modal { max-width: 100%; border-radius: 0; min-height: 100vh; padding: 1rem; }
     .fields { grid-template-columns: 1fr; }
     .fields .span-2 { grid-column: auto; }
-    .add-card { padding: 16px 16px; }
-    .zones { grid-template-columns: 1fr; gap: 10px; }
   }
 </style>
