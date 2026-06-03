@@ -238,10 +238,12 @@
           <div class="funnel">
             {#each funnelStages as s}
               {@const width = funnelCounts.applied ? Math.max(4, (s.n / funnelCounts.applied) * 100) : 0}
+              {@const pct = funnelCounts.applied ? Math.round((s.n / funnelCounts.applied) * 100) : 0}
               <div class="fn">
                 <span class="fn-l">{s.label}</span>
                 <span class="fn-bar" style="width: {width}%; background: {s.color};"></span>
                 <span class="fn-n">{s.n}</span>
+                <span class="fn-pct">{pct}%</span>
               </div>
             {/each}
           </div>
@@ -342,10 +344,11 @@
 
   /* Funnel bars */
   .funnel { display: flex; flex-direction: column; gap: 12px; }
-  .fn { display: grid; grid-template-columns: 78px 1fr 36px; gap: 12px; align-items: center; }
+  .fn { display: grid; grid-template-columns: 78px 1fr 28px 44px; gap: 12px; align-items: center; }
   .fn-l { font-size: 12.5px; color: var(--ink-2); }
   .fn-bar { height: 30px; border-radius: 8px; display: flex; align-items: center; min-width: 30px; transition: width 280ms ease; }
-  .fn-n { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; font-family: var(--mono, ui-monospace, monospace); }
+  .fn-n { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; font-family: var(--mono, ui-monospace, monospace); text-align: right; }
+  .fn-pct { font-size: 12.5px; color: var(--mute); font-variant-numeric: tabular-nums; text-align: right; }
 
   /* Divider between funnel and activity */
   .divider { height: 1px; background: var(--rule); margin: 24px 0; }
