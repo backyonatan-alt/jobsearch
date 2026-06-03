@@ -8,53 +8,51 @@
   const greeting = 'Good evening';
   const dateLine = 'Wednesday · 3 June 2026';
 
-  const totalApps = 21;
-
-  // ── Suggested for today (compact glanceable strip) ──
-  const suggestions = [
-    { label: 'Prep for Vercel screen', spark: true },
-    { label: 'Follow up on Eleos Health (7d)', spark: false },
-    { label: 'Decide on Linear offer', spark: false }
-  ];
-
-  // ── Recent applications (hero of the left column) ──
   const STATUS_LABEL = { applied: 'Applied', screen: 'Screen', interview: 'Interview', offer: 'Offer' };
-  const recent = [
-    { co: 'Vercel',     role: 'Senior SWE, Edge',          status: 'screen',  added: '19d', chip: 'Generate prep',     cls: 'k1' },
-    { co: 'Figma',      role: 'Senior Engineer, Multiplayer', status: 'screen',  added: '17d', chip: 'Add hiring manager', cls: 'k2' },
-    { co: 'Granola',    role: 'Founding Backend Engineer',  status: 'applied', added: '2d',  chip: null,                 cls: 'k3' },
-    { co: 'Perplexity', role: 'Staff Engineer, Search',     status: 'applied', added: '2d',  chip: null,                 cls: 'k4' },
-    { co: 'OpenAI',     role: 'Member of Technical Staff',  status: 'applied', added: '1d',  chip: null,                 cls: 'k5' }
+
+  // ── LEFT: compact suggested-for-today chips ──
+  const chips = [
+    { spark: true,  label: 'Prep for Vercel screen' },
+    { spark: false, label: 'Follow up on Eleos Health (7d)' },
+    { spark: false, label: 'Decide on Linear offer' }
   ];
 
-  // ── Pulse (right pane) — reused as-is from the real Today page ──
+  // ── LEFT (hero): recent applications — richer cards, contextual chip ──
+  const recent = [
+    { co: 'Vercel',     role: 'Senior SWE, Edge',          status: 'screen',  short: 'Ve', cls: 'c1', added: '19d', chip: 'Generate prep',     chipSpark: true  },
+    { co: 'Figma',      role: 'Senior Engineer, Multiplayer', status: 'screen',  short: 'Fi', cls: 'c3', added: '17d', chip: 'Add hiring manager', chipSpark: false },
+    { co: 'Granola',    role: 'Founding Backend Engineer', status: 'applied', short: 'Gr', cls: 'c4', added: '2d',  chip: null },
+    { co: 'Perplexity', role: 'Staff Engineer, Search',    status: 'applied', short: 'Pe', cls: 'c2', added: '2d',  chip: null },
+    { co: 'OpenAI',     role: 'Member of Technical Staff', status: 'applied', short: 'Op', cls: 'c3', added: '1d',  chip: null }
+  ];
+
+  // ── RIGHT: pulse pane (hardcoded sample, mirrors /app) ──
   const tasks = [
-    { id: 't-prep',  b: 'Prep 3 questions for the Vercel screen', s: 'Senior SWE, Edge · Vercel',                              due: 'Today', hot: true,  done: false },
-    { id: 't-offer', b: 'Decide on the Linear offer',             s: 'Staff Engineer · they asked by Friday',                  due: 'Soon',  hot: true,  done: false },
-    { id: 't-quiet', b: 'Follow up on Eleos Health',              s: 'Quiet 7 days · log it once you reach out',               due: '7d',    hot: false, done: false }
+    { id: 't-prep',  b: 'Prep 3 questions for the Vercel team', s: 'Senior SWE, Edge · Vercel', due: 'Today', hot: true,  done: false },
+    { id: 't-offer', b: 'Decide on the Linear offer',           s: '$210k base · waiting on you', due: 'Soon', hot: true,  done: false },
+    { id: 't-quiet', b: 'Follow up on Eleos Health',            s: 'Quiet 7 days · log it once you reach out', due: '7d', hot: false, done: false }
   ];
   const openTaskCount = tasks.filter(t => !t.done).length;
 
-  const advisoryLabel = 'Eleos Health and Notion';
-  const advisoryPlural = true;
+  const advisoryLabel = 'Eleos Health and Ramp';
 
   const waiting = [
-    { co: 'Eleos Health', short: 'EH', status: 'screen',  days: 7,  stale: true,  cls: 'k6' },
-    { co: 'Notion',       short: 'N',  status: 'applied', days: 9,  stale: true,  cls: 'k7' },
-    { co: 'Figma',        short: 'F',  status: 'screen',  days: 17, stale: false, cls: 'k2' },
-    { co: 'Granola',      short: 'G',  status: 'applied', days: 2,  stale: false, cls: 'k3' },
-    { co: 'Perplexity',   short: 'P',  status: 'applied', days: 2,  stale: false, cls: 'k4' }
+    { id: 'w1', co: 'Notion',       status: 'applied', short: 'No', cls: 'c2', days: 12, stale: true  },
+    { id: 'w2', co: 'Ramp',         status: 'applied', short: 'Ra', cls: 'c1', days: 9,  stale: true  },
+    { id: 'w3', co: 'Eleos Health', status: 'applied', short: 'El', cls: 'c3', days: 7,  stale: true  },
+    { id: 'w4', co: 'Granola',      status: 'applied', short: 'Gr', cls: 'c4', days: 2,  stale: false },
+    { id: 'w5', co: 'Perplexity',   status: 'screen',  short: 'Pe', cls: 'c2', days: 2,  stale: false }
   ];
+
+  const activeCount = 17, awaitingCount = 14, quietCount = 8, totalApps = 21;
 </script>
 
 <svelte:head><title>Today (no interview) · variant B — Pursuit</title></svelte:head>
 
-<div class="mockwrap">
-  <div class="mocktop">
-    <a class="back" href="/preview/redesign">← back to previews</a>
-    <span class="mock-badge">Static mockup</span>
-  </div>
+<div class="mock-badge">Static mockup</div>
+<a class="mock-back" href="/preview/redesign">← previews</a>
 
+<div class="shell">
   <div class="topbar">
     <div class="crumb"><span class="here">Today</span></div>
     <div class="right">
@@ -70,50 +68,62 @@
   </div>
 
   <div class="ob ob-swap">
-    <!-- ══ LEFT — Recent-first with smart prompts ══════════ -->
+    <!-- ══ LEFT — Direction B: recent-first with smart prompts ══ -->
     <div class="brief">
       <div class="brief-in">
         <div class="brief-date">{dateLine}</div>
         <div class="brief-head">
           <h1>{greeting}, <b>{firstName}.</b></h1>
           <div class="brief-stats">
-            <div class="bstat"><span class="bstat-n">17</span><span class="bstat-l">In progress</span></div>
-            <div class="bstat"><span class="bstat-n">14</span><span class="bstat-l">Awaiting reply</span></div>
-            <div class="bstat warn"><span class="bstat-n">8</span><span class="bstat-l">Gone quiet</span></div>
+            <button class="bstat" title="Applications still active — applied through offer">
+              <span class="bstat-n">{activeCount}</span>
+              <span class="bstat-l">In progress</span>
+            </button>
+            <button class="bstat" title="Applied and waiting to hear back">
+              <span class="bstat-n">{awaitingCount}</span>
+              <span class="bstat-l">Awaiting reply</span>
+            </button>
+            <button class="bstat warn" title="No reply in over a week">
+              <span class="bstat-n">{quietCount}</span>
+              <span class="bstat-l">Gone quiet</span>
+            </button>
           </div>
         </div>
 
         <p class="lede">Nothing on the calendar today — pick up where you left off.</p>
 
-        <!-- Suggested for today: compact chip strip -->
-        <div class="sg-strip">
-          <span class="sg-eyebrow">Suggested for today</span>
-          <div class="sg-row">
-            {#each suggestions as s}
-              <button class="sg-chip">
-                {#if s.spark}<span class="sp">{@render Spark(12)}</span>{/if}
-                {s.label}
+        <!-- Compact "Suggested for today" chip strip -->
+        <div class="suggest-strip">
+          <span class="strip-label">Suggested for today</span>
+          <div class="chips">
+            {#each chips as c}
+              <button class="chip">
+                {#if c.spark}<span class="chip-ic">{@render Spark(12)}</span>{/if}
+                {c.label}
               </button>
             {/each}
           </div>
         </div>
 
-        <!-- Recent applications: the hero -->
-        <div class="kick">Recent applications</div>
+        <!-- Recent applications — HERO of the left column -->
+        <div class="kick recent-kick">Recent applications</div>
         <div class="recent">
-          {#each recent as a}
-            <div class="rec-card" role="button" tabindex="0">
-              <span class={`rec-logo ${a.cls}`}>{a.co.charAt(0)}</span>
-              <div class="rec-text">
-                <div class="rec-top">
-                  <span class="rec-co">{a.co}</span>
-                  <span class={`pill ${a.status}`}><span class="pdot"></span>{STATUS_LABEL[a.status]}</span>
-                </div>
-                <div class="rec-role">{a.role}</div>
-                <div class="rec-added">added {a.added} ago</div>
-              </div>
-              {#if a.chip}
-                <button class="rec-action">{@render Spark(12)} {a.chip}</button>
+          {#each recent as r}
+            <div class="rcard" role="button" tabindex="0">
+              <span class={`row-logo letter ${r.cls}`}>{r.short}</span>
+              <span class="rx">
+                <b>{r.co}</b>
+                <small>{r.role}</small>
+              </span>
+              <span class="rmeta">
+                <span class={`pill ${r.status}`}><span class="pdot"></span>{STATUS_LABEL[r.status]}</span>
+                <span class="ago">added {r.added} ago</span>
+              </span>
+              {#if r.chip}
+                <button class="rchip">
+                  {#if r.chipSpark}<span class="rchip-ic">{@render Spark(12)}</span>{/if}
+                  {r.chip}
+                </button>
               {/if}
             </div>
           {/each}
@@ -125,7 +135,7 @@
       </div>
     </div>
 
-    <!-- ══ RIGHT — Where things stand (pulse, reused) ══════ -->
+    <!-- ══ RIGHT — Where things stand (pulse) — reused as-is ══ -->
     <div class="pulse-stage">
       <div class="pulse-tag"><span class="d"></span>Where things stand</div>
 
@@ -144,20 +154,18 @@
         <div class="tasks-note">Personal checklist · stays on this device.</div>
       </div>
 
-      {#if advisoryLabel}
-        <div class="pulse-foot">
-          <span class="fic">{@render Spark(15)}</span>
-          <span class="ftx"><b>{advisoryLabel} {advisoryPlural ? 'have' : 'has'} gone quiet</b><small>No reply in over a week — it might be a good time to reach out to them directly.</small></span>
-          <button class="pulse-link">{advisoryPlural ? 'See both' : 'See it'} {@render Arrow()}</button>
-        </div>
-      {/if}
+      <div class="pulse-foot">
+        <span class="fic">{@render Spark(15)}</span>
+        <span class="ftx"><b>{advisoryLabel} have gone quiet</b><small>No reply in over a week — it might be a good time to reach out to them directly.</small></span>
+        <button class="pulse-link">See both {@render Arrow()}</button>
+      </div>
 
       <div class="pulse-sec waiting-sec">
         <span class="t">Waiting to hear back</span>
         <span class="c">longest first</span>
       </div>
       <div class="pulse-list">
-        {#each waiting as w}
+        {#each waiting as w (w.id)}
           <div class={`pulse-row ${w.stale ? 'quiet' : ''}`} role="button" tabindex="0">
             <span class={`row-logo letter ${w.cls}`}>{w.short}</span>
             <span class="wx"><b>{w.co}</b><small>{STATUS_LABEL[w.status]}</small></span>
@@ -178,24 +186,28 @@
 {/snippet}
 
 <style>
-  /* Standalone mockup shell — fills the viewport, no app chrome. */
-  .mockwrap {
-    position: fixed; inset: 0; display: flex; flex-direction: column;
-    background: var(--surface); font-family: var(--sans); color: var(--ink);
-  }
-  .mocktop {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 20px; border-bottom: 1px solid var(--rule); background: var(--surface-2);
-    flex-shrink: 0;
-  }
-  .mocktop .back { font-size: 12.5px; color: var(--mute); text-decoration: none; }
-  .mocktop .back:hover { color: var(--ink-2); }
-  .mock-badge {
-    font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--accent-text);
-    background: var(--accent-tint); border-radius: 99px; padding: 3px 10px;
+  :global(html, body) { background: var(--surface); margin: 0; }
+
+  .shell {
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    font-family: var(--sans); color: var(--ink);
   }
 
-  /* ════ Two-pane Today (Option B, swapped) ════════════════ */
+  /* Static-mockup chrome */
+  .mock-badge {
+    position: fixed; top: 10px; right: 12px; z-index: 50;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    background: var(--ink); color: #fff; padding: 4px 10px; border-radius: 99px;
+  }
+  .mock-back {
+    position: fixed; top: 10px; left: 12px; z-index: 50;
+    font-size: 12px; color: var(--mute); text-decoration: none;
+    background: var(--card); border: 1px solid var(--rule);
+    padding: 4px 10px; border-radius: 99px;
+  }
+  .mock-back:hover { color: var(--ink); }
+
+  /* ── Two-pane Today (swapped: Brief left, Pulse right) ── */
   .ob {
     flex: 1; min-height: 0;
     display: grid; grid-template-columns: 1.08fr 0.92fr;
@@ -214,70 +226,75 @@
   .btn-primary { background: var(--accent); border-color: var(--accent-strong); color: white; display: inline-flex; align-items: center; gap: 8px; }
   .btn-primary .kbd { font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,.75); }
 
-  /* ── LEFT ── */
+  /* ── LEFT: editorial brief ── */
   .brief { overflow-y: auto; }
   .brief-in { max-width: 660px; padding: 44px 40px 56px; }
   .brief-date { font-size: 13px; color: var(--mute); margin-bottom: 16px; letter-spacing: -0.003em; }
-  .brief h1 { font-size: 26px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.12; margin: 0; white-space: nowrap; }
+  .brief h1 { font-size: 26px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.12; margin: 0; }
   .brief h1 b { font-weight: 500; }
-  .lede { font-size: 14.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 26px; max-width: 50ch; }
+  .lede { font-size: 14.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 24px; max-width: 50ch; }
 
   .brief-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 22px; flex-wrap: nowrap; }
+  .brief-head h1 { margin: 0; white-space: nowrap; }
   .brief-stats { display: flex; align-items: center; flex-shrink: 0; }
-  .brief-stats .bstat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0 14px; }
+  .brief-stats .bstat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; cursor: pointer; padding: 0 14px; transition: opacity .12s; background: none; border: 0; }
   .brief-stats .bstat:first-child { padding-left: 0; }
   .brief-stats .bstat:last-child { padding-right: 0; }
   .brief-stats .bstat + .bstat { border-left: 1px solid var(--rule); }
+  .brief-stats .bstat:hover { opacity: 0.65; }
   .brief-stats .bstat-n { font-size: 23px; font-weight: 500; line-height: 1; letter-spacing: -0.022em; color: var(--ink); font-variant-numeric: tabular-nums; }
   .brief-stats .bstat-l { font-size: 11px; color: var(--mute); letter-spacing: -0.003em; white-space: nowrap; }
   .brief-stats .bstat.warn .bstat-n { color: var(--warm-text); }
 
-  /* Suggested-for-today chip strip */
-  .sg-strip { margin: 0 0 34px; }
-  .sg-eyebrow { display: block; font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 11px; }
-  .sg-row { display: flex; flex-wrap: wrap; gap: 8px; }
-  .sg-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--accent-text);
+  /* Compact "Suggested for today" chip strip */
+  .suggest-strip { margin-bottom: 34px; }
+  .strip-label { display: block; font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 11px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 9px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
     background: var(--accent-tint); border: 1px solid transparent; border-radius: 99px;
-    padding: 6px 13px; cursor: pointer; transition: border-color .12s, background .12s;
+    padding: 7px 14px; font-size: 12.5px; font-weight: 500; color: var(--accent-text);
+    font-family: inherit; transition: border-color .12s, transform .12s;
   }
-  .sg-chip:hover { border-color: var(--accent); }
-  .sg-chip .sp { display: inline-flex; }
+  .chip:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .chip-ic { display: inline-flex; color: var(--accent-text); }
 
-  /* Recent applications — hero list */
   .kick { font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
   .kick::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .recent-kick { margin-top: 0; }
 
+  /* Recent applications — richer hero cards */
   .recent { display: flex; flex-direction: column; gap: 10px; }
-  .rec-card {
-    display: grid; grid-template-columns: 42px 1fr auto; gap: 14px; align-items: center;
+  .rcard {
+    display: grid; grid-template-columns: 38px 1fr auto auto; gap: 14px; align-items: center;
     background: var(--card); border: 1px solid var(--rule); border-radius: 13px;
-    padding: 15px 16px; cursor: pointer; transition: border-color .12s, box-shadow .12s;
+    padding: 15px 17px; cursor: pointer;
+    transition: border-color .12s, box-shadow .12s, transform .12s;
   }
-  .rec-card:hover { border-color: var(--rule-strong); box-shadow: var(--sh-1); }
-  .rec-logo { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; font-size: 17px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); }
-  .rec-logo.k1 { background: oklch(0.94 0.04 258); color: oklch(0.42 0.12 258); }
-  .rec-logo.k2 { background: oklch(0.94 0.045 320); color: oklch(0.42 0.13 320); }
-  .rec-logo.k3 { background: oklch(0.94 0.05 95);  color: oklch(0.44 0.11 95); }
-  .rec-logo.k4 { background: oklch(0.93 0.05 165); color: oklch(0.42 0.11 165); }
-  .rec-logo.k5 { background: oklch(0.94 0.04 30);  color: oklch(0.45 0.13 30); }
-  .rec-text { min-width: 0; }
-  .rec-top { display: flex; align-items: center; gap: 9px; }
-  .rec-co { font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
-  .rec-role { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
-  .rec-added { font-size: 11.5px; color: var(--mute); margin-top: 4px; }
-  .rec-action {
-    flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
-    font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+  .rcard:hover { border-color: var(--rule-strong); box-shadow: var(--sh-pop); transform: translateY(-1px); }
+  .rcard .row-logo { width: 38px; height: 38px; border-radius: 10px; font-size: 13px; }
+  .rx { line-height: 1.35; min-width: 0; }
+  .rx b { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+  .rx small { display: block; font-size: 12.5px; color: var(--mute); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rmeta { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; white-space: nowrap; }
+  .rmeta .ago { font-size: 11.5px; color: var(--mute-2); }
+  .rchip {
+    flex-shrink: 0; white-space: nowrap; cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 6px;
     background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px;
-    padding: 7px 11px; cursor: pointer; white-space: nowrap; transition: background .12s, color .12s, border-color .12s;
+    padding: 7px 13px; font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+    transition: background .12s, border-color .12s, color .12s;
   }
-  .rec-action:hover { background: var(--accent-tint); color: var(--accent-text); border-color: transparent; }
+  .rchip:hover { background: var(--accent-tint); border-color: var(--accent); color: var(--accent-text); }
+  .rchip-ic { display: inline-flex; color: var(--accent-text); }
 
-  .foot { margin-top: 26px; display: flex; justify-content: flex-end; }
-  .foot-link { background: none; border: none; padding: 4px 0; font-family: inherit; font-size: 12.5px; color: var(--mute); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: color .12s; }
-  .foot-link:hover { color: var(--accent-text); }
+  /* shared letter logo */
+  .row-logo { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-2); object-fit: contain; padding: 4px; }
+  .row-logo.letter { display: grid; place-items: center; padding: 0; color: var(--ink-2); font-size: 12px; font-weight: 600; }
+  .row-logo.letter.c1 { background: oklch(0.94 0.04 258); color: var(--accent-text); }
+  .row-logo.letter.c2 { background: oklch(0.95 0.05 152); color: var(--positive-text); }
+  .row-logo.letter.c3 { background: oklch(0.95 0.06 50);  color: var(--warm-text); }
+  .row-logo.letter.c4 { background: var(--surface-2); color: var(--ink-2); }
 
   /* status pills */
   .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); width: max-content; }
@@ -289,7 +306,11 @@
   .pill.offer { background: var(--positive-tint); color: var(--positive-text); }
   .pill.offer .pdot { background: var(--positive); }
 
-  /* ── RIGHT: pulse (reused) ── */
+  .foot { margin-top: 26px; display: flex; justify-content: flex-end; }
+  .foot-link { background: none; border: none; padding: 4px 0; font-family: inherit; font-size: 12.5px; color: var(--mute); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: color .12s; }
+  .foot-link:hover { color: var(--accent-text); }
+
+  /* ── RIGHT: pulse ── */
   .pulse-stage {
     overflow-y: auto;
     background:
@@ -308,13 +329,6 @@
   .pulse-list { display: flex; flex-direction: column; }
   .pulse-row { display: grid; grid-template-columns: 30px 1fr auto auto; gap: 12px; align-items: center; padding: 12px 4px; border-top: 1px solid var(--rule); cursor: pointer; border-radius: 8px; transition: background .12s; }
   .pulse-row:hover { background: var(--surface-2); }
-  .row-logo { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-2); }
-  .row-logo.letter { display: grid; place-items: center; padding: 0; color: var(--ink-2); font-size: 12px; font-weight: 600; }
-  .row-logo.k2 { background: oklch(0.94 0.045 320); color: oklch(0.42 0.13 320); }
-  .row-logo.k3 { background: oklch(0.94 0.05 95);  color: oklch(0.44 0.11 95); }
-  .row-logo.k4 { background: oklch(0.93 0.05 165); color: oklch(0.42 0.11 165); }
-  .row-logo.k6 { background: var(--warm-tint); color: var(--warm-text); }
-  .row-logo.k7 { background: oklch(0.92 0.01 258); color: var(--ink-2); }
   .pulse-row .wx { line-height: 1.3; min-width: 0; }
   .pulse-row .wx b { font-size: 13.5px; font-weight: 500; }
   .pulse-row .wx small { display: block; font-size: 12px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -350,10 +364,12 @@
 
   /* Mobile — stack the two panes. */
   @media (max-width: 860px) {
-    .ob.ob-swap { grid-template-columns: 1fr; }
+    .ob, .ob.ob-swap { grid-template-columns: 1fr; }
     .ob.ob-swap .brief { border-right: 0; border-bottom: 1px solid var(--rule); }
     .search { display: none; }
     .brief-in { padding: 28px 22px 40px; }
     .pulse-stage { padding: 28px 22px 40px; }
+    .rcard { grid-template-columns: 38px 1fr auto; }
+    .rchip { grid-column: 2 / -1; justify-self: start; }
   }
 </style>
