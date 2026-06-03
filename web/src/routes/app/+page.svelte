@@ -4,7 +4,7 @@
   import { page } from '$app/state';
   import { api } from '$lib/api.js';
   import {
-    STATUS_LABEL, toDisplayApp, daysSince
+    STATUS_LABEL, toDisplayApp, daysSince, fmtRelativeDate
   } from '$lib/app-helpers.js';
   import Onboarding from '$lib/Onboarding.svelte';
   import AddApplication from '$lib/AddApplication.svelte';
@@ -192,6 +192,66 @@
     return { day, time };
   }
 
+  // ── No-interview "What you can do today" suggestions ────────
+  // Built from real signals, priority order, capped at 4. Only includes ones
+  // that actually apply. Each: {spark?, title, sub, cta, go()}.
+  const suggestions = $derived.by(() => {
+    const out = [];
+    // 1) Screen/interview apps with no dossier yet → the AI prep moment.
+    for (const a of apps) {
+      if (!['screen', 'interview'].includes(a.status)) continue;
+      if (dossierByApp[a.id]) continue;
+      out.push({
+        spark: true,
+        title: `Prep for your ${a.co} ${STATUS_LABEL[a.status].toLowerCase()}`,
+        sub: a.role,
+        cta: 'Generate prep',
+        go: () => goto(`/app/${a.id}#interview-prep`)
+      });
+    }
+    // 2) Stale / quiet apps → nudge a follow-up.
+    for (const a of apps) {
+      if (!a.stale) continue;
+      const d = daysSince(a.raw.applied_at);
+      out.push({
+        title: `Follow up on ${a.co}`,
+        sub: `Quiet ${d ?? 0} days — it might be time to reach out`,
+        cta: 'Log a follow-up',
+        go: () => goto(`/app/${a.id}`)
+      });
+    }
+    // 3) Offers awaiting a decision.
+    for (const a of apps) {
+      if (a.status !== 'offer') continue;
+      out.push({
+        title: `Decide on the ${a.co} offer`,
+        sub: a.raw.salary_note || 'Waiting on you',
+        cta: 'Review',
+        go: () => goto(`/app/${a.id}`)
+      });
+    }
+    // 4) Screen/interview apps still missing a hiring manager.
+    for (const a of apps) {
+      if (!['screen', 'interview'].includes(a.status)) continue;
+      if (a.raw.hiring_manager_name) continue;
+      out.push({
+        title: `Add the hiring manager for ${a.co}`,
+        sub: 'We can build a prep brief once we know who',
+        cta: 'Add',
+        go: () => goto(`/app/${a.id}`)
+      });
+    }
+    return out.slice(0, 4);
+  });
+
+  // ── No-interview "Recently added" — newest apps by created_at ──
+  const recentApps = $derived.by(() => {
+    return [...apps]
+      .filter(a => a.raw.created_at)
+      .sort((a, b) => new Date(b.raw.created_at) - new Date(a.raw.created_at))
+      .slice(0, 5);
+  });
+
   // ── Pulse (right pane) ──────────────────────────────────────
   const activeApps = $derived(apps.filter(a => ['applied', 'screen', 'interview', 'offer'].includes(a.status)));
   const quietApps  = $derived(apps.filter(a => a.stale));
@@ -378,7 +438,43 @@
 
         <button class="cta" onclick={() => openPlaybook(nextInterview.app.id)}>Open interview prep {@render Arrow()}</button>
       {:else}
-        <p class="lede">Nothing's on the calendar today — here's where your search stands.</p>
+        <p class="lede">Nothing on the calendar today — here's what's worth doing.</p>
+
+        {#if suggestions.length}
+          <div class="kick">{@render Spark()}&nbsp;What you can do today</div>
+          <div class="suggest">
+            {#each suggestions as s}
+              <div class="sg">
+                <span class="sg-ic" class:plain={!s.spark}>
+                  {#if s.spark}{@render Spark(15)}{:else}{@render Dot()}{/if}
+                </span>
+                <span class="sg-tx">
+                  <b>{s.title}</b>
+                  <small>{s.sub}</small>
+                </span>
+                <button class="sg-btn" onclick={s.go}>{s.cta}</button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        {#if recentApps.length}
+          <div class="kick recent-kick">Recently added</div>
+          <div class="recent">
+            {#each recentApps as r (r.id)}
+              <div class="rrow" onclick={() => openDetail(r.id)} role="button" tabindex="0">
+                {#if r.logoSrc}
+                  <img class="row-logo" src={r.logoSrc} alt="" />
+                {:else}
+                  <span class={`row-logo letter ${r.logoCls}`}>{r.coShort}</span>
+                {/if}
+                <span class="rx"><b>{r.co}</b><small>{r.role}</small></span>
+                <span class={`pill ${r.status}`}><span class="pdot"></span>{STATUS_LABEL[r.status]}</span>
+                <span class="ago">added {fmtRelativeDate(r.raw.created_at)}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
       {/if}
 
       {#if !loading && agenda.length}
@@ -464,6 +560,9 @@
 {#snippet Arrow()}
   <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
 {/snippet}
+{#snippet Dot()}
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/></svg>
+{/snippet}
 
 <style>
   /* ════ Two-pane Today (Option B, swapped) ════════════════ */
@@ -511,6 +610,44 @@
 
   .kick { font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
   .kick::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .recent-kick { margin-top: 34px; }
+
+  /* No-interview: suggestion cards ("What you can do today") */
+  .suggest { display: flex; flex-direction: column; gap: 10px; }
+  .sg {
+    display: grid; grid-template-columns: 34px 1fr auto; gap: 13px; align-items: center;
+    background: var(--card); border: 1px solid var(--rule); border-radius: 13px;
+    padding: 14px 16px; transition: border-color .12s, box-shadow .12s, transform .12s;
+  }
+  .sg:hover { border-color: var(--rule-strong); box-shadow: var(--sh-pop); transform: translateY(-1px); }
+  .sg-ic {
+    width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+    background: var(--accent-tint); color: var(--accent-text); flex-shrink: 0;
+  }
+  .sg-ic.plain { background: var(--surface-2); color: var(--mute); }
+  .sg-tx { line-height: 1.35; min-width: 0; }
+  .sg-tx b { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .sg-tx small { display: block; font-size: 12.5px; color: var(--mute); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sg-btn {
+    flex-shrink: 0; white-space: nowrap; cursor: pointer; font-family: inherit;
+    background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px;
+    padding: 6px 13px; font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+    transition: background .12s, border-color .12s;
+  }
+  .sg-btn:hover { background: var(--card); border-color: var(--rule-strong); color: var(--ink); }
+
+  /* No-interview: recently added list */
+  .recent { display: flex; flex-direction: column; }
+  .rrow {
+    display: grid; grid-template-columns: 32px 1fr auto auto; gap: 13px; align-items: center;
+    padding: 12px 4px; border-top: 1px solid var(--rule); cursor: pointer;
+    border-radius: 8px; transition: background .12s;
+  }
+  .rrow:hover { background: var(--surface-2); }
+  .rx { line-height: 1.3; min-width: 0; }
+  .rx b { font-size: 13.5px; font-weight: 500; }
+  .rx small { display: block; font-size: 12px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ago { font-size: 12px; color: var(--mute-2); white-space: nowrap; }
 
   .insight { display: flex; gap: 12px; padding: 15px 16px; background: var(--accent-tint); border-radius: 13px; margin-bottom: 14px; }
   .insight .ic { color: var(--accent-text); flex-shrink: 0; margin-top: 1px; }
