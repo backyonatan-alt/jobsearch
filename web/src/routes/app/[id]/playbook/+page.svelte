@@ -263,12 +263,6 @@
             <div class="f"><span class="l">Round</span><span class="v">{factPanel}</span></div>
           </div>
 
-          <!-- Add to calendar CTA (visual only) -->
-          <button class="dos-cta" type="button">
-            Add to calendar
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l5 5 5-5M8 3v10"/></svg>
-          </button>
-
           <!-- Refresh -->
           <button class="dos-refresh" type="button" onclick={generate} disabled={generating}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
@@ -467,8 +461,8 @@
     gap: 9px;
   }
   .dos-top .gen {
-    font-family: var(--mono);
-    font-size: 11px;
+    font-family: inherit;
+    font-size: 12px;
     color: var(--mute);
     display: inline-flex;
     align-items: center;

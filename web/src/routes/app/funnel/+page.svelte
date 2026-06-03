@@ -351,7 +351,10 @@
   .divider { height: 1px; background: var(--rule); margin: 24px 0; }
 
   /* Activity bars */
-  .act-bars { display: flex; align-items: flex-end; gap: 6px; height: 120px; }
+  .act-bars {
+    display: flex; align-items: flex-end; gap: 6px; height: 120px;
+    background-image: repeating-linear-gradient(to top, transparent 0, transparent calc(25% - 1px), var(--rule) calc(25% - 1px), var(--rule) 25%);
+  }
   .act-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; min-width: 0; }
   .act-val { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; line-height: 1; color: var(--mute-2); font-variant-numeric: tabular-nums; text-align: center; margin-bottom: 4px; }
   .act-bar { width: 100%; background: var(--accent-tint-2); border-radius: 5px 5px 2px 2px; min-height: 6px; transition: background .12s; }
