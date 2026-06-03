@@ -490,23 +490,23 @@
 
   /* ── LEFT: editorial brief ── */
   .brief { overflow-y: auto; }
-  .brief-in { max-width: 560px; padding: 44px 48px 56px; }
+  .brief-in { max-width: 640px; padding: 44px 40px 56px; }
   .brief-date { font-size: 13px; color: var(--mute); margin-bottom: 16px; letter-spacing: -0.003em; }
-  .brief h1 { font-size: 30px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.12; margin: 0 0 12px; }
+  .brief h1 { font-size: 26px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.12; margin: 0 0 12px; }
   .brief h1 b { font-weight: 500; }
   .lede { font-size: 14.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 30px; max-width: 50ch; }
   .lede .hot { color: var(--warm-text); font-weight: 500; }
 
-  .brief-head { display: flex; align-items: center; justify-content: space-between; gap: 32px; margin: 0 0 30px; flex-wrap: wrap; }
-  .brief-head h1 { margin: 0; }
-  .brief-stats { display: flex; align-items: center; }
-  .brief-stats .bstat { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; cursor: pointer; padding: 0 22px; transition: opacity .12s; }
+  .brief-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 30px; flex-wrap: nowrap; }
+  .brief-head h1 { margin: 0; white-space: nowrap; }
+  .brief-stats { display: flex; align-items: center; flex-shrink: 0; }
+  .brief-stats .bstat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; cursor: pointer; padding: 0 14px; transition: opacity .12s; }
   .brief-stats .bstat:first-child { padding-left: 0; }
   .brief-stats .bstat:last-child { padding-right: 0; }
   .brief-stats .bstat + .bstat { border-left: 1px solid var(--rule); }
   .brief-stats .bstat:hover { opacity: 0.65; }
-  .brief-stats .bstat-n { font-size: 30px; font-weight: 500; line-height: 1; letter-spacing: -0.022em; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .brief-stats .bstat-l { font-size: 12px; color: var(--mute); letter-spacing: -0.003em; }
+  .brief-stats .bstat-n { font-size: 23px; font-weight: 500; line-height: 1; letter-spacing: -0.022em; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .brief-stats .bstat-l { font-size: 11px; color: var(--mute); letter-spacing: -0.003em; white-space: nowrap; }
   .brief-stats .bstat.warn .bstat-n { color: var(--warm-text); }
 
   .kick { font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
