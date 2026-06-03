@@ -37,10 +37,19 @@
   let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', salary_note: '', hiring_manager_name: '', hiring_manager_linkedin: '' });
   let saving = $state(false);
 
-  // Follow-up (records locally + toast; sends nothing)
+  // Follow-up (records what the user did — sends nothing). Loaded from backend.
   let followUps = $state([]);
+  let followUpsLoading = $state(false);
   let toast = $state('');
   let toastTimer = null;
+
+  // Follow-up popup modal
+  let showFollowUpModal = $state(false);
+  let fuNote = $state('');
+  let fuChannel = $state('');
+  let fuDate = $state('');
+  let fuSaving = $state(false);
+  const FU_CHANNELS = ['Email', 'LinkedIn', 'Phone', 'In person', 'Other'];
 
   const id = $derived(page.params.id);
 
@@ -48,6 +57,7 @@
     void id;
     loadApp();
     loadInterviews();
+    loadFollowUps();
   });
 
   async function loadApp() {
@@ -74,6 +84,18 @@
       interviews = [];
     } finally {
       interviewsLoading = false;
+    }
+  }
+
+  async function loadFollowUps() {
+    followUpsLoading = true;
+    try {
+      followUps = await call(`/api/applications/${id}/follow-ups`);
+    } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+      followUps = [];
+    } finally {
+      followUpsLoading = false;
     }
   }
 
@@ -187,7 +209,9 @@
     showEventModal = false;
   }
   function onWindowKeydown(e) {
-    if (e.key === 'Escape' && showEventModal) closeEventModal();
+    if (e.key !== 'Escape') return;
+    if (showEventModal) closeEventModal();
+    if (showFollowUpModal) closeFollowUp();
   }
 
   // ── Status / edit / delete (preserved) ───────────────────────
@@ -235,10 +259,41 @@
 
   function openPlaybook() { goto(`/app/${id}/playbook`); }
 
-  // ── Follow-up (records locally, shows toast — sends nothing) ──
-  function logFollowUp() {
-    followUps = [...followUps, { at: new Date().toISOString() }];
-    showToast("Follow-up logged — we've reset the clock");
+  // ── Follow-up (records what the user did — sends nothing) ─────
+  function todayInputValue() {
+    const d = new Date();
+    const off = d.getTimezoneOffset();
+    return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+  }
+  function openFollowUp() {
+    fuNote = '';
+    fuChannel = '';
+    fuDate = todayInputValue();
+    showFollowUpModal = true;
+  }
+  function closeFollowUp() { showFollowUpModal = false; }
+  async function saveFollowUp(e) {
+    e.preventDefault();
+    if (fuSaving) return;
+    fuSaving = true;
+    try {
+      // Date input is a local YYYY-MM-DD; turn it into an RFC3339 timestamp.
+      // Blank → now.
+      const occurred_at = fuDate ? new Date(`${fuDate}T12:00:00`).toISOString() : new Date().toISOString();
+      const payload = { note: fuNote.trim(), channel: fuChannel, occurred_at };
+      await call(`/api/applications/${id}/follow-ups`, { method: 'POST', body: JSON.stringify(payload) });
+      showFollowUpModal = false;
+      await loadFollowUps();
+      await loadApp();
+      showToast("Follow-up logged — we've reset the clock");
+    } finally {
+      fuSaving = false;
+    }
+  }
+  async function deleteFollowUp(f) {
+    await call(`/api/applications/${id}/follow-ups/${f.id}`, { method: 'DELETE' });
+    await loadFollowUps();
+    await loadApp();
   }
   function showToast(msg) {
     toast = msg;
@@ -353,13 +408,15 @@
         tag: 'accent'
       });
     }
-    for (const f of followUps) {
+    for (const f of (followUps || [])) {
+      const when = f.occurred_at || f.created_at;
       rows.push({
-        ts: new Date(f.at).getTime(),
-        date: monoDate(f.at),
-        title: 'Follow-up logged',
-        note: 'You reached out directly',
-        tag: ''
+        ts: when ? new Date(when).getTime() : Date.now(),
+        date: monoDate(when),
+        title: (f.note && f.note.trim()) ? f.note.trim() : 'Follow-up',
+        note: f.channel ? `Follow-up · ${f.channel}` : 'Follow-up · you reached out directly',
+        tag: '',
+        followUp: f
       });
     }
     rows.push({
@@ -474,7 +531,7 @@
                 {/if}
               </div>
               <div class="row">
-                <button class="cta dark" onclick={logFollowUp}>Log a follow-up
+                <button class="cta dark" onclick={openFollowUp}>Log a follow-up
                   <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
               </div>
@@ -499,7 +556,14 @@
                 <div class={`tlrow ${e.tag}`}>
                   <span class="pt"></span>
                   <div class="d">{e.date}</div>
-                  <div class="t">{e.title}</div>
+                  <div class="t">
+                    {e.title}
+                    {#if e.followUp}
+                      <button class="tl-del" title="Delete follow-up" aria-label="Delete follow-up" onclick={() => deleteFollowUp(e.followUp)}>
+                        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
+                      </button>
+                    {/if}
+                  </div>
                   {#if e.note}<div class="n">{e.note}</div>{/if}
                 </div>
               {/each}
@@ -574,7 +638,7 @@
             <div class="ttl">Actions</div>
             <div class="side-act">
               {#if awaiting}
-                <button class="warn" onclick={logFollowUp}>
+                <button class="warn" onclick={openFollowUp}>
                   <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12v8H2zM2 4l6 5 6-5"/></svg></span>
                   Log a follow-up
                 </button>
@@ -727,6 +791,42 @@
   </div>
 {/if}
 
+{#if showFollowUpModal}
+  <div class="ev-overlay" onclick={closeFollowUp} role="presentation">
+    <form class="ev-card fu-card" onclick={(e) => e.stopPropagation()} onsubmit={saveFollowUp} role="dialog" aria-modal="true" aria-label="Log a follow-up">
+      <button type="button" class="x-close" onclick={closeFollowUp} aria-label="Close">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="add-hd">
+        <h3>Log a follow-up</h3>
+        <p>Record something you did yourself — Pursuit doesn't send anything. We'll reset the quiet clock.</p>
+      </div>
+      <div class="fu-fields">
+        <label class="fu-label">What did you do?
+          <textarea class="fu-ta" rows="3" placeholder="e.g. Emailed Sarah to check in" bind:value={fuNote}></textarea>
+        </label>
+        <div class="fu-row">
+          <label class="fu-label">Channel
+            <select class="fu-input" bind:value={fuChannel}>
+              <option value=""></option>
+              {#each FU_CHANNELS as c}<option value={c}>{c}</option>{/each}
+            </select>
+          </label>
+          <label class="fu-label">Date
+            <input class="fu-input" type="date" bind:value={fuDate} />
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick={closeFollowUp}>Cancel</button>
+        <button type="submit" class="btn btn-primary" disabled={fuSaving}>
+          {fuSaving ? 'Saving…' : 'Save follow-up'}
+        </button>
+      </div>
+    </form>
+  </div>
+{/if}
+
 <style>
   .body { padding: 28px; }
   .det { max-width: 980px; margin: 0 auto; }
@@ -789,8 +889,20 @@
   .tlrow.offer .pt { border-color: var(--positive); background: var(--positive); box-shadow: 0 0 0 4px var(--positive-tint); }
   .tlrow.danger .pt { border-color: var(--danger); background: var(--danger); }
   .tlrow .d { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--mute); margin-bottom: 3px; }
-  .tlrow .t { font-size: 13.5px; font-weight: 500; }
+  .tlrow .t { font-size: 13.5px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
   .tlrow .n { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
+  .tl-del { width: 20px; height: 20px; flex-shrink: 0; border: 0; background: transparent; color: var(--mute-2); border-radius: 5px; display: inline-grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity 100ms ease, background 100ms ease, color 100ms ease; }
+  .tlrow:hover .tl-del { opacity: 1; }
+  .tl-del:hover { background: var(--danger-tint); color: var(--danger-text); }
+
+  /* FOLLOW-UP MODAL */
+  .fu-card { max-width: 460px; }
+  .fu-fields { display: flex; flex-direction: column; gap: 14px; }
+  .fu-label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--mute); }
+  .fu-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fu-ta, .fu-input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 11px; font-size: 13.5px; outline: none; transition: border-color 100ms ease; box-sizing: border-box; width: 100%; }
+  .fu-ta { resize: vertical; line-height: 1.5; }
+  .fu-ta:focus, .fu-input:focus { border-color: var(--accent); }
 
   /* SIDE CARDS */
   .side-card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 18px; box-shadow: var(--sh-1); margin-bottom: 16px; }
@@ -912,5 +1024,6 @@
     .ev-card { max-width: 100%; border-radius: 0; min-height: 100vh; margin: 0; padding: 20px 16px; }
     .fields { grid-template-columns: 1fr; }
     .fields .span-2 { grid-column: auto; }
+    .fu-row { grid-template-columns: 1fr; }
   }
 </style>

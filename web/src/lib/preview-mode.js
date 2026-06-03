@@ -68,9 +68,26 @@ const INITIAL_APPS = [
 ];
 
 // In-memory state for the session. Mutations stick until reload.
-let apps = INITIAL_APPS.map(a => ({ ...a, created_at: a.applied_at || new Date().toISOString(), updated_at: new Date().toISOString() }));
+let apps = INITIAL_APPS.map(a => ({ ...a, last_follow_up_at: null, created_at: a.applied_at || new Date().toISOString(), updated_at: new Date().toISOString() }));
 let interviewsByApp = {}; // appId -> []
 let dossiersByApp = {};   // appId -> { content, meeting, generatedAgo, interviewer_name }
+let followUpsByApp = {};  // appId -> [] (newest first)
+
+// Seed one quiet app (Modal #113) with an existing follow-up so the timeline
+// shows real content out of the box.
+{
+  const seededAt = daysAgoIso(3);
+  followUpsByApp[113] = [{
+    id: 1,
+    application_id: 113,
+    note: 'Emailed the recruiter to check in on timeline',
+    channel: 'Email',
+    occurred_at: seededAt,
+    created_at: seededAt
+  }];
+  const modal = apps.find(a => a.id === 113);
+  if (modal) modal.last_follow_up_at = seededAt;
+}
 
 function findApp(id) { return apps.find(a => a.id === Number(id)); }
 
@@ -177,6 +194,7 @@ export async function mockApi(path, opts = {}) {
       hiring_manager_name: body.hiring_manager_name ?? null,
       hiring_manager_linkedin: body.hiring_manager_linkedin ?? null,
       applied_at: body.status === 'wishlist' ? null : (body.applied_at ?? now),
+      last_follow_up_at: null,
       created_at: now, updated_at: now
     };
     apps = [created, ...apps];
@@ -280,6 +298,51 @@ export async function mockApi(path, opts = {}) {
     if (method === 'DELETE' && ivMatch) {
       const iid = Number(ivMatch[1]);
       interviewsByApp[id] = (interviewsByApp[id] || []).filter(x => x.id !== iid);
+      return ok(null);
+    }
+
+    // GET /api/applications/:id/follow-ups — newest first.
+    if (method === 'GET' && sub === 'follow-ups') {
+      return ok((followUpsByApp[id] || []).slice());
+    }
+
+    // POST /api/applications/:id/follow-ups — record a follow-up the user did.
+    if (method === 'POST' && sub === 'follow-ups') {
+      const body = JSON.parse(opts.body || '{}');
+      const now = new Date().toISOString();
+      const occurredAt = body.occurred_at || now;
+      const list = followUpsByApp[id] || [];
+      const fid = Math.max(0, ...list.map(x => x.id)) + 1;
+      const f = {
+        id: fid,
+        application_id: id,
+        note: body.note ?? '',
+        channel: body.channel ?? '',
+        occurred_at: occurredAt,
+        created_at: now
+      };
+      followUpsByApp[id] = [f, ...list];
+      // Reset the quiet clock to the latest follow-up.
+      if (app) {
+        const latest = followUpsByApp[id]
+          .map(x => x.occurred_at)
+          .sort((a, b) => new Date(b) - new Date(a))[0];
+        app.last_follow_up_at = latest;
+      }
+      return ok(f);
+    }
+
+    // DELETE /api/applications/:id/follow-ups/:fid
+    const fuMatch = sub.match(/^follow-ups\/(\d+)$/);
+    if (method === 'DELETE' && fuMatch) {
+      const fid = Number(fuMatch[1]);
+      followUpsByApp[id] = (followUpsByApp[id] || []).filter(x => x.id !== fid);
+      if (app) {
+        const remaining = followUpsByApp[id];
+        app.last_follow_up_at = remaining.length
+          ? remaining.map(x => x.occurred_at).sort((a, b) => new Date(b) - new Date(a))[0]
+          : null;
+      }
       return ok(null);
     }
   }

@@ -39,6 +39,7 @@ export function toDisplayApp(a) {
     location: a.location ?? '',
     domain,
     logoSrc:  domain ? `https://www.google.com/s2/favicons?sz=128&domain=${domain}` : '',
+    last_follow_up_at: a.last_follow_up_at ?? null,
     stale:    isStale(a),
     raw:      a
   };
@@ -121,12 +122,25 @@ export function daysSince(iso) {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
-// "Stale" = no activity for over a week on an early-pipeline app.
+// "Stale" = no activity for over a week on an early-pipeline app. "Activity"
+// is the LATER of applied_at and the most recent logged follow-up — logging a
+// follow-up resets the clock even though the displayed "Applied X ago" stays
+// pinned to applied_at.
 export function isStale(a) {
   if (!a) return false;
   if (!['applied', 'screen'].includes(a.status)) return false;
-  const d = daysSince(a.applied_at ?? a.appliedDate ?? a.raw?.applied_at);
+  const appliedAt = a.applied_at ?? a.appliedDate ?? a.raw?.applied_at ?? null;
+  const followUpAt = a.last_follow_up_at ?? a.raw?.last_follow_up_at ?? null;
+  const basis = mostRecentIso(appliedAt, followUpAt);
+  const d = daysSince(basis);
   return d !== null && d >= 7;
+}
+
+// Returns the later of two ISO date strings (ignoring nulls). Null if both null.
+function mostRecentIso(a, b) {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b;
 }
 
 // "X days ago" style relative date, matching the locked design copy.

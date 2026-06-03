@@ -24,6 +24,7 @@ type application struct {
 	HiringManagerName     *string    `json:"hiring_manager_name"`
 	HiringManagerLinkedIn *string    `json:"hiring_manager_linkedin"`
 	AppliedAt             *time.Time `json:"applied_at"`
+	LastFollowUpAt        *time.Time `json:"last_follow_up_at"`
 	CreatedAt             time.Time  `json:"created_at"`
 	UpdatedAt             time.Time  `json:"updated_at"`
 }
@@ -36,12 +37,14 @@ var validStatus = map[string]bool{
 func (s *Server) handleApplicationsList(w http.ResponseWriter, r *http.Request) {
 	u, _ := userFromCtx(r.Context())
 	rows, err := s.Pool.Query(r.Context(), `
-		SELECT id, company, role, status, source, jd_url, location,
-		       salary_note, cv_variant, notes, hiring_manager_name,
-		       hiring_manager_linkedin, applied_at, created_at, updated_at
-		FROM applications
-		WHERE user_id = $1
-		ORDER BY COALESCE(applied_at, created_at) DESC`, u.ID)
+		SELECT a.id, a.company, a.role, a.status, a.source, a.jd_url, a.location,
+		       a.salary_note, a.cv_variant, a.notes, a.hiring_manager_name,
+		       a.hiring_manager_linkedin, a.applied_at,
+		       (SELECT MAX(f.occurred_at) FROM follow_ups f WHERE f.application_id = a.id) AS last_follow_up_at,
+		       a.created_at, a.updated_at
+		FROM applications a
+		WHERE a.user_id = $1
+		ORDER BY COALESCE(a.applied_at, a.created_at) DESC`, u.ID)
 	if err != nil {
 		s.Logger.Error("list applications", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal")
@@ -55,7 +58,7 @@ func (s *Server) handleApplicationsList(w http.ResponseWriter, r *http.Request) 
 		if err := rows.Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Source,
 			&a.JDURL, &a.Location, &a.SalaryNote, &a.CVVariant, &a.Notes,
 			&a.HiringManagerName, &a.HiringManagerLinkedIn,
-			&a.AppliedAt, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			&a.AppliedAt, &a.LastFollowUpAt, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			s.Logger.Error("scan application", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
@@ -138,14 +141,16 @@ func (s *Server) handleApplicationGet(w http.ResponseWriter, r *http.Request) {
 	}
 	var a application
 	err = s.Pool.QueryRow(r.Context(), `
-		SELECT id, company, role, status, source, jd_url, location,
-		    salary_note, cv_variant, notes, hiring_manager_name,
-		    hiring_manager_linkedin, applied_at, created_at, updated_at
-		FROM applications WHERE id = $1 AND user_id = $2`, id, u.ID,
+		SELECT a.id, a.company, a.role, a.status, a.source, a.jd_url, a.location,
+		    a.salary_note, a.cv_variant, a.notes, a.hiring_manager_name,
+		    a.hiring_manager_linkedin, a.applied_at,
+		    (SELECT MAX(f.occurred_at) FROM follow_ups f WHERE f.application_id = a.id) AS last_follow_up_at,
+		    a.created_at, a.updated_at
+		FROM applications a WHERE a.id = $1 AND a.user_id = $2`, id, u.ID,
 	).Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Source, &a.JDURL,
 		&a.Location, &a.SalaryNote, &a.CVVariant, &a.Notes,
 		&a.HiringManagerName, &a.HiringManagerLinkedIn,
-		&a.AppliedAt, &a.CreatedAt, &a.UpdatedAt)
+		&a.AppliedAt, &a.LastFollowUpAt, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSONError(w, http.StatusNotFound, "not found")
 		return
