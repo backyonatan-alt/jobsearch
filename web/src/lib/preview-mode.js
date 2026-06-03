@@ -36,7 +36,7 @@ export function isPreview() {
 
 const PREVIEW_USER = {
   id: 1,
-  email: 'sam@pursuit.app',
+  email: 'yonatan@pursuit.app',
   is_admin: false,
   onboarded_at: '2026-01-01T00:00:00Z',
   picture_url: 'https://www.google.com/s2/favicons?sz=128&domain=pursuit.app'

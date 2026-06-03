@@ -313,24 +313,25 @@
   <div class="brief">
     <div class="brief-in">
       <div class="brief-date">{dateLine}</div>
-      <h1>{greeting},<br /><b>{firstName}.</b></h1>
-
-      {#if !loading}
-        <div class="brief-stats">
-          <button class="bstat" onclick={openBoard} title="Applications still active — applied through offer">
-            <span class="bstat-n">{activeCount}</span>
-            <span class="bstat-l">In progress</span>
-          </button>
-          <button class="bstat" onclick={openBoard} title="Applied and waiting to hear back">
-            <span class="bstat-n">{awaitingCount}</span>
-            <span class="bstat-l">Awaiting reply</span>
-          </button>
-          <button class="bstat" class:warn={quietCount > 0} onclick={openBoard} title="No reply in over a week">
-            <span class="bstat-n">{quietCount}</span>
-            <span class="bstat-l">Gone quiet</span>
-          </button>
-        </div>
-      {/if}
+      <div class="brief-head">
+        <h1>{greeting},<br /><b>{firstName}.</b></h1>
+        {#if !loading}
+          <div class="brief-stats">
+            <button class="bstat" onclick={openBoard} title="Applications still active — applied through offer">
+              <span class="bstat-n">{activeCount}</span>
+              <span class="bstat-l">In progress</span>
+            </button>
+            <button class="bstat" onclick={openBoard} title="Applied and waiting to hear back">
+              <span class="bstat-n">{awaitingCount}</span>
+              <span class="bstat-l">Awaiting reply</span>
+            </button>
+            <button class="bstat" class:warn={quietCount > 0} onclick={openBoard} title="No reply in over a week">
+              <span class="bstat-n">{quietCount}</span>
+              <span class="bstat-l">Gone quiet</span>
+            </button>
+          </div>
+        {/if}
+      </div>
 
       {#if loading}
         <p class="lede">Loading your day…</p>
@@ -496,10 +497,15 @@
   .lede { font-size: 14.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 30px; max-width: 50ch; }
   .lede .hot { color: var(--warm-text); font-weight: 500; }
 
-  .brief-stats { display: flex; gap: 30px; margin: 6px 0 30px; }
-  .brief-stats .bstat { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; cursor: pointer; border-radius: 8px; transition: opacity .12s; }
+  .brief-head { display: flex; align-items: center; justify-content: space-between; gap: 32px; margin: 0 0 30px; flex-wrap: wrap; }
+  .brief-head h1 { margin: 0; }
+  .brief-stats { display: flex; align-items: center; }
+  .brief-stats .bstat { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; cursor: pointer; padding: 0 22px; transition: opacity .12s; }
+  .brief-stats .bstat:first-child { padding-left: 0; }
+  .brief-stats .bstat:last-child { padding-right: 0; }
+  .brief-stats .bstat + .bstat { border-left: 1px solid var(--rule); }
   .brief-stats .bstat:hover { opacity: 0.65; }
-  .brief-stats .bstat-n { font-size: 34px; font-weight: 500; line-height: 1; letter-spacing: -0.022em; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .brief-stats .bstat-n { font-size: 30px; font-weight: 500; line-height: 1; letter-spacing: -0.022em; color: var(--ink); font-variant-numeric: tabular-nums; }
   .brief-stats .bstat-l { font-size: 12px; color: var(--mute); letter-spacing: -0.003em; }
   .brief-stats .bstat.warn .bstat-n { color: var(--warm-text); }
 
