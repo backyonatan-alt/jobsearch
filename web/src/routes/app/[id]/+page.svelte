@@ -401,6 +401,29 @@
   const dosFactDuration = $derived(dosFmtDuration(dosMeeting));
   const dosFactMedium   = $derived(dosMeeting?.medium ?? '—');
   const dosFactPanel    = $derived(dosMeeting?.panel ?? '—');
+
+  // Company brief (editorial) — from dossier content.company.*
+  const dosCompany = $derived(dosContent?.company ?? null);
+  const companyBlurb = $derived(dosCompany?.blurb ?? '');
+  const companyAbout = $derived(dosCompany?.direction ?? dosCompany?.about ?? '');
+  const companyFacts = $derived.by(() => {
+    const c = dosCompany;
+    if (!c) return [];
+    const out = [];
+    if (c.stage)     out.push({ lbl: 'Stage', val: c.stage });
+    if (c.employees) out.push({ lbl: 'Size', val: c.employees });
+    if (c.founded)   out.push({ lbl: 'Founded', val: c.founded });
+    if (c.hq)        out.push({ lbl: 'HQ', val: c.hq });
+    return out;
+  });
+  const companyProcess = $derived.by(() => {
+    const p = dosCompany?.process;
+    if (!Array.isArray(p)) return [];
+    return p.map(s => s?.kind || s?.detail || '').filter(Boolean);
+  });
+
+  // AI tips box — up to 3 company watch-fors.
+  const tips = $derived((dosCompany?.watch_fors ?? []).slice(0, 3));
   function dosSigDomain(src) {
     if (!src) return '';
     try {
@@ -419,6 +442,37 @@
       .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
     return future[0] || null;
   });
+
+  // Next interview = soonest future interview, else the dossier meeting.
+  const nextWhen = $derived.by(() => {
+    if (upcoming) return evWhen(upcoming);
+    if (dosMeeting?.starts_at) return dosFmtWhen(dosMeeting);
+    return '';
+  });
+  const nextTitle = $derived.by(() => {
+    if (upcoming) return `${upcoming.summary || 'Interview'} · ${evWhen(upcoming)}`;
+    if (dosMeeting?.starts_at) return `${dosMeeting.panel || 'Interview'} · ${dosFmtWhen(dosMeeting)}`;
+    return '';
+  });
+  const hasNext = $derived(!!(upcoming || dosMeeting?.starts_at));
+  const nextRows = $derived.by(() => {
+    const rows = [];
+    if (upcoming) {
+      const who = evWho(upcoming) || app?.raw?.hiring_manager_name;
+      if (who) rows.push(`${who} (Hiring manager)`);
+      if (upcoming.location) rows.push(upcoming.location);
+      const mins = evDuration(upcoming);
+      if (mins) rows.push(`${mins} min`);
+    } else if (dosMeeting?.starts_at) {
+      const who = dosInterviewer?.name || dossier?.interviewer_name || app?.raw?.hiring_manager_name;
+      if (who) rows.push(`${who} (Hiring manager)`);
+      if (dosFactMedium !== '—') rows.push(dosFactMedium);
+      if (dosFactDuration !== '—') rows.push(dosFactDuration);
+    }
+    return rows;
+  });
+  // Label the prep person "Hiring manager" only when nothing's scheduled.
+  const personLabel = $derived(hasNext ? 'Likely interviewer' : 'Hiring manager');
 
   const awaiting = $derived(app && ['applied', 'screen'].includes(app.status));
   const quiet = $derived(app ? isStale(app.raw) : false);
@@ -603,364 +657,349 @@
 
       <!-- TWO-COLUMN GRID -->
       <div class="det-grid">
-        <!-- MAIN -->
-        <div>
-          {#if upcoming}
-            <div class="det-next">
-              <div class="k"><span class="d"></span>Next step · {evRelative(upcoming)}</div>
-              <div class="ttl">{upcoming.summary || 'Interview'} · {evWhen(upcoming)}</div>
-              <div class="mt">
-                {#if evWho(upcoming)}<span><b>{evWho(upcoming)}</b></span>{/if}
-                {#if upcoming.location}<span>{upcoming.location}</span>{/if}
-                {#if evDuration(upcoming)}<span>{evDuration(upcoming)} min</span>{/if}
-              </div>
-            </div>
-          {:else if awaiting}
-            <div class="det-next muted">
-              <div class="k"><span class="d" style={`background:${quiet ? 'var(--warm)' : 'var(--mute-2)'}`}></span>{quiet ? 'Gone quiet' : 'Waiting to hear back'}</div>
-              <div class="ttl">{STATUS_LABEL[app.status]}</div>
-              <div class="mt">
-                {#if quiet && waitDays != null}
-                  <span>No reply in <b class="warn">{waitDays} days</b> — it might be a good time to reach out to them directly.</span>
-                {:else}
-                  <span>Still in the pipeline. We'll surface a nudge if it goes quiet.</span>
-                {/if}
-              </div>
-              <div class="row">
-                <button class="cta dark" onclick={openFollowUp}>Log a follow-up
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-              </div>
-            </div>
-          {:else}
-            <div class="det-next muted">
-              <div class="k"><span class="d" style="background:var(--mute-2)"></span>No upcoming step</div>
-              <div class="ttl">{STATUS_LABEL[app.status]}</div>
-              <div class="mt"><span>Nothing scheduled right now.</span></div>
-              <div class="row">
-                <button class="cta dark" onclick={openAddEvent}>Log an event
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-              </div>
-            </div>
-          {/if}
+        <!-- LEFT — AI prep hero + activity -->
+        <div class="left">
 
-          <div class="sec-lbl">Activity</div>
-          {#if timeline.length > 0}
-            <div class="tl">
-              {#each timeline as e}
-                <div class={`tlrow ${e.tag}`}>
-                  <span class="pt"></span>
-                  <div class="d">{e.date}</div>
-                  <div class="t">
-                    {e.title}
-                    {#if e.followUp}
-                      <button class="tl-del" title="Delete follow-up" aria-label="Delete follow-up" onclick={() => deleteFollowUp(e.followUp)}>
-                        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
-                      </button>
-                    {/if}
-                  </div>
-                  {#if e.note}<div class="n">{e.note}</div>{/if}
-                </div>
-              {/each}
-            </div>
-          {:else}
-            <p style="color:var(--mute); font-size:13px;">No activity yet.</p>
-          {/if}
-
-          <!-- Interviews on file + add flow -->
-          <div class="iv-section">
-            <div class="iv-hd">
-              <div class="sec-lbl" style="margin:0">Interviews <span class="iv-count">{interviews.length}</span></div>
-              <button class="iv-add-btn" onclick={openAddEvent}>
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
-                Add event
-              </button>
-            </div>
-
-            {#if interviewsLoading}
-              <p style="color:var(--mute); font-size:13px;">Loading…</p>
-            {:else if interviews.length > 0}
-              {#each interviews as iv (iv.id)}
-                <div class="iv-card" class:past={isPast(iv)}>
-                  <div class="iv-card-main">
-                    <div class="iv-when">{fmtEventWhen(iv)}</div>
-                    <div class="iv-summary">{iv.summary || 'Untitled event'}</div>
-                    {#if iv.location}<div class="iv-loc">📍 {iv.location}</div>{/if}
-                  </div>
-                  <button class="btn btn-danger" onclick={() => deleteInterview(iv)} title="Delete">Delete</button>
-                </div>
-              {/each}
-            {:else}
-              <p style="color:var(--mute); font-size:13px;">No interviews on file yet.</p>
+          <!-- ── INTERVIEW PREP (inline dossier) ── -->
+          <div id="interview-prep" class="prep-lead">
+            <span class="ai-pill"><span class="spark">✦</span> AI</span>
+            <h2>Interview prep</h2>
+            {#if dosGeneratedAgo && dossier}
+              <p class="prep-gen">
+                <span class="sp" aria-hidden="true">
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                    <path d="M6.5 1.5C6.5 4.5 4.5 6.5 1.5 6.5C4.5 6.5 6.5 8.5 6.5 11.5C6.5 8.5 8.5 6.5 11.5 6.5C8.5 6.5 6.5 4.5 6.5 1.5Z" fill="currentColor"/>
+                  </svg>
+                </span>
+                Generated by Pursuit · {dosGeneratedAgo}
+              </p>
             {/if}
           </div>
 
-          <!-- ── INTERVIEW PREP (inline dossier) ── -->
-          <div id="interview-prep" class="prep-section">
-            <div class="prep-top">
-              <span class="prep-ttl">Interview prep<span class="ai-pill">AI</span></span>
-              {#if dosGeneratedAgo && dossier}
-                <span class="prep-gen">
-                  <span class="sp" aria-hidden="true">
-                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                      <path d="M6.5 1.5C6.5 4.5 4.5 6.5 1.5 6.5C4.5 6.5 6.5 8.5 6.5 11.5C6.5 8.5 8.5 6.5 11.5 6.5C8.5 6.5 6.5 4.5 6.5 1.5Z" fill="currentColor"/>
-                    </svg>
-                  </span>
-                  Generated by Pursuit · {dosGeneratedAgo}
-                </span>
+          {#if dossierLoading}
+            <p style="color:var(--mute); font-size:13px;">Loading…</p>
+
+          {:else if !dossier}
+            <!-- Generate / empty state -->
+            <div class="generate-card">
+              <div class="gen-icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 3C12 7.97 8.97 11 4 11C8.97 11 12 14.03 12 19C12 14.03 15.03 11 20 11C15.03 11 12 7.97 12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              {#if generating}
+                <h3>Researching {app.co}{interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
+                <p class="gen-sub">Claude is searching the web for recent posts, talks, and the company's current direction. This typically takes 30–60 seconds.</p>
+                <div class="big-spinner"></div>
+              {:else}
+                <h3>Generate interview prep</h3>
+                <p class="gen-sub">
+                  We'll build an AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask — pulled from public posts, talks, papers, and company news. Add a name below to make it about a specific interviewer.
+                </p>
+                <div class="gen-row">
+                  <input
+                    class="gen-input"
+                    type="text"
+                    placeholder="Interviewer name (optional) — e.g. Sarah Chen"
+                    bind:value={interviewerInput}
+                    disabled={generating}
+                    onkeydown={(e) => e.key === 'Enter' && generateDossier()}
+                  />
+                  <button class="btn-generate" onclick={generateDossier} disabled={generating}>
+                    Generate interview prep
+                  </button>
+                </div>
+                {#if genError}
+                  <p class="gen-err">{genError}</p>
+                {/if}
               {/if}
             </div>
 
-            {#if dossierLoading}
-              <p style="color:var(--mute); font-size:13px;">Loading…</p>
+          {:else}
+            <!-- Full brief -->
 
-            {:else if !dossier}
-              <!-- Generate / empty state -->
-              <div class="generate-card">
-                <div class="gen-icon" aria-hidden="true">
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 3C12 7.97 8.97 11 4 11C8.97 11 12 14.03 12 19C12 14.03 15.03 11 20 11C15.03 11 12 7.97 12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-                  </svg>
+            <!-- AI tips box (baby blue) -->
+            {#if tips.length}
+              <section class="tips">
+                <div class="tips-hd">
+                  <span class="tips-spark">✦</span>
+                  <h3>Tips for this one</h3>
+                  <span class="tips-ai">AI</span>
                 </div>
-                {#if generating}
-                  <h3>Researching {app.co}{interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
-                  <p class="gen-sub">Claude is searching the web for recent posts, talks, and the company's current direction. This typically takes 30–60 seconds.</p>
-                  <div class="big-spinner"></div>
-                {:else}
-                  <h3>Generate interview prep</h3>
-                  <p class="gen-sub">
-                    We'll build an AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask — pulled from public posts, talks, papers, and company news. Add a name below to make it about a specific interviewer.
-                  </p>
-                  <div class="gen-row">
-                    <input
-                      class="gen-input"
-                      type="text"
-                      placeholder="Interviewer name (optional) — e.g. Sarah Chen"
-                      bind:value={interviewerInput}
-                      disabled={generating}
-                      onkeydown={(e) => e.key === 'Enter' && generateDossier()}
-                    />
-                    <button class="btn-generate" onclick={generateDossier} disabled={generating}>
-                      Generate interview prep
-                    </button>
-                  </div>
-                  {#if genError}
-                    <p class="gen-err">{genError}</p>
+                <ul class="tips-list">
+                  {#each tips as t}
+                    <li><span class="tip-dot"></span><span>{t}</span></li>
+                  {/each}
+                </ul>
+              </section>
+            {/if}
+
+            <!-- Company brief — Editorial -->
+            {#if dosCompany && (companyBlurb || companyAbout || companyFacts.length || companyProcess.length)}
+              <section class="card brief-1">
+                <div class="b1-hd">
+                  {#if app.logoSrc}
+                    <img class="logo" src={app.logoSrc} alt={app.co} />
+                  {:else}
+                    <div class="logo letter">{app.coShort}</div>
                   {/if}
+                  <div class="b1-titles">
+                    <div class="b1-name-row">
+                      <h3>{app.co}</h3>
+                      <span class="ai-pill"><span class="spark">✦</span> AI</span>
+                    </div>
+                    {#if companyBlurb}<div class="b1-headline">{companyBlurb}</div>{/if}
+                  </div>
+                </div>
+                {#if companyAbout}<p class="about">{companyAbout}</p>{/if}
+                {#if companyFacts.length}
+                  <div class="b1-facts">
+                    {#each companyFacts as f}
+                      <div class="b1-cell">
+                        <div class="f-lbl">{f.lbl}</div>
+                        <div class="f-val">{f.val}</div>
+                      </div>
+                    {/each}
+                  </div>
                 {/if}
-              </div>
+                {#if companyProcess.length}
+                  <div class="b1-process">
+                    <div class="proc-lbl">Interview process</div>
+                    <div class="proc-chips">
+                      {#each companyProcess as step, i}
+                        <span class="chip">{step}</span>{#if i < companyProcess.length - 1}<span class="proc-arrow">→</span>{/if}
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </section>
+            {/if}
 
-            {:else}
-              <!-- Full brief -->
-              <div class="prep-grid">
-                <!-- LEFT RAIL -->
-                <div class="prep-rail">
-                  <div class="prep-person">
-                    <span class="iv-av big">{dosIvInitials || '?'}</span>
-                    <div class="nm">{dosIvName}</div>
-                    {#if dosInterviewer?.role}<div class="ro">{dosInterviewer.role}</div>{/if}
+            <!-- Hiring manager / interviewer -->
+            {#if dosInterviewer || dosContent?.snapshot || app.raw.hiring_manager_name}
+              <section class="card">
+                <div class="card-hd"><h3>{personLabel}</h3><span class="ai-tag">AI{dosGeneratedAgo ? ` · ${dosGeneratedAgo}` : ''}</span></div>
+                <div class="person">
+                  <div class="p-av">{dosIvInitials || '?'}</div>
+                  <div class="p-info">
+                    <div class="p-name-row">
+                      <h4>{dosIvName}</h4>
+                      <span class="role-tag">{personLabel}</span>
+                    </div>
+                    {#if dosInterviewer?.role}<div class="p-role">{dosInterviewer.role}</div>{/if}
                     {#if dosInterviewer?.prior?.length}
-                      <div class="prior">
-                        {#each dosInterviewer.prior as p}<span>{p}</span>{/each}
-                      </div>
-                    {/if}
-                    {#if dosInterviewer?.links?.length}
-                      <div class="links">
-                        {#each dosInterviewer.links as l}
-                          <a href={l.href} target="_blank" rel="noopener">{l.label}</a>
-                        {/each}
-                      </div>
+                      <div class="p-prior">{dosInterviewer.prior.join(' · ')}</div>
                     {/if}
                   </div>
-
-                  <div class="prep-facts">
-                    <div class="f"><span class="l">Company</span><span class="v">{app.co}</span></div>
-                    <div class="f"><span class="l">Role</span><span class="v">{app.role}</span></div>
-                    <div class="f"><span class="l">When</span><span class="v">{dosFactWhen}</span></div>
-                    <div class="f"><span class="l">Duration</span><span class="v">{dosFactDuration}</span></div>
-                    <div class="f"><span class="l">Where</span><span class="v">{dosFactMedium}</span></div>
-                    <div class="f"><span class="l">Round</span><span class="v">{dosFactPanel}</span></div>
-                  </div>
-
-                  <button class="prep-refresh" type="button" onclick={generateDossier} disabled={generating}>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
-                    {generating ? 'Refreshing…' : 'Refresh prep'}
-                  </button>
-                </div>
-
-                <!-- MAIN -->
-                <div class="prep-main">
-                  <h2 class="prep-h">Before you meet <b>{dosIvName}.</b></h2>
-                  <p class="prep-dek">An AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask. Generated from public sources.</p>
-
-                  {#if dosContent?.snapshot}
-                    <div class="prep-sec">
-                      <div class="kick"><span>Snapshot</span></div>
-                      <p class="lead">{@html dosContent.snapshot}</p>
-                    </div>
-                  {/if}
-
-                  {#if dosContent?.style}
-                    <div class="prep-sec">
-                      <div class="kick"><span>How {dosIvName.split(' ')[0]} interviews</span></div>
-                      {#if dosContent.style.lead}<p class="lead">{dosContent.style.lead}</p>{/if}
-                      {#if dosContent.style.tells?.length}
-                        <div class="prep-tells">
-                          {#each dosContent.style.tells as t}
-                            <div class="t"><div class="l">{t.lbl}</div><div class="v">{t.val}</div></div>
-                          {/each}
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-
-                  {#if dosContent?.lands?.length || dosContent?.avoid?.length}
-                    <div class="prep-sec">
-                      <div class="kick"><span>Lands &amp; lands flat</span></div>
-                      <div class="prep-two">
-                        {#if dosContent.lands?.length}
-                          <div class="prep-list good">
-                            <div class="h"><span class="dot"></span>What lands</div>
-                            <ul>{#each dosContent.lands as item}<li>{item}</li>{/each}</ul>
-                          </div>
-                        {/if}
-                        {#if dosContent.avoid?.length}
-                          <div class="prep-list bad">
-                            <div class="h"><span class="dot"></span>What to avoid</div>
-                            <ul>{#each dosContent.avoid as item}<li>{item}</li>{/each}</ul>
-                          </div>
-                        {/if}
-                      </div>
-                    </div>
-                  {/if}
-
-                  {#if dosContent?.signals?.length}
-                    <div class="prep-sec">
-                      <div class="kick"><span>Recent signals</span></div>
-                      <div class="prep-signals">
-                        {#each dosContent.signals as s}
-                          <div class="prep-sig">
-                            <div class="when">
-                              {s.date ?? ''}
-                              {#if s.kind}<span class="tg">{s.kind}</span>{/if}
-                            </div>
-                            <div>
-                              <div class="body">{s.body}</div>
-                              {#if s.source}
-                                <div class="src">
-                                  {#if dosSigDomain(s.source)}
-                                    <img class="sig-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.source)}`} alt="" width="12" height="12" />
-                                  {/if}
-                                  {s.source}
-                                </div>
-                              {/if}
-                            </div>
-                          </div>
-                        {/each}
-                      </div>
-                    </div>
-                  {/if}
-
-                  {#if dosContent?.questions?.length}
-                    <div class="prep-sec">
-                      <div class="kick"><span>Questions worth asking</span></div>
-                      {#each dosContent.questions as q}
-                        <div class="prep-q">
-                          <div class="q">"{q.q}"</div>
-                          {#if q.why}
-                            <div class="why">
-                              <span class="sp" aria-hidden="true">
-                                <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
-                                  <path d="M6.5 1.5C6.5 4.5 4.5 6.5 1.5 6.5C4.5 6.5 6.5 8.5 6.5 11.5C6.5 8.5 8.5 6.5 11.5 6.5C8.5 6.5 6.5 4.5 6.5 1.5Z" fill="currentColor"/>
-                                </svg>
-                              </span>
-                              {q.why}
-                            </div>
-                          {/if}
-                        </div>
+                  {#if dosInterviewer?.links?.length}
+                    <div class="p-links">
+                      {#each dosInterviewer.links as l}
+                        <a href={l.href} target="_blank" rel="noopener">{l.label}</a>
                       {/each}
                     </div>
                   {/if}
-
-                  <div class="prep-disclaimer">
-                    Synthesised from public posts, talks, and papers · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'} · always verify before you walk in
-                  </div>
-
-                  {#if genError}
-                    <p class="gen-err" style="margin-top: 16px">{genError}</p>
-                  {/if}
                 </div>
-              </div>
+                {#if dosContent?.snapshot}
+                  <p class="snapshot">{@html dosContent.snapshot}</p>
+                {/if}
+                {#if dosContent?.style?.lead || dosContent?.style?.tells?.length}
+                  <div class="tells-block">
+                    {#if dosContent.style.lead}
+                      <div class="tells-hd">How {dosIvName.split(' ')[0]} interviews</div>
+                      <p class="tells-lead">{dosContent.style.lead}</p>
+                    {/if}
+                    {#if dosContent.style.tells?.length}
+                      <div class="tells">
+                        {#each dosContent.style.tells as t}
+                          <div class="tell"><div class="t-lbl">{t.lbl}</div><div class="t-val">{t.val}</div></div>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+              </section>
             {/if}
-          </div>
+
+            <!-- Lands / avoid -->
+            {#if dosContent?.lands?.length || dosContent?.avoid?.length}
+              <section class="la-grid">
+                {#if dosContent.lands?.length}
+                  <div class="la-col lands">
+                    <h3><span class="glyph">✓</span> What lands</h3>
+                    <ul>{#each dosContent.lands as l}<li><span class="g">✓</span><span>{l}</span></li>{/each}</ul>
+                  </div>
+                {/if}
+                {#if dosContent.avoid?.length}
+                  <div class="la-col avoid">
+                    <h3><span class="glyph">✕</span> What to avoid</h3>
+                    <ul>{#each dosContent.avoid as a}<li><span class="g">✕</span><span>{a}</span></li>{/each}</ul>
+                  </div>
+                {/if}
+              </section>
+            {/if}
+
+            <!-- Recent signals -->
+            {#if dosContent?.signals?.length}
+              <section class="card">
+                <div class="card-hd"><h3>Recent signals</h3><span class="ai-tag">AI · web search</span></div>
+                <ul class="signals">
+                  {#each dosContent.signals as s}
+                    <li>
+                      <span class="s-date">{s.date ?? ''}</span>
+                      <span class="s-body">
+                        {#if s.kind}<span class="s-kind">{s.kind}</span>{/if}{s.body}
+                        {#if s.source}<span class="s-source">
+                          {#if dosSigDomain(s.source)}
+                            <img class="sig-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.source)}`} alt="" width="12" height="12" />
+                          {/if}
+                          {s.source}
+                        </span>{/if}
+                      </span>
+                    </li>
+                  {/each}
+                </ul>
+              </section>
+            {/if}
+
+            <!-- Questions worth asking (A's card design) -->
+            {#if dosContent?.questions?.length}
+              <section class="card">
+                <div class="card-hd"><h3>Questions worth asking</h3></div>
+                <div class="questions">
+                  {#each dosContent.questions as item}
+                    <div class="prep-q">
+                      <div class="q">"{item.q}"</div>
+                      {#if item.why}
+                        <div class="why">
+                          <span class="why-spark" aria-hidden="true">
+                            <svg width="11" height="11" viewBox="0 0 13 13" fill="none">
+                              <path d="M6.5 1.5C6.5 4.5 4.5 6.5 1.5 6.5C4.5 6.5 6.5 8.5 6.5 11.5C6.5 8.5 8.5 6.5 11.5 6.5C8.5 6.5 6.5 4.5 6.5 1.5Z" fill="currentColor"/>
+                            </svg>
+                          </span>
+                          {item.why}
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </section>
+            {/if}
+
+            <div class="prep-disclaimer">
+              Synthesised from public posts, talks, and papers · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'} · always verify before you walk in
+              <button class="prep-refresh" type="button" onclick={generateDossier} disabled={generating}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
+                {generating ? 'Refreshing…' : 'Refresh prep'}
+              </button>
+            </div>
+
+            {#if genError}
+              <p class="gen-err" style="margin-top: 16px">{genError}</p>
+            {/if}
+          {/if}
+
+          <!-- Activity (full width, redesigned) -->
+          <section class="card activity">
+            <div class="act-hd">
+              <h3>Activity</h3>
+              <div class="act-actions">
+                <button class="ghost-btn" onclick={openFollowUp}>+ Log a follow-up</button>
+                <button class="ghost-btn" onclick={openEdit}>+ Add a note</button>
+                <button class="ghost-btn" onclick={openAddEvent}>+ Log an event</button>
+              </div>
+            </div>
+            {#if timeline.length > 0}
+              <ul class="timeline">
+                {#each timeline as e}
+                  <li class="tl-row {e.tag}">
+                    <span class="tl-rail"><span class="tl-dot"></span></span>
+                    <span class="tl-date">{e.date}</span>
+                    <span class="tl-body">
+                      <span class="tl-title">
+                        {e.title}
+                        {#if e.followUp}
+                          <button class="tl-del" title="Delete follow-up" aria-label="Delete follow-up" onclick={() => deleteFollowUp(e.followUp)}>
+                            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
+                          </button>
+                        {/if}
+                      </span>
+                      {#if e.note}<span class="tl-note">{e.note}</span>{/if}
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <p style="color:var(--mute); font-size:13px; margin:0;">No activity yet.</p>
+            {/if}
+          </section>
         </div>
 
-        <!-- SIDE -->
-        <div>
-          <!-- Contact -->
-          <div class="side-card">
-            <div class="ttl">Contact</div>
-            {#if app.raw.hiring_manager_name}
-              <div class="person">
-                <span class="iv-av sm">{hiringManagerInitials || '—'}</span>
-                <div>
-                  <div class="nm">{app.raw.hiring_manager_name}</div>
-                  <div class="ro">Hiring manager</div>
+        <!-- RIGHT — meta rail -->
+        <aside class="rail">
+          <!-- Next interview -->
+          {#if hasNext}
+            <div class="next-card">
+              <div class="nc-kicker"><span class="nc-dot"></span>NEXT INTERVIEW</div>
+              <div class="nc-title">{nextTitle}</div>
+              {#if nextRows.length}
+                <div class="nc-rows">
+                  {#each nextRows as r}
+                    <div class="nc-row">{r}</div>
+                  {/each}
                 </div>
-                {#if app.raw.hiring_manager_linkedin}
-                  <a class="p-li" href={app.raw.hiring_manager_linkedin} target="_blank" rel="noopener" title="LinkedIn">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
-                  </a>
-                {/if}
+              {/if}
+            </div>
+          {:else}
+            <div class="rail-card next-empty">
+              <div class="rc-hd">Next interview</div>
+              <p class="next-empty-line">No interview scheduled yet — your prep's ready for when one is.</p>
+            </div>
+          {/if}
+
+          <!-- Details -->
+          <div class="rail-card">
+            <div class="rc-hd">Details</div>
+            <dl class="kv">
+              <dt>Status</dt><dd>{STATUS_LABEL[app.status]}</dd>
+              <dt>Source</dt><dd>{app.source}</dd>
+              {#if app.raw.location}<dt>Location</dt><dd>{app.raw.location}</dd>{/if}
+              {#if app.raw.salary_note}<dt>Salary</dt><dd>{app.raw.salary_note}</dd>{/if}
+              <dt>Last activity</dt><dd>{fmtRelativeDate(app.raw.updated_at ?? app.raw.applied_at)}</dd>
+            </dl>
+            {#if app.raw.jd_url}
+              <a class="jd-link" href={app.raw.jd_url} target="_blank" rel="noopener">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 11l6-6M6 5h5v5"/></svg>
+                Open job post
+              </a>
+            {/if}
+          </div>
+
+          <!-- Contact -->
+          <div class="rail-card">
+            <div class="rc-hd">Contact</div>
+            {#if app.raw.hiring_manager_name}
+              <div class="contact">
+                <div class="c-av">{hiringManagerInitials || '—'}</div>
+                <div class="c-info">
+                  <div class="c-name">{app.raw.hiring_manager_name}</div>
+                  <div class="c-role">Hiring manager</div>
+                </div>
               </div>
+              {#if app.raw.hiring_manager_linkedin}
+                <a class="c-li" href={app.raw.hiring_manager_linkedin} target="_blank" rel="noopener">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
+                  LinkedIn
+                </a>
+              {/if}
             {:else}
-              <div class="person"><div><div class="nm" style="color:var(--mute)">No contact yet</div></div></div>
+              <p class="contact-empty">No hiring manager yet.</p>
               <button class="add-hm" onclick={openEdit}>
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
                 Add hiring manager
               </button>
             {/if}
           </div>
-
-          <!-- Details -->
-          <div class="side-card">
-            <div class="ttl">Details</div>
-            <div class="kv"><span class="l">Status</span><span class="v">{STATUS_LABEL[app.status]}</span></div>
-            <div class="kv"><span class="l">Last activity</span><span class="v">{fmtRelativeDate(app.raw.updated_at ?? app.raw.applied_at)}</span></div>
-            <div class="kv"><span class="l">Source</span><span class="v">{app.source}</span></div>
-            <div class="kv"><span class="l">Résumé</span><span class="v">{app.cv}</span></div>
-            {#if app.raw.location}<div class="kv"><span class="l">Location</span><span class="v">{app.raw.location}</span></div>{/if}
-            {#if app.raw.salary_note}<div class="kv"><span class="l">Salary</span><span class="v">{app.raw.salary_note}</span></div>{/if}
-          </div>
-
-          <!-- Actions -->
-          <div class="side-card">
-            <div class="ttl">Actions</div>
-            <div class="side-act">
-              {#if awaiting}
-                <button class="warn" onclick={openFollowUp}>
-                  <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12v8H2zM2 4l6 5 6-5"/></svg></span>
-                  Log a follow-up
-                </button>
-              {/if}
-              <button onclick={openEdit}>
-                <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2l3 3-8 8H3v-3z"/></svg></span>
-                Add a note
-              </button>
-              <button onclick={openAddEvent}>
-                <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg></span>
-                Log an event
-              </button>
-              {#if app.raw.jd_url}
-                <a class="act-link" href={app.raw.jd_url} target="_blank" rel="noopener">
-                  <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 11l6-6M6 5h5v5"/></svg></span>
-                  Open job post
-                </a>
-              {/if}
-            </div>
-          </div>
-        </div>
+        </aside>
       </div>
     {/if}
   </div>
@@ -1120,7 +1159,7 @@
 
 <style>
   .body { padding: 28px; }
-  .det { max-width: 980px; margin: 0 auto; }
+  .det { max-width: 1080px; margin: 0 auto; }
 
   /* HEADER */
   .det-hd { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 30px; }
@@ -1147,42 +1186,170 @@
   .pill.rejected .pdot, .pill.withdrawn .pdot { background: var(--danger); }
 
   /* GRID */
-  .det-grid { display: grid; grid-template-columns: 1fr 320px; gap: 36px; align-items: start; }
+  .det-grid { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
+  .left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
-  /* NEXT-STEP */
-  .det-next { background: var(--ink); color: #fff; border-radius: 16px; padding: 24px; margin-bottom: 26px; position: relative; overflow: hidden; }
-  .det-next.muted { background: var(--surface-2); color: var(--ink); }
-  .det-next .k { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.6); margin-bottom: 14px; display: inline-flex; align-items: center; gap: 8px; }
-  .det-next.muted .k { color: var(--mute); }
-  .det-next .k .d { width: 6px; height: 6px; border-radius: 50%; background: var(--warm); }
-  .det-next .ttl { font-size: 20px; font-weight: 500; letter-spacing: -0.02em; margin-bottom: 6px; }
-  .det-next.muted .ttl { color: var(--ink); }
-  .det-next .mt { font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 20px; display: flex; gap: 14px; flex-wrap: wrap; }
-  .det-next.muted .mt { color: var(--mute); }
-  .det-next .mt b { color: #fff; font-weight: 500; }
-  .det-next.muted .mt b.warn { color: var(--warm-text); }
-  .det-next .row { display: flex; gap: 10px; }
-  .det-next .cta { background: #fff; color: var(--ink); border: none; border-radius: 9px; padding: 11px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
-  .det-next .cta.dark { background: var(--ink); color: #fff; }
+  /* PREP LEAD */
+  .prep-lead { margin-bottom: 2px; }
+  .prep-lead .ai-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border-radius: 999px; padding: 4px 11px; letter-spacing: 0.01em; }
+  .prep-lead .ai-pill .spark { font-size: 12px; }
+  .prep-lead h2 { font-size: 26px; font-weight: 600; letter-spacing: -0.028em; margin: 12px 0 6px; }
+  .prep-gen { font-family: inherit; font-size: 13px; color: var(--mute); display: inline-flex; align-items: center; gap: 7px; margin: 0; }
+  .prep-gen .sp { color: var(--accent); display: inline-flex; align-items: center; }
 
-  .sec-lbl { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 16px; }
+  /* CARD */
+  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 20px 22px; box-shadow: var(--sh-1); }
+  .card-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .card-hd h3 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
+  .ai-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; background: var(--accent-tint); color: var(--accent-text); padding: 3px 9px; border-radius: 999px; font-weight: 500; margin-left: auto; }
 
-  /* TIMELINE */
-  .tl { position: relative; padding-left: 26px; }
-  .tl::before { content: ""; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 1.5px; background: var(--rule); }
-  .tlrow { position: relative; padding-bottom: 22px; }
-  .tlrow:last-child { padding-bottom: 0; }
-  .tlrow .pt { position: absolute; left: -26px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: var(--card); border: 2px solid var(--rule-strong); }
-  .tlrow.accent .pt { border-color: var(--warm); background: var(--warm); box-shadow: 0 0 0 4px var(--warm-tint); }
-  .tlrow.positive .pt { border-color: var(--positive); background: var(--positive); }
-  .tlrow.offer .pt { border-color: var(--positive); background: var(--positive); box-shadow: 0 0 0 4px var(--positive-tint); }
-  .tlrow.danger .pt { border-color: var(--danger); background: var(--danger); }
-  .tlrow .d { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--mute); margin-bottom: 3px; }
-  .tlrow .t { font-size: 13.5px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
-  .tlrow .n { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
+  /* AI TIPS BOX (baby blue) */
+  .tips { background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 13px; padding: 18px 20px; }
+  .tips-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .tips-spark { font-size: 14px; color: var(--accent-text); }
+  .tips-hd h3 { font-size: 15px; font-weight: 600; margin: 0; color: var(--accent-text); letter-spacing: -0.01em; }
+  .tips-ai { margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--accent-text); background: var(--card); border: 1px solid var(--accent-tint-2); padding: 2px 8px; border-radius: 999px; }
+  .tips-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .tips-list li { display: grid; grid-template-columns: 14px 1fr; gap: 9px; align-items: start; font-size: 13.5px; line-height: 1.5; color: var(--accent-text); }
+  .tip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); margin-top: 8px; }
+
+  /* COMPANY BRIEF — Editorial */
+  .b1-hd { display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: start; margin-bottom: 16px; }
+  .b1-hd .logo { width: 44px; height: 44px; border-radius: 11px; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: 19px; font-weight: 600; object-fit: contain; }
+  .b1-hd .logo.letter { background: var(--surface-2); color: var(--ink); }
+  .b1-name-row { display: flex; align-items: center; gap: 10px; }
+  .b1-name-row h3 { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+  .b1-headline { font-size: 13.5px; color: var(--mute); margin-top: 4px; line-height: 1.4; }
+  .ai-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 999px; padding: 3px 9px; letter-spacing: 0.01em; white-space: nowrap; }
+  .ai-pill .spark { font-size: 11px; }
+  .about { font-size: 14.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 18px; }
+  .b1-facts { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; margin-bottom: 18px; }
+  .b1-cell { padding: 11px 13px; }
+  .b1-cell + .b1-cell { border-left: 1px solid var(--rule); }
+  .f-lbl { font-size: 11px; color: var(--mute); font-weight: 500; }
+  .f-val { font-size: 13px; color: var(--ink); font-weight: 600; margin-top: 3px; line-height: 1.3; }
+  .proc-lbl { font-size: 11.5px; font-weight: 600; color: var(--mute); letter-spacing: 0.01em; margin-bottom: 10px; }
+  .b1-process { margin-bottom: 0; }
+  .b1-process .proc-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+  .chip { font-size: 12px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--rule); border-radius: 7px; padding: 4px 10px; }
+  .proc-arrow { color: var(--mute-2); font-size: 12px; }
+
+  /* PERSON (hiring manager / interviewer) */
+  .person { display: grid; grid-template-columns: 52px 1fr auto; gap: 14px; align-items: center; margin-bottom: 14px; }
+  .p-av { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 18px; background: var(--accent-tint); color: var(--accent-text); }
+  .p-info { min-width: 0; }
+  .p-name-row { display: flex; align-items: center; gap: 10px; }
+  .p-info h4 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; }
+  .role-tag { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--warm-text); background: var(--warm-tint); padding: 2px 8px; border-radius: 5px; white-space: nowrap; }
+  .p-role { font-size: 13px; color: var(--mute); margin-top: 3px; }
+  .p-prior { font-size: 12px; color: var(--mute-2); margin-top: 2px; }
+  .p-links { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .p-links a { font-size: 11.5px; color: var(--accent-text); text-decoration: none; border: 1px solid var(--rule); border-radius: 999px; padding: 4px 10px; }
+  .p-links a:hover { background: var(--accent-tint); border-color: var(--accent-tint-2); }
+  .snapshot { font-size: 15px; line-height: 1.55; letter-spacing: -0.008em; color: var(--ink); margin: 0 0 18px; padding-left: 14px; border-left: 2px solid var(--accent); }
+  .snapshot :global(em) { font-style: normal; font-weight: 600; }
+  .tells-block { border-top: 1px solid var(--rule); padding-top: 16px; }
+  .tells-hd { font-size: 12.5px; font-weight: 600; color: var(--mute); margin-bottom: 10px; }
+  .tells-lead { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); margin: 0 0 14px; }
+  .tells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .t-lbl { font-size: 11.5px; font-weight: 500; color: var(--mute); margin-bottom: 4px; }
+  .t-val { font-size: 13.5px; color: var(--ink); line-height: 1.4; }
+
+  /* LANDS / AVOID */
+  .la-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--rule); border-radius: 14px; background: var(--card); overflow: hidden; box-shadow: var(--sh-1); }
+  .la-col { padding: 20px 22px; }
+  .la-col + .la-col { border-left: 1px solid var(--rule); }
+  .la-col h3 { font-size: 13px; font-weight: 600; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+  .la-col.lands h3 { color: var(--positive-text); }
+  .la-col.avoid h3 { color: var(--danger-text); }
+  .la-col h3 .glyph { width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+  .la-col.lands h3 .glyph { background: var(--positive-tint); color: var(--positive-text); }
+  .la-col.avoid h3 .glyph { background: var(--danger-tint); color: var(--danger-text); }
+  .la-col ul { list-style: none; margin: 0; padding: 0; }
+  .la-col li { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); padding: 9px 0; border-top: 1px solid var(--rule); display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: start; }
+  .la-col li:first-child { border-top: none; padding-top: 0; }
+  .la-col li .g { font-size: 11px; margin-top: 2px; }
+  .la-col.lands li .g { color: var(--positive-text); }
+  .la-col.avoid li .g { color: var(--danger-text); }
+
+  /* SIGNALS */
+  .signals { list-style: none; padding: 0; margin: 0; }
+  .signals li { display: grid; grid-template-columns: 72px 1fr; gap: 14px; padding: 12px 0; border-top: 1px solid var(--rule); font-size: 13.5px; }
+  .signals li:first-child { border-top: none; padding-top: 0; }
+  .s-date { font-size: 12px; font-weight: 500; color: var(--mute); padding-top: 2px; }
+  .s-body { color: var(--ink-2); line-height: 1.5; }
+  .s-kind { display: inline-block; font-size: 11px; font-weight: 500; color: var(--mute); margin-right: 8px; padding: 1px 7px; background: var(--surface-2); border-radius: 4px; vertical-align: 1px; }
+  .s-source { font-size: 12px; color: var(--accent-text); margin-left: 6px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .sig-favicon { border-radius: 2px; opacity: 0.7; }
+
+  /* QUESTIONS — A card design */
+  .questions { display: flex; flex-direction: column; gap: 12px; }
+  .prep-q { background: var(--surface); border: 1px solid var(--rule); border-radius: 11px; padding: 13px 15px; }
+  .prep-q .q { font-size: 14px; font-weight: 500; color: var(--ink); line-height: 1.45; }
+  .prep-q .why { font-size: 12.5px; color: var(--mute); margin-top: 5px; display: flex; align-items: baseline; gap: 6px; }
+  .why-spark { color: var(--accent-text); font-size: 11px; display: inline-flex; flex-shrink: 0; }
+
+  /* Disclaimer + refresh */
+  .prep-disclaimer { font-size: 11.5px; color: var(--mute); padding-top: 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .prep-refresh { display: inline-flex; align-items: center; gap: 7px; background: none; color: var(--mute); border: 1px solid var(--rule); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; transition: color 120ms, border-color 120ms, background 120ms; }
+  .prep-refresh:hover:not(:disabled) { color: var(--ink); border-color: var(--rule-strong); background: var(--surface-2); }
+  .prep-refresh:disabled { opacity: 0.5; cursor: default; }
+
+  /* ACTIVITY (full width) */
+  .activity { padding: 20px 22px; }
+  .act-hd { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+  .act-hd h3 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
+  .act-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ghost-btn { font-size: 12.5px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 11px; cursor: pointer; }
+  .ghost-btn:hover { border-color: var(--rule-strong); color: var(--ink); }
+
+  /* TIMELINE — connector in a per-row rail (parts design) */
+  .timeline { list-style: none; margin: 0; padding: 0; }
+  .tl-row { display: grid; grid-template-columns: 16px 50px 1fr; gap: 14px; align-items: start; padding: 14px 0; }
+  .tl-rail { position: relative; align-self: stretch; }
+  .tl-rail::before { content: ""; position: absolute; left: 50%; transform: translateX(-50%); top: 0; bottom: 0; width: 1px; background: var(--rule); }
+  .tl-row:first-child .tl-rail::before { top: 9px; }
+  .tl-row:last-child .tl-rail::before { bottom: auto; height: 9px; }
+  .tl-dot { position: absolute; left: 50%; top: 9px; transform: translate(-50%, -50%); width: 8px; height: 8px; border-radius: 50%; background: var(--mute-2); z-index: 1; }
+  .tl-row.positive .tl-dot { background: var(--positive); box-shadow: 0 0 0 3px var(--positive-tint); }
+  .tl-row.accent .tl-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+  .tl-row.offer .tl-dot { background: var(--positive); box-shadow: 0 0 0 3px var(--positive-tint); }
+  .tl-row.danger .tl-dot { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-tint); }
+  .tl-date { font-size: 12.5px; color: var(--mute); line-height: 18px; font-variant-numeric: tabular-nums; }
+  .tl-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tl-title { font-size: 13.5px; font-weight: 600; color: var(--ink); line-height: 18px; display: flex; align-items: center; gap: 6px; }
+  .tl-note { font-size: 12.5px; color: var(--mute); line-height: 1.45; }
   .tl-del { width: 20px; height: 20px; flex-shrink: 0; border: 0; background: transparent; color: var(--mute-2); border-radius: 5px; display: inline-grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity 100ms ease, background 100ms ease, color 100ms ease; }
-  .tlrow:hover .tl-del { opacity: 1; }
+  .tl-row:hover .tl-del { opacity: 1; }
   .tl-del:hover { background: var(--danger-tint); color: var(--danger-text); }
+
+  /* RIGHT RAIL */
+  .rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 20px; }
+  .next-card { background: var(--ink); border-radius: 14px; padding: 18px; box-shadow: var(--sh-1); }
+  .nc-kicker { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: rgba(255,255,255,0.7); }
+  .nc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warm); box-shadow: 0 0 0 3px rgba(255,255,255,0.12); }
+  .nc-title { font-size: 16px; font-weight: 600; color: #fff; line-height: 1.35; letter-spacing: -0.01em; margin: 12px 0 14px; }
+  .nc-rows { display: flex; flex-direction: column; gap: 7px; border-top: 1px solid rgba(255,255,255,0.14); padding-top: 12px; }
+  .nc-row { font-size: 13px; color: rgba(255,255,255,0.85); }
+  .next-empty .next-empty-line { font-size: 12.5px; color: var(--mute); line-height: 1.5; margin: 0; }
+
+  .rail-card { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; box-shadow: var(--sh-1); }
+  .rc-hd { font-size: 12.5px; font-weight: 600; color: var(--mute); margin-bottom: 12px; }
+  .kv { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 9px 12px; }
+  .kv dt { font-size: 12.5px; color: var(--mute); }
+  .kv dd { margin: 0; font-size: 12.5px; color: var(--ink); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+  .jd-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; font-size: 12.5px; font-weight: 500; color: var(--accent-text); text-decoration: none; }
+  .jd-link:hover { text-decoration: underline; }
+
+  .contact { display: grid; grid-template-columns: 36px 1fr; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .c-av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 13px; background: var(--accent-tint); color: var(--accent-text); }
+  .c-name { font-size: 13.5px; font-weight: 600; }
+  .c-role { font-size: 12px; color: var(--mute); margin-top: 1px; }
+  .c-li { display: inline-flex; align-items: center; gap: 6px; width: 100%; justify-content: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 500; color: var(--ink); text-decoration: none; box-sizing: border-box; }
+  .c-li svg { color: #0a66c2; }
+  .contact-empty { font-size: 12.5px; color: var(--mute); margin: 0 0 10px; }
+  .add-hm { display: inline-flex; align-items: center; gap: 6px; width: 100%; justify-content: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; font-family: inherit; }
+  .add-hm:hover { border-color: var(--rule-strong); color: var(--ink); }
 
   /* FOLLOW-UP MODAL */
   .fu-card { max-width: 460px; }
@@ -1192,107 +1359,6 @@
   .fu-ta, .fu-input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 11px; font-size: 13.5px; outline: none; transition: border-color 100ms ease; box-sizing: border-box; width: 100%; }
   .fu-ta { resize: vertical; line-height: 1.5; }
   .fu-ta:focus, .fu-input:focus { border-color: var(--accent); }
-
-  /* SIDE CARDS */
-  .side-card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 18px; box-shadow: var(--sh-1); margin-bottom: 16px; }
-  .side-card .ttl { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 14px; display: inline-flex; align-items: center; gap: 8px; }
-  .side-card .person { display: flex; align-items: center; gap: 12px; }
-  .side-card .person .nm { font-size: 13.5px; font-weight: 500; }
-  .side-card .person .ro { font-size: 12px; color: var(--mute); margin-top: 1px; }
-  .iv-av { background: linear-gradient(155deg, oklch(0.6 0.16 30), oklch(0.46 0.17 32)); color: #fff; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
-  .iv-av.sm { width: 38px; height: 38px; font-size: 13px; }
-  .p-li { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; color: #0a66c2; text-decoration: none; flex-shrink: 0; }
-  .side-card .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 9px 0; border-top: 1px solid var(--rule); }
-  .side-card .kv:first-of-type { border-top: none; padding-top: 0; }
-  .side-card .kv .l { color: var(--mute); }
-  .side-card .kv .v { font-weight: 500; }
-  .side-act { display: flex; flex-direction: column; gap: 8px; }
-  .side-act button, .side-act .act-link { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2); background: var(--card); border: 1px solid var(--rule); border-radius: 9px; padding: 11px 13px; cursor: pointer; text-decoration: none; box-sizing: border-box; }
-  .side-act button:hover, .side-act .act-link:hover { background: var(--surface-2); border-color: var(--rule-strong); }
-  .side-act .ic { color: var(--mute); display: inline-flex; }
-  .side-act button.warn { color: var(--warm-text); }
-  .side-act button.warn .ic { color: var(--warm-text); }
-
-  .ai-pill { font-size: 10px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border-radius: 4px; padding: 1px 5px; letter-spacing: .04em; }
-
-  /* ── INTERVIEW PREP (inline dossier) ── */
-  .prep-section { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--rule); }
-  .prep-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; flex-wrap: wrap; }
-  .prep-ttl { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); display: inline-flex; align-items: center; gap: 8px; }
-  .prep-ttl .ai-pill { letter-spacing: 0.04em; }
-  .prep-gen { font-family: inherit; font-size: 12px; color: var(--mute); display: inline-flex; align-items: center; gap: 7px; text-transform: none; letter-spacing: 0; }
-  .prep-gen .sp { color: var(--accent); display: inline-flex; align-items: center; }
-
-  /* Two-column grid */
-  .prep-grid { display: grid; grid-template-columns: 300px 1fr; gap: 32px; align-items: start; }
-
-  /* Left rail */
-  .prep-rail { position: sticky; top: 18px; }
-  .prep-person { background: var(--card); border: 1px solid var(--rule); border-radius: 16px; padding: 24px; box-shadow: var(--sh-pop); text-align: center; margin-bottom: 16px; }
-  .iv-av.big { width: 72px; height: 72px; border-radius: 20px; font-size: 24px; margin: 0 auto 16px; box-shadow: 0 10px 24px -10px oklch(0.5 0.16 30 / 0.6); }
-  .prep-person .nm { font-size: 20px; font-weight: 500; letter-spacing: -0.02em; }
-  .prep-person .ro { font-size: 13px; color: var(--mute); margin-top: 4px; }
-  .prep-person .prior { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
-  .prep-person .prior span { font-size: 12px; color: var(--mute); }
-  .prep-person .links { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 18px; }
-  .prep-person .links a { font-size: 11.5px; color: var(--accent-text); text-decoration: none; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 11px; cursor: pointer; transition: background 120ms, border-color 120ms; }
-  .prep-person .links a:hover { background: var(--accent-tint); border-color: var(--accent-tint-2); }
-
-  .prep-facts { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 6px 16px; box-shadow: var(--sh-1); }
-  .prep-facts .f { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--rule); font-size: 13px; }
-  .prep-facts .f:first-child { border-top: none; }
-  .prep-facts .f .l { color: var(--mute); }
-  .prep-facts .f .v { font-weight: 500; max-width: 160px; text-align: right; }
-
-  .prep-refresh { display: flex; width: 100%; align-items: center; justify-content: center; gap: 7px; background: none; color: var(--mute); border: 1px solid var(--rule); border-radius: 11px; padding: 10px; font-size: 12.5px; font-weight: 500; cursor: pointer; margin-top: 8px; font-family: inherit; transition: color 120ms, border-color 120ms, background 120ms; }
-  .prep-refresh:hover:not(:disabled) { color: var(--ink); border-color: var(--rule-strong); background: var(--surface-2); }
-  .prep-refresh:disabled { opacity: 0.5; cursor: default; }
-
-  /* Main column */
-  .prep-h { font-size: 26px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.1; margin: 0 0 6px; }
-  .prep-h b { font-weight: 500; }
-  .prep-dek { font-size: 14px; color: var(--mute); margin: 0 0 28px; }
-
-  /* Sections */
-  .prep-sec { margin-bottom: 32px; }
-  .prep-sec > .kick { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mute-2); }
-  .prep-sec > .kick::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
-  .prep-sec .lead { font-size: 15px; line-height: 1.65; color: var(--ink-2); margin: 0; max-width: 64ch; }
-
-  /* Style tells */
-  .prep-tells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
-  .prep-tells .t { background: var(--surface-2); border-radius: 12px; padding: 15px 16px; }
-  .prep-tells .t .l { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 7px; }
-  .prep-tells .t .v { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
-
-  /* Lands & avoid */
-  .prep-two { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
-  .prep-list .h { font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-  .prep-list .h .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .prep-list.good .h .dot { background: var(--positive); }
-  .prep-list.bad  .h .dot { background: var(--danger); }
-  .prep-list ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 11px; }
-  .prep-list li { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); padding-left: 20px; position: relative; }
-  .prep-list.good li::before { content: ""; position: absolute; left: 2px; top: 6px; width: 6px; height: 10px; border: solid var(--positive-text); border-width: 0 1.8px 1.8px 0; transform: rotate(42deg); }
-  .prep-list.bad li::before { content: "×"; position: absolute; left: 2px; top: -1px; color: var(--danger-text); font-size: 15px; }
-
-  /* Recent signals */
-  .prep-signals { display: flex; flex-direction: column; gap: 12px; }
-  .prep-sig { display: grid; grid-template-columns: 92px 1fr; gap: 16px; padding: 16px; border: 1px solid var(--rule); border-radius: 13px; background: var(--card); box-shadow: var(--sh-1); }
-  .prep-sig .when { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; color: var(--mute); }
-  .prep-sig .when .tg { display: inline-block; margin-top: 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-text); background: var(--accent-tint); border-radius: 6px; padding: 3px 8px; }
-  .prep-sig .body { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
-  .prep-sig .src { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--mute-2); margin-top: 8px; display: flex; align-items: center; gap: 5px; }
-  .sig-favicon { border-radius: 2px; opacity: 0.7; }
-
-  /* Questions */
-  .prep-q { border: 1px solid var(--rule); border-radius: 13px; background: var(--card); padding: 18px 20px; margin-bottom: 12px; box-shadow: var(--sh-1); }
-  .prep-q .q { font-size: 14.5px; font-weight: 500; line-height: 1.45; margin-bottom: 8px; letter-spacing: -0.01em; color: var(--ink); }
-  .prep-q .why { font-size: 12.5px; color: var(--mute); line-height: 1.5; display: flex; gap: 8px; }
-  .prep-q .why .sp { color: var(--accent); flex-shrink: 0; margin-top: 1px; display: inline-flex; }
-
-  /* Disclaimer */
-  .prep-disclaimer { margin-top: 18px; font-size: 11.5px; color: var(--mute); padding-top: 14px; border-top: 1px dashed var(--rule); }
 
   /* Generate / empty state */
   .generate-card { background: var(--card); border: 1px solid var(--rule); border-radius: 18px; padding: 32px 36px; max-width: 560px; box-shadow: var(--sh-2); text-align: center; }
@@ -1309,19 +1375,6 @@
   .gen-err { color: var(--danger-text); font-size: 13px; margin: 14px 0 0; text-align: left; }
   .big-spinner { width: 36px; height: 36px; border: 2.5px solid var(--rule-strong); border-top-color: var(--accent); border-radius: 50%; animation: prep-spin 0.75s linear infinite; margin: 24px auto 0; }
   @keyframes prep-spin { to { transform: rotate(360deg); } }
-
-  /* INTERVIEWS SECTION */
-  .iv-section { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--rule); }
-  .iv-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-  .iv-count { font-size: 11px; background: var(--accent-tint); color: var(--accent-text); padding: 1px 7px; border-radius: 99px; margin-left: 4px; font-weight: 500; }
-  .iv-add-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 11px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
-  .iv-add-btn:hover { background: var(--surface-2); border-color: var(--rule-strong); }
-  .iv-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--rule); border-radius: 10px; background: var(--card); margin-bottom: 8px; box-shadow: var(--sh-1); }
-  .iv-card.past { opacity: 0.6; }
-  .iv-card-main { flex: 1; min-width: 0; }
-  .iv-when { font-size: 12px; color: var(--accent-text); font-weight: 500; margin-bottom: 2px; }
-  .iv-summary { font-size: 14px; color: var(--ink); margin-bottom: 2px; }
-  .iv-loc { font-size: 12px; color: var(--mute); margin-top: 2px; }
 
   /* ADD-EVENT MODAL */
   .ev-overlay { position: fixed; inset: 0; background: rgba(10,10,13,0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: grid; place-items: center; z-index: 200; padding: 24px; overflow-y: auto; }
@@ -1347,7 +1400,7 @@
   .or { font-size: 11.5px; color: var(--mute-2); text-align: center; }
   .ai-ta { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; outline: none; resize: vertical; box-sizing: border-box; }
   .ai-ta:focus { border-color: var(--accent); }
-  .ai-pill { font-size: 10px; }
+  .zone-title .ai-pill { font-size: 10px; padding: 1px 5px; border-radius: 4px; }
   .zone-parse { margin-top: 4px; align-self: flex-start; }
   .ics-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
   .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 10px; }
@@ -1405,10 +1458,12 @@
     .fields { grid-template-columns: 1fr; }
     .fields .span-2 { grid-column: auto; }
     .fu-row { grid-template-columns: 1fr; }
-    .prep-grid { grid-template-columns: 1fr; gap: 20px; }
-    .prep-rail { position: static; }
-    .prep-tells { grid-template-columns: 1fr; }
-    .prep-two { grid-template-columns: 1fr; gap: 20px; }
-    .prep-sig { grid-template-columns: 1fr; gap: 6px; }
+    .rail { position: static; }
+    .b1-facts { grid-template-columns: repeat(2, 1fr); }
+    .b1-cell:nth-child(3) { border-left: none; }
+    .b1-cell:nth-child(n+3) { border-top: 1px solid var(--rule); }
+    .tells { grid-template-columns: 1fr; }
+    .la-grid { grid-template-columns: 1fr; }
+    .la-col + .la-col { border-left: none; border-top: 1px solid var(--rule); }
   }
 </style>
