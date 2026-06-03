@@ -150,7 +150,7 @@
       <ul class="timeline">
         {#each timeline as e}
           <li class="tl-row {e.kind}">
-            <span class="tl-dot"></span>
+            <span class="tl-rail"><span class="tl-dot"></span></span>
             <span class="tl-date">{e.date}</span>
             <span class="tl-body">
               <span class="tl-title">{e.label}</span>
@@ -240,27 +240,32 @@
   .ghost-btn { font-size: 12.5px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 11px; cursor: pointer; }
   .ghost-btn:hover { border-color: var(--rule-strong); color: var(--ink); }
 
-  /* TIMELINE — single continuous connector through all dots */
-  .timeline { list-style: none; margin: 0; padding: 0; position: relative; }
-  .timeline::before {
-    content: ""; position: absolute; left: 3px; top: 9px; bottom: 9px;
-    width: 1px; background: var(--rule);
-  }
+  /* TIMELINE — connector lives in a per-row rail so it lines up dot-to-dot */
+  .timeline { list-style: none; margin: 0; padding: 0; }
   .tl-row {
-    display: grid; grid-template-columns: 7px 56px 1fr; gap: 16px;
-    align-items: start; padding: 13px 0; position: relative;
+    display: grid; grid-template-columns: 16px 50px 1fr; gap: 14px;
+    align-items: start; padding: 14px 0;
   }
-  .tl-row:first-child { padding-top: 0; }
-  .tl-row:last-child { padding-bottom: 0; }
+  /* rail spans the full row height; the line is centered in it */
+  .tl-rail { position: relative; align-self: stretch; }
+  .tl-rail::before {
+    content: ""; position: absolute; left: 50%; transform: translateX(-50%);
+    top: 0; bottom: 0; width: 1px; background: var(--rule);
+  }
+  /* trim the line so it begins/ends exactly at the first/last dot center */
+  .tl-row:first-child .tl-rail::before { top: 9px; }
+  .tl-row:last-child .tl-rail::before { bottom: auto; height: 9px; }
   .tl-dot {
-    width: 7px; height: 7px; border-radius: 50%; margin-top: 3px;
-    background: var(--mute-2); position: relative; z-index: 1;
+    position: absolute; left: 50%; top: 9px; transform: translate(-50%, -50%);
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--mute-2); z-index: 1;
   }
   .tl-row.positive .tl-dot { background: var(--positive); box-shadow: 0 0 0 3px var(--positive-tint); }
   .tl-row.accent .tl-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
   .tl-row.warm .tl-dot { background: var(--warm); box-shadow: 0 0 0 3px var(--warm-tint); }
-  .tl-date { font-size: 12.5px; color: var(--mute); padding-top: 1px; font-variant-numeric: tabular-nums; }
+  .tl-date { font-size: 12.5px; color: var(--mute); line-height: 18px; font-variant-numeric: tabular-nums; }
   .tl-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tl-title { line-height: 18px; }
   .tl-title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
   .tl-note { font-size: 12.5px; color: var(--mute); line-height: 1.45; }
 
