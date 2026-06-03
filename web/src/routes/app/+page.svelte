@@ -82,6 +82,9 @@
   // a linked `meeting` (set when an .ics is attached). We merge both, keep only
   // future-dated ones, and pick the soonest.
   const upcomingEvents = $derived.by(() => {
+    // Preview aid: ?nointerview=1 forces the no-interview state so the two
+    // Today layouts can be compared side by side on the same real page.
+    if (page.url.searchParams.get('nointerview') === '1') return [];
     const now = Date.now();
     const out = [];
     for (const a of apps) {
