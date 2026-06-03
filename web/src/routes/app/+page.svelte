@@ -279,7 +279,7 @@
 
   function openDetail(id) { goto(`/app/${id}`); }
   function openBoard() { goto('/app/board'); }
-  function openPlaybook(id) { goto(`/app/${id}/playbook`); }
+  function openPlaybook(id) { goto(`/app/${id}#interview-prep`); }
 </script>
 
 <svelte:head>

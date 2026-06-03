@@ -14,6 +14,13 @@
   let loading = $state(true);
   let notFound = $state(false);
 
+  // Interview prep (dossier) — inline section
+  let dossier = $state(null);
+  let dossierLoading = $state(true);
+  let generating = $state(false);
+  let genError = $state('');
+  let interviewerInput = $state('');
+
   // Interviews
   let interviews = $state([]);
   let interviewsLoading = $state(false);
@@ -58,6 +65,7 @@
     loadApp();
     loadInterviews();
     loadFollowUps();
+    loadDossier();
   });
 
   async function loadApp() {
@@ -66,6 +74,10 @@
     try {
       const raw = await call(`/api/applications/${id}`);
       app = toDisplayApp(raw);
+      if (!interviewerInput) {
+        if (dossier?.interviewer_name) interviewerInput = dossier.interviewer_name;
+        else if (app?.raw?.hiring_manager_name) interviewerInput = app.raw.hiring_manager_name;
+      }
     } catch (e) {
       if (e.message === 'unauthorized') return;
       if (e.message.includes('not found') || e.message.includes('404')) notFound = true;
@@ -73,6 +85,50 @@
     } finally {
       loading = false;
     }
+  }
+
+  async function loadDossier() {
+    dossierLoading = true;
+    genError = '';
+    try {
+      const d = await call(`/api/applications/${id}/dossier`);
+      dossier = d || null;
+      if (dossier?.interviewer_name) interviewerInput = dossier.interviewer_name;
+    } catch (e) {
+      // 404 / empty / "no dossier" → not generated yet
+      dossier = null;
+    } finally {
+      dossierLoading = false;
+    }
+  }
+
+  async function generateDossier() {
+    if (generating) return;
+    generating = true;
+    genError = '';
+    try {
+      const d = await call(`/api/applications/${id}/dossier/refresh`, {
+        method: 'POST',
+        body: JSON.stringify({ interviewer_name: interviewerInput.trim() || undefined })
+      });
+      dossier = d;
+      interviewerInput = d.interviewer_name ?? interviewerInput;
+    } catch (e) {
+      genError = friendlyGenErr(e.message);
+    } finally {
+      generating = false;
+    }
+  }
+
+  function friendlyGenErr(msg) {
+    const m = String(msg || '');
+    if (m.includes('rate_limit_error') || m.includes('429'))
+      return 'AI usage limit hit — wait a minute and try again.';
+    if (m.includes('http 504') || /\btimeout\b/i.test(m))
+      return 'Web search timed out — try again.';
+    if (m.includes('http 5') || m.includes('not configured'))
+      return 'Something went wrong — try again in a moment.';
+    return m || 'Could not generate the interview prep.';
   }
 
   async function loadInterviews() {
@@ -257,8 +313,6 @@
   }
   function back() { goto('/app'); }
 
-  function openPlaybook() { goto(`/app/${id}/playbook`); }
-
   // ── Follow-up (records what the user did — sends nothing) ─────
   function todayInputValue() {
     const d = new Date();
@@ -306,6 +360,54 @@
     return (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase();
   }
   const hiringManagerInitials = $derived(initialsOf(app?.raw?.hiring_manager_name));
+
+  // ── Interview-prep (dossier) derived view data ───────────────
+  const dosContent = $derived(dossier?.content ?? null);
+  const dosInterviewer = $derived(dosContent?.interviewer ?? null);
+  const dosIvInitials = $derived(
+    initialsOf(dosInterviewer?.name ?? dossier?.interviewer_name ?? app?.raw?.hiring_manager_name ?? '')
+  );
+  const dosIvName = $derived(
+    dosInterviewer?.name ?? dossier?.interviewer_name ?? app?.raw?.hiring_manager_name ?? 'Your interviewer'
+  );
+  const dosMeeting = $derived(dossier?.meeting ?? null);
+
+  function dosFmtWhen(m) {
+    if (!m) return '—';
+    if (m.starts_at) {
+      const d = new Date(m.starts_at);
+      const now = new Date();
+      const startOfDay = x => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+      const days = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
+      const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      if (days === 0) return `Today · ${time}`;
+      if (days === 1) return `Tomorrow · ${time}`;
+      if (days > 1 && days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'long' })} · ${time}`;
+      if (days < 0) return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time}`;
+      return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
+    }
+    return m.when ?? '—';
+  }
+  function dosFmtDuration(m) {
+    if (!m) return '—';
+    if (m.starts_at && m.ends_at) {
+      const mins = Math.round((new Date(m.ends_at) - new Date(m.starts_at)) / 60000);
+      if (mins <= 0) return m.duration ?? '—';
+      return mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`;
+    }
+    return m.duration ?? '—';
+  }
+  const dosFactWhen     = $derived(dosFmtWhen(dosMeeting));
+  const dosFactDuration = $derived(dosFmtDuration(dosMeeting));
+  const dosFactMedium   = $derived(dosMeeting?.medium ?? '—');
+  const dosFactPanel    = $derived(dosMeeting?.panel ?? '—');
+  function dosSigDomain(src) {
+    if (!src) return '';
+    try {
+      return new URL(src.startsWith('http') ? src : `https://${src}`).hostname.replace(/^www\./, '');
+    } catch { return src; }
+  }
+  const dosGeneratedAgo = $derived(dossier?.generatedAgo ?? '');
 
   const appliedLong = $derived(app ? fmtLongDate(app.raw.applied_at) : '');
 
@@ -512,12 +614,6 @@
                 {#if upcoming.location}<span>{upcoming.location}</span>{/if}
                 {#if evDuration(upcoming)}<span>{evDuration(upcoming)} min</span>{/if}
               </div>
-              <div class="row">
-                <button class="cta" onclick={openPlaybook}>Open interview prep
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-              </div>
-              <p class="next-prep-note">AI brief on your interviewer — their style, what lands, and questions to ask.</p>
             </div>
           {:else if awaiting}
             <div class="det-next muted">
@@ -599,6 +695,205 @@
               <p style="color:var(--mute); font-size:13px;">No interviews on file yet.</p>
             {/if}
           </div>
+
+          <!-- ── INTERVIEW PREP (inline dossier) ── -->
+          <div id="interview-prep" class="prep-section">
+            <div class="prep-top">
+              <span class="prep-ttl">Interview prep<span class="ai-pill">AI</span></span>
+              {#if dosGeneratedAgo && dossier}
+                <span class="prep-gen">
+                  <span class="sp" aria-hidden="true">
+                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                      <path d="M6.5 1.5C6.5 4.5 4.5 6.5 1.5 6.5C4.5 6.5 6.5 8.5 6.5 11.5C6.5 8.5 8.5 6.5 11.5 6.5C8.5 6.5 6.5 4.5 6.5 1.5Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  Generated by Pursuit · {dosGeneratedAgo}
+                </span>
+              {/if}
+            </div>
+
+            {#if dossierLoading}
+              <p style="color:var(--mute); font-size:13px;">Loading…</p>
+
+            {:else if !dossier}
+              <!-- Generate / empty state -->
+              <div class="generate-card">
+                <div class="gen-icon" aria-hidden="true">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 3C12 7.97 8.97 11 4 11C8.97 11 12 14.03 12 19C12 14.03 15.03 11 20 11C15.03 11 12 7.97 12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                {#if generating}
+                  <h3>Researching {app.co}{interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
+                  <p class="gen-sub">Claude is searching the web for recent posts, talks, and the company's current direction. This typically takes 30–60 seconds.</p>
+                  <div class="big-spinner"></div>
+                {:else}
+                  <h3>Generate interview prep</h3>
+                  <p class="gen-sub">
+                    We'll build an AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask — pulled from public posts, talks, papers, and company news. Add a name below to make it about a specific interviewer.
+                  </p>
+                  <div class="gen-row">
+                    <input
+                      class="gen-input"
+                      type="text"
+                      placeholder="Interviewer name (optional) — e.g. Sarah Chen"
+                      bind:value={interviewerInput}
+                      disabled={generating}
+                      onkeydown={(e) => e.key === 'Enter' && generateDossier()}
+                    />
+                    <button class="btn-generate" onclick={generateDossier} disabled={generating}>
+                      Generate interview prep
+                    </button>
+                  </div>
+                  {#if genError}
+                    <p class="gen-err">{genError}</p>
+                  {/if}
+                {/if}
+              </div>
+
+            {:else}
+              <!-- Full brief -->
+              <div class="prep-grid">
+                <!-- LEFT RAIL -->
+                <div class="prep-rail">
+                  <div class="prep-person">
+                    <span class="iv-av big">{dosIvInitials || '?'}</span>
+                    <div class="nm">{dosIvName}</div>
+                    {#if dosInterviewer?.role}<div class="ro">{dosInterviewer.role}</div>{/if}
+                    {#if dosInterviewer?.prior?.length}
+                      <div class="prior">
+                        {#each dosInterviewer.prior as p}<span>{p}</span>{/each}
+                      </div>
+                    {/if}
+                    {#if dosInterviewer?.links?.length}
+                      <div class="links">
+                        {#each dosInterviewer.links as l}
+                          <a href={l.href} target="_blank" rel="noopener">{l.label}</a>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+
+                  <div class="prep-facts">
+                    <div class="f"><span class="l">Company</span><span class="v">{app.co}</span></div>
+                    <div class="f"><span class="l">Role</span><span class="v">{app.role}</span></div>
+                    <div class="f"><span class="l">When</span><span class="v">{dosFactWhen}</span></div>
+                    <div class="f"><span class="l">Duration</span><span class="v">{dosFactDuration}</span></div>
+                    <div class="f"><span class="l">Where</span><span class="v">{dosFactMedium}</span></div>
+                    <div class="f"><span class="l">Round</span><span class="v">{dosFactPanel}</span></div>
+                  </div>
+
+                  <button class="prep-refresh" type="button" onclick={generateDossier} disabled={generating}>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
+                    {generating ? 'Refreshing…' : 'Refresh prep'}
+                  </button>
+                </div>
+
+                <!-- MAIN -->
+                <div class="prep-main">
+                  <h2 class="prep-h">Before you meet <b>{dosIvName}.</b></h2>
+                  <p class="prep-dek">An AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask. Generated from public sources.</p>
+
+                  {#if dosContent?.snapshot}
+                    <div class="prep-sec">
+                      <div class="kick"><span>Snapshot</span></div>
+                      <p class="lead">{@html dosContent.snapshot}</p>
+                    </div>
+                  {/if}
+
+                  {#if dosContent?.style}
+                    <div class="prep-sec">
+                      <div class="kick"><span>How {dosIvName.split(' ')[0]} interviews</span></div>
+                      {#if dosContent.style.lead}<p class="lead">{dosContent.style.lead}</p>{/if}
+                      {#if dosContent.style.tells?.length}
+                        <div class="prep-tells">
+                          {#each dosContent.style.tells as t}
+                            <div class="t"><div class="l">{t.lbl}</div><div class="v">{t.val}</div></div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
+
+                  {#if dosContent?.lands?.length || dosContent?.avoid?.length}
+                    <div class="prep-sec">
+                      <div class="kick"><span>Lands &amp; lands flat</span></div>
+                      <div class="prep-two">
+                        {#if dosContent.lands?.length}
+                          <div class="prep-list good">
+                            <div class="h"><span class="dot"></span>What lands</div>
+                            <ul>{#each dosContent.lands as item}<li>{item}</li>{/each}</ul>
+                          </div>
+                        {/if}
+                        {#if dosContent.avoid?.length}
+                          <div class="prep-list bad">
+                            <div class="h"><span class="dot"></span>What to avoid</div>
+                            <ul>{#each dosContent.avoid as item}<li>{item}</li>{/each}</ul>
+                          </div>
+                        {/if}
+                      </div>
+                    </div>
+                  {/if}
+
+                  {#if dosContent?.signals?.length}
+                    <div class="prep-sec">
+                      <div class="kick"><span>Recent signals</span></div>
+                      <div class="prep-signals">
+                        {#each dosContent.signals as s}
+                          <div class="prep-sig">
+                            <div class="when">
+                              {s.date ?? ''}
+                              {#if s.kind}<span class="tg">{s.kind}</span>{/if}
+                            </div>
+                            <div>
+                              <div class="body">{s.body}</div>
+                              {#if s.source}
+                                <div class="src">
+                                  {#if dosSigDomain(s.source)}
+                                    <img class="sig-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.source)}`} alt="" width="12" height="12" />
+                                  {/if}
+                                  {s.source}
+                                </div>
+                              {/if}
+                            </div>
+                          </div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+
+                  {#if dosContent?.questions?.length}
+                    <div class="prep-sec">
+                      <div class="kick"><span>Questions worth asking</span></div>
+                      {#each dosContent.questions as q}
+                        <div class="prep-q">
+                          <div class="q">"{q.q}"</div>
+                          {#if q.why}
+                            <div class="why">
+                              <span class="sp" aria-hidden="true">
+                                <svg width="12" height="12" viewBox="0 0 13 13" fill="none">
+                                  <path d="M6.5 1.5C6.5 4.5 4.5 6.5 1.5 6.5C4.5 6.5 6.5 8.5 6.5 11.5C6.5 8.5 8.5 6.5 11.5 6.5C8.5 6.5 6.5 4.5 6.5 1.5Z" fill="currentColor"/>
+                                </svg>
+                              </span>
+                              {q.why}
+                            </div>
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+
+                  <div class="prep-disclaimer">
+                    Synthesised from public posts, talks, and papers · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'} · always verify before you walk in
+                  </div>
+
+                  {#if genError}
+                    <p class="gen-err" style="margin-top: 16px">{genError}</p>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
         </div>
 
         <!-- SIDE -->
@@ -621,6 +916,10 @@
               </div>
             {:else}
               <div class="person"><div><div class="nm" style="color:var(--mute)">No contact yet</div></div></div>
+              <button class="add-hm" onclick={openEdit}>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
+                Add hiring manager
+              </button>
             {/if}
           </div>
 
@@ -631,6 +930,8 @@
             <div class="kv"><span class="l">Last activity</span><span class="v">{fmtRelativeDate(app.raw.updated_at ?? app.raw.applied_at)}</span></div>
             <div class="kv"><span class="l">Source</span><span class="v">{app.source}</span></div>
             <div class="kv"><span class="l">Résumé</span><span class="v">{app.cv}</span></div>
+            {#if app.raw.location}<div class="kv"><span class="l">Location</span><span class="v">{app.raw.location}</span></div>{/if}
+            {#if app.raw.salary_note}<div class="kv"><span class="l">Salary</span><span class="v">{app.raw.salary_note}</span></div>{/if}
           </div>
 
           <!-- Actions -->
@@ -658,16 +959,6 @@
                 </a>
               {/if}
             </div>
-          </div>
-
-          <!-- Interview prep link -->
-          <div class="side-card playbook-card">
-            <div class="ttl">Interview prep<span class="ai-pill">AI</span></div>
-            <p class="playbook-blurb">AI brief on your interviewer — their style, what lands, and questions to ask.</p>
-            <button class="playbook-link" onclick={openPlaybook}>
-              Open interview prep
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
           </div>
         </div>
       </div>
@@ -873,8 +1164,6 @@
   .det-next .row { display: flex; gap: 10px; }
   .det-next .cta { background: #fff; color: var(--ink); border: none; border-radius: 9px; padding: 11px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
   .det-next .cta.dark { background: var(--ink); color: #fff; }
-  .det-next .ghost { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.18); border-radius: 9px; padding: 11px 16px; font-size: 13.5px; font-weight: 500; cursor: pointer; }
-  .det-next .ghost:hover { background: rgba(255,255,255,0.18); }
 
   .sec-lbl { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 16px; }
 
@@ -924,11 +1213,102 @@
   .side-act button.warn { color: var(--warm-text); }
   .side-act button.warn .ic { color: var(--warm-text); }
 
-  .playbook-card .ai-pill { margin-left: 6px; }
-  .playbook-blurb { font-size: 12.5px; color: var(--mute); line-height: 1.5; margin: 0 0 14px; }
-  .playbook-link { display: inline-flex; align-items: center; gap: 7px; width: 100%; justify-content: center; font: inherit; font-size: 13px; font-weight: 600; color: #fff; background: var(--ink); border: none; border-radius: 9px; padding: 11px 13px; cursor: pointer; }
-  .playbook-link:hover { background: var(--ink-2); }
   .ai-pill { font-size: 10px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border-radius: 4px; padding: 1px 5px; letter-spacing: .04em; }
+
+  /* ── INTERVIEW PREP (inline dossier) ── */
+  .prep-section { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  .prep-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; flex-wrap: wrap; }
+  .prep-ttl { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); display: inline-flex; align-items: center; gap: 8px; }
+  .prep-ttl .ai-pill { letter-spacing: 0.04em; }
+  .prep-gen { font-family: inherit; font-size: 12px; color: var(--mute); display: inline-flex; align-items: center; gap: 7px; text-transform: none; letter-spacing: 0; }
+  .prep-gen .sp { color: var(--accent); display: inline-flex; align-items: center; }
+
+  /* Two-column grid */
+  .prep-grid { display: grid; grid-template-columns: 300px 1fr; gap: 32px; align-items: start; }
+
+  /* Left rail */
+  .prep-rail { position: sticky; top: 18px; }
+  .prep-person { background: var(--card); border: 1px solid var(--rule); border-radius: 16px; padding: 24px; box-shadow: var(--sh-pop); text-align: center; margin-bottom: 16px; }
+  .iv-av.big { width: 72px; height: 72px; border-radius: 20px; font-size: 24px; margin: 0 auto 16px; box-shadow: 0 10px 24px -10px oklch(0.5 0.16 30 / 0.6); }
+  .prep-person .nm { font-size: 20px; font-weight: 500; letter-spacing: -0.02em; }
+  .prep-person .ro { font-size: 13px; color: var(--mute); margin-top: 4px; }
+  .prep-person .prior { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
+  .prep-person .prior span { font-size: 12px; color: var(--mute); }
+  .prep-person .links { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 18px; }
+  .prep-person .links a { font-size: 11.5px; color: var(--accent-text); text-decoration: none; border: 1px solid var(--rule); border-radius: 999px; padding: 5px 11px; cursor: pointer; transition: background 120ms, border-color 120ms; }
+  .prep-person .links a:hover { background: var(--accent-tint); border-color: var(--accent-tint-2); }
+
+  .prep-facts { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 6px 16px; box-shadow: var(--sh-1); }
+  .prep-facts .f { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--rule); font-size: 13px; }
+  .prep-facts .f:first-child { border-top: none; }
+  .prep-facts .f .l { color: var(--mute); }
+  .prep-facts .f .v { font-weight: 500; max-width: 160px; text-align: right; }
+
+  .prep-refresh { display: flex; width: 100%; align-items: center; justify-content: center; gap: 7px; background: none; color: var(--mute); border: 1px solid var(--rule); border-radius: 11px; padding: 10px; font-size: 12.5px; font-weight: 500; cursor: pointer; margin-top: 8px; font-family: inherit; transition: color 120ms, border-color 120ms, background 120ms; }
+  .prep-refresh:hover:not(:disabled) { color: var(--ink); border-color: var(--rule-strong); background: var(--surface-2); }
+  .prep-refresh:disabled { opacity: 0.5; cursor: default; }
+
+  /* Main column */
+  .prep-h { font-size: 26px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.1; margin: 0 0 6px; }
+  .prep-h b { font-weight: 500; }
+  .prep-dek { font-size: 14px; color: var(--mute); margin: 0 0 28px; }
+
+  /* Sections */
+  .prep-sec { margin-bottom: 32px; }
+  .prep-sec > .kick { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mute-2); }
+  .prep-sec > .kick::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .prep-sec .lead { font-size: 15px; line-height: 1.65; color: var(--ink-2); margin: 0; max-width: 64ch; }
+
+  /* Style tells */
+  .prep-tells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .prep-tells .t { background: var(--surface-2); border-radius: 12px; padding: 15px 16px; }
+  .prep-tells .t .l { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 7px; }
+  .prep-tells .t .v { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+
+  /* Lands & avoid */
+  .prep-two { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .prep-list .h { font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .prep-list .h .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .prep-list.good .h .dot { background: var(--positive); }
+  .prep-list.bad  .h .dot { background: var(--danger); }
+  .prep-list ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 11px; }
+  .prep-list li { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); padding-left: 20px; position: relative; }
+  .prep-list.good li::before { content: ""; position: absolute; left: 2px; top: 6px; width: 6px; height: 10px; border: solid var(--positive-text); border-width: 0 1.8px 1.8px 0; transform: rotate(42deg); }
+  .prep-list.bad li::before { content: "×"; position: absolute; left: 2px; top: -1px; color: var(--danger-text); font-size: 15px; }
+
+  /* Recent signals */
+  .prep-signals { display: flex; flex-direction: column; gap: 12px; }
+  .prep-sig { display: grid; grid-template-columns: 92px 1fr; gap: 16px; padding: 16px; border: 1px solid var(--rule); border-radius: 13px; background: var(--card); box-shadow: var(--sh-1); }
+  .prep-sig .when { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; color: var(--mute); }
+  .prep-sig .when .tg { display: inline-block; margin-top: 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-text); background: var(--accent-tint); border-radius: 6px; padding: 3px 8px; }
+  .prep-sig .body { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
+  .prep-sig .src { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--mute-2); margin-top: 8px; display: flex; align-items: center; gap: 5px; }
+  .sig-favicon { border-radius: 2px; opacity: 0.7; }
+
+  /* Questions */
+  .prep-q { border: 1px solid var(--rule); border-radius: 13px; background: var(--card); padding: 18px 20px; margin-bottom: 12px; box-shadow: var(--sh-1); }
+  .prep-q .q { font-size: 14.5px; font-weight: 500; line-height: 1.45; margin-bottom: 8px; letter-spacing: -0.01em; color: var(--ink); }
+  .prep-q .why { font-size: 12.5px; color: var(--mute); line-height: 1.5; display: flex; gap: 8px; }
+  .prep-q .why .sp { color: var(--accent); flex-shrink: 0; margin-top: 1px; display: inline-flex; }
+
+  /* Disclaimer */
+  .prep-disclaimer { margin-top: 18px; font-size: 11.5px; color: var(--mute); padding-top: 14px; border-top: 1px dashed var(--rule); }
+
+  /* Generate / empty state */
+  .generate-card { background: var(--card); border: 1px solid var(--rule); border-radius: 18px; padding: 32px 36px; max-width: 560px; box-shadow: var(--sh-2); text-align: center; }
+  .gen-icon { width: 56px; height: 56px; border-radius: 16px; background: var(--accent-tint); color: var(--accent-text); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+  .generate-card h3 { font-size: 20px; font-weight: 500; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .gen-sub { font-size: 14px; color: var(--mute); line-height: 1.6; margin: 0 auto 24px; max-width: 42ch; }
+  .gen-row { display: flex; gap: 10px; flex-direction: column; }
+  .gen-input { width: 100%; padding: 11px 14px; font-size: 13.5px; font-family: inherit; border: 1px solid var(--rule); border-radius: 9px; background: var(--surface-2); color: var(--ink); outline: none; transition: border-color 120ms; box-sizing: border-box; }
+  .gen-input:focus { border-color: var(--accent); background: var(--card); }
+  .gen-input::placeholder { color: var(--mute-2); }
+  .btn-generate { background: var(--ink); color: #fff; border: none; border-radius: 9px; padding: 12px 20px; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; transition: background 120ms; width: 100%; }
+  .btn-generate:hover:not(:disabled) { background: var(--ink-2); }
+  .btn-generate:disabled { opacity: 0.5; cursor: default; }
+  .gen-err { color: var(--danger-text); font-size: 13px; margin: 14px 0 0; text-align: left; }
+  .big-spinner { width: 36px; height: 36px; border: 2.5px solid var(--rule-strong); border-top-color: var(--accent); border-radius: 50%; animation: prep-spin 0.75s linear infinite; margin: 24px auto 0; }
+  @keyframes prep-spin { to { transform: rotate(360deg); } }
 
   /* INTERVIEWS SECTION */
   .iv-section { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--rule); }
@@ -1025,5 +1405,10 @@
     .fields { grid-template-columns: 1fr; }
     .fields .span-2 { grid-column: auto; }
     .fu-row { grid-template-columns: 1fr; }
+    .prep-grid { grid-template-columns: 1fr; gap: 20px; }
+    .prep-rail { position: static; }
+    .prep-tells { grid-template-columns: 1fr; }
+    .prep-two { grid-template-columns: 1fr; gap: 20px; }
+    .prep-sig { grid-template-columns: 1fr; gap: 6px; }
   }
 </style>
