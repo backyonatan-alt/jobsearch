@@ -444,15 +444,15 @@
           <div class="kick">{@render Spark()}&nbsp;What you can do today</div>
           <div class="suggest">
             {#each suggestions as s}
-              <div class="sg">
+              <div class="sg" onclick={s.go} role="button" tabindex="0">
                 <span class="sg-ic" class:plain={!s.spark}>
-                  {#if s.spark}{@render Spark(15)}{:else}{@render Dot()}{/if}
+                  {#if s.spark}{@render Spark(14)}{:else}{@render Dot()}{/if}
                 </span>
                 <span class="sg-tx">
                   <b>{s.title}</b>
                   <small>{s.sub}</small>
                 </span>
-                <button class="sg-btn" onclick={s.go}>{s.cta}</button>
+                <span class="sg-go">{s.cta} {@render Arrow()}</span>
               </div>
             {/each}
           </div>
@@ -612,42 +612,34 @@
   .kick::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
   .recent-kick { margin-top: 34px; }
 
-  /* No-interview: suggestion cards ("What you can do today") */
-  .suggest { display: flex; flex-direction: column; gap: 10px; }
+  /* No-interview: "What you can do today" — flat hairline rows, same family
+     as the Brief's agenda/tip rows (not chunky cards). */
+  .suggest { display: flex; flex-direction: column; }
   .sg {
-    display: grid; grid-template-columns: 34px 1fr auto; gap: 13px; align-items: center;
-    background: var(--card); border: 1px solid var(--rule); border-radius: 13px;
-    padding: 14px 16px; transition: border-color .12s, box-shadow .12s, transform .12s;
+    display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: center;
+    padding: 13px 2px; border-top: 1px solid var(--rule); cursor: pointer;
+    border-radius: 8px; transition: background .12s;
   }
-  .sg:hover { border-color: var(--rule-strong); box-shadow: var(--sh-pop); transform: translateY(-1px); }
-  .sg-ic {
-    width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
-    background: var(--accent-tint); color: var(--accent-text); flex-shrink: 0;
-  }
-  .sg-ic.plain { background: var(--surface-2); color: var(--mute); }
+  .sg:hover { background: var(--surface-2); }
+  .sg-ic { display: grid; place-items: center; color: var(--accent-text); }
+  .sg-ic.plain { color: var(--mute-2); }
   .sg-tx { line-height: 1.35; min-width: 0; }
-  .sg-tx b { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .sg-tx b { font-size: 13.5px; font-weight: 500; color: var(--ink); }
   .sg-tx small { display: block; font-size: 12.5px; color: var(--mute); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sg-btn {
-    flex-shrink: 0; white-space: nowrap; cursor: pointer; font-family: inherit;
-    background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px;
-    padding: 6px 13px; font-size: 12.5px; font-weight: 500; color: var(--ink-2);
-    transition: background .12s, border-color .12s;
-  }
-  .sg-btn:hover { background: var(--card); border-color: var(--rule-strong); color: var(--ink); }
+  .sg-go { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 12.5px; font-weight: 500; color: var(--accent-text); }
 
-  /* No-interview: recently added list */
+  /* No-interview: recently added — same hairline-row treatment as .ag-row */
   .recent { display: flex; flex-direction: column; }
   .rrow {
-    display: grid; grid-template-columns: 32px 1fr auto auto; gap: 13px; align-items: center;
-    padding: 12px 4px; border-top: 1px solid var(--rule); cursor: pointer;
+    display: grid; grid-template-columns: 30px 1fr auto auto; gap: 13px; align-items: center;
+    padding: 13px 2px; border-top: 1px solid var(--rule); cursor: pointer;
     border-radius: 8px; transition: background .12s;
   }
   .rrow:hover { background: var(--surface-2); }
   .rx { line-height: 1.3; min-width: 0; }
   .rx b { font-size: 13.5px; font-weight: 500; }
-  .rx small { display: block; font-size: 12px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ago { font-size: 12px; color: var(--mute-2); white-space: nowrap; }
+  .rx small { display: block; font-size: 12.5px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ago { font-size: 12px; color: var(--mute-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
   .insight { display: flex; gap: 12px; padding: 15px 16px; background: var(--accent-tint); border-radius: 13px; margin-bottom: 14px; }
   .insight .ic { color: var(--accent-text); flex-shrink: 0; margin-top: 1px; }
