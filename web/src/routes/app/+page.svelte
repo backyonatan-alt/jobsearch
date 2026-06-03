@@ -314,7 +314,7 @@
     <div class="brief-in">
       <div class="brief-date">{dateLine}</div>
       <div class="brief-head">
-        <h1>{greeting},<br /><b>{firstName}.</b></h1>
+        <h1>{greeting}, <b>{firstName}.</b></h1>
         {#if !loading}
           <div class="brief-stats">
             <button class="bstat" onclick={openBoard} title="Applications still active — applied through offer">
