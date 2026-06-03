@@ -791,14 +791,14 @@
                       <div class="p-prior">{dosInterviewer.prior.join(' · ')}</div>
                     {/if}
                   </div>
-                  {#if dosInterviewer?.links?.length}
-                    <div class="p-links">
-                      {#each dosInterviewer.links as l}
-                        <a href={l.href} target="_blank" rel="noopener">{l.label}</a>
-                      {/each}
-                    </div>
-                  {/if}
                 </div>
+                {#if dosInterviewer?.links?.length}
+                  <div class="p-links">
+                    {#each dosInterviewer.links as l}
+                      <a href={l.href} target="_blank" rel="noopener">{l.label}</a>
+                    {/each}
+                  </div>
+                {/if}
                 {#if dosContent?.snapshot}
                   <p class="snapshot">{@html dosContent.snapshot}</p>
                 {/if}
@@ -1235,7 +1235,7 @@
   .proc-arrow { color: var(--mute-2); font-size: 12px; }
 
   /* PERSON (hiring manager / interviewer) */
-  .person { display: grid; grid-template-columns: 52px 1fr auto; gap: 14px; align-items: center; margin-bottom: 14px; }
+  .person { display: grid; grid-template-columns: 52px 1fr; gap: 14px; align-items: center; margin-bottom: 12px; }
   .p-av { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 18px; background: var(--accent-tint); color: var(--accent-text); }
   .p-info { min-width: 0; }
   .p-name-row { display: flex; align-items: center; gap: 10px; }
@@ -1243,7 +1243,7 @@
   .role-tag { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--warm-text); background: var(--warm-tint); padding: 2px 8px; border-radius: 5px; white-space: nowrap; }
   .p-role { font-size: 13px; color: var(--mute); margin-top: 3px; }
   .p-prior { font-size: 12px; color: var(--mute-2); margin-top: 2px; }
-  .p-links { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .p-links { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start; margin-bottom: 14px; }
   .p-links a { font-size: 11.5px; color: var(--accent-text); text-decoration: none; border: 1px solid var(--rule); border-radius: 999px; padding: 4px 10px; }
   .p-links a:hover { background: var(--accent-tint); border-color: var(--accent-tint-2); }
   .snapshot { font-size: 15px; line-height: 1.55; letter-spacing: -0.008em; color: var(--ink); margin: 0 0 18px; padding-left: 14px; border-left: 2px solid var(--accent); }
