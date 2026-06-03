@@ -613,6 +613,8 @@
 
   .kick { font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
   .kick::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  /* The kicker already draws a hairline — don't double it with the first row's top border. */
+  .suggest .sg:first-child, .recent .rrow:first-child, .agenda .ag-row:first-child { border-top: 0; }
   .recent-kick { margin-top: 34px; }
 
   /* No-interview: "What you can do today" — flat hairline rows, same family
