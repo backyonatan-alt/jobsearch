@@ -459,7 +459,6 @@
                 <button class="cta" onclick={openPlaybook}>Open interview prep
                   <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
-                <button class="ghost" onclick={openAddEvent}>Add to calendar</button>
               </div>
               <p class="next-prep-note">AI brief on your interviewer — their style, what lands, and questions to ask.</p>
             </div>
