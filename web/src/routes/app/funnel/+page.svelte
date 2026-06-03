@@ -255,11 +255,18 @@
             {#each activityWeeks as week, i}
               {@const h = Math.max(6, (week.count / activityMax) * 100)}
               <div
-                class="act-bar"
-                class:act-bar-current={i === activityWeeks.length - 1}
-                style="height: {h}%;"
+                class="act-col"
                 title="{week.count} application{week.count !== 1 ? 's' : ''}"
-              ></div>
+              >
+                {#if week.count > 0}
+                  <span class="act-val">{week.count}</span>
+                {/if}
+                <div
+                  class="act-bar"
+                  class:act-bar-current={i === activityWeeks.length - 1}
+                  style="height: {h}%;"
+                ></div>
+              </div>
             {/each}
           </div>
           <div class="act-x">
@@ -345,8 +352,10 @@
 
   /* Activity bars */
   .act-bars { display: flex; align-items: flex-end; gap: 6px; height: 120px; }
-  .act-bar { flex: 1; background: var(--accent-tint-2); border-radius: 5px 5px 2px 2px; min-height: 6px; transition: background .12s; }
-  .act-bar:hover { background: var(--accent); }
+  .act-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; min-width: 0; }
+  .act-val { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; line-height: 1; color: var(--mute-2); font-variant-numeric: tabular-nums; text-align: center; margin-bottom: 4px; }
+  .act-bar { width: 100%; background: var(--accent-tint-2); border-radius: 5px 5px 2px 2px; min-height: 6px; transition: background .12s; }
+  .act-col:hover .act-bar { background: var(--accent); }
   .act-bar-current { background: var(--accent) !important; }
   .act-x { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--mute-2); }
 

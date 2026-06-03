@@ -65,7 +65,7 @@
       return 'Web search timed out — try again.';
     if (m.includes('http 5') || m.includes('not configured'))
       return 'Something went wrong — try again in a moment.';
-    return m || 'Could not generate the playbook.';
+    return m || 'Could not generate the interview prep.';
   }
 
   function back() {
@@ -137,7 +137,7 @@
 </script>
 
 <svelte:head>
-  <title>{app?.company ? `Playbook — ${app.company}` : 'Interview playbook'} — Pursuit</title>
+  <title>{app?.company ? `Interview prep — ${app.company}` : 'Interview prep'} — Pursuit</title>
 </svelte:head>
 
 <!-- ── In-page topbar crumb ── -->
@@ -171,7 +171,7 @@
   {:else}
     <!-- ── Header rule ── -->
     <div class="dos-top">
-      <span class="ttl">Interview playbook</span>
+      <span class="ttl">Interview prep</span>
       {#if generatedAgo}
         <span class="gen">
           <span class="sp" aria-hidden="true">
@@ -199,9 +199,9 @@
             <p class="gen-sub">Claude is searching the web for recent posts, talks, and the company's current direction. This typically takes 30–60 seconds.</p>
             <div class="big-spinner"></div>
           {:else}
-            <h3>Generate interview playbook</h3>
+            <h3>Generate interview prep</h3>
             <p class="gen-sub">
-              Claude reads the web — recent posts, talks, papers, company news — and writes you a focused briefing on the company and (optionally) a named interviewer.
+              We'll build an AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask — pulled from public posts, talks, papers, and company news. Add a name below to make it about a specific interviewer.
             </p>
             <div class="gen-row">
               <input
@@ -213,7 +213,7 @@
                 onkeydown={(e) => e.key === 'Enter' && generate()}
               />
               <button class="btn-generate" onclick={generate} disabled={generating}>
-                Generate playbook
+                Generate interview prep
               </button>
             </div>
             {#if genError}
@@ -272,7 +272,7 @@
           <!-- Refresh -->
           <button class="dos-refresh" type="button" onclick={generate} disabled={generating}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
-            {generating ? 'Refreshing…' : 'Refresh playbook'}
+            {generating ? 'Refreshing…' : 'Refresh prep'}
           </button>
         </div>
 
@@ -280,7 +280,7 @@
         <div class="dos-main">
 
           <h1>Before you meet <b>{ivName}.</b></h1>
-          <p class="dek">Everything we could find, distilled into what changes how you show up.</p>
+          <p class="dek">An AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask. Generated from public sources.</p>
 
           <!-- Snapshot -->
           {#if c?.snapshot}

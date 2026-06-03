@@ -315,6 +315,12 @@
       <div class="brief-date">{dateLine}</div>
       <h1>{greeting},<br /><b>{firstName}.</b></h1>
 
+      {#if !loading}
+        <div class="brief-counts">
+          {activeCount} in progress<span class="mid">·</span>{awaitingCount} awaiting reply<span class="mid">·</span><span class={quietCount > 0 ? 'quiet' : ''}>{quietCount} quiet</span>
+        </div>
+      {/if}
+
       {#if loading}
         <p class="lede">Loading your day…</p>
       {:else if nextInterview}
@@ -325,7 +331,7 @@
           {#if upcomingEvents.length > 1}{upcomingEvents.length - 1} more {upcomingEvents.length - 1 === 1 ? 'event follows' : 'events follow'} later this week.{/if}
         </p>
 
-        <div class="kick">{@render Spark()}&nbsp;Before the room</div>
+        <div class="kick">{@render Spark()}&nbsp;Prep for today</div>
 
         {#if insightText}
           <div class="insight">
@@ -358,7 +364,7 @@
           </div>
         {/if}
 
-        <button class="cta" onclick={() => openPlaybook(nextInterview.app.id)}>Open the full playbook {@render Arrow()}</button>
+        <button class="cta" onclick={() => openPlaybook(nextInterview.app.id)}>Open interview prep {@render Arrow()}</button>
       {:else}
         <p class="lede">Nothing's on the calendar today — here's where your search stands.</p>
       {/if}
@@ -378,8 +384,8 @@
       {/if}
 
       {#if !loading}
-        <div class="foot" onclick={openBoard} role="button" tabindex="0">
-          <b>{apps.length} {apps.length === 1 ? 'application' : 'applications'}</b> tracked · open the board {@render Arrow()}
+        <div class="foot">
+          <button class="foot-link" onclick={openBoard}>View all {apps.length} {apps.length === 1 ? 'application' : 'applications'} {@render Arrow()}</button>
         </div>
       {/if}
     </div>
@@ -390,32 +396,9 @@
     <div class="pulse-tag"><span class="d"></span>Where things stand</div>
 
     <div class="pulse-stats">
-      <div class="st" onclick={openBoard} role="button" tabindex="0"><span class="num">{activeCount}</span><span class="lbl">Active loops</span></div>
+      <div class="st" onclick={openBoard} role="button" tabindex="0"><span class="num">{activeCount}</span><span class="lbl">In progress</span></div>
       <div class="st" onclick={openBoard} role="button" tabindex="0"><span class="num">{awaitingCount}</span><span class="lbl">Awaiting reply</span></div>
       <div class="st warn" onclick={openBoard} role="button" tabindex="0"><span class="num">{quietCount}</span><span class="lbl">Gone quiet</span></div>
-    </div>
-
-    <div class="pulse-sec">
-      <span class="t">Waiting to hear back</span>
-      <span class="c">longest first</span>
-    </div>
-    <div class="pulse-list">
-      {#if waiting.length === 0}
-        <div class="pulse-empty">Nothing waiting — every open thread has a next step.</div>
-      {:else}
-        {#each waiting as w (w.id)}
-          <div class={`pulse-row ${w.stale ? 'quiet' : ''}`} onclick={() => openDetail(w.id)} role="button" tabindex="0">
-            {#if w.logoSrc}
-              <img class="row-logo" src={w.logoSrc} alt="" />
-            {:else}
-              <span class={`row-logo letter ${w.logoCls}`}>{w.coShort}</span>
-            {/if}
-            <span class="wx"><b>{w.co}</b><small>{STATUS_LABEL[w.status]}</small></span>
-            <span class="days">{waitDays(w)}d</span>
-            <span class="ok"><span class={`okdot ${w.stale ? 'warn' : ''}`}></span></span>
-          </div>
-        {/each}
-      {/if}
     </div>
 
     <div class="tasks">
@@ -440,6 +423,29 @@
         <button class="pulse-link" onclick={openBoard}>{quietApps.length > 1 ? 'See both' : 'See it'} {@render Arrow()}</button>
       </div>
     {/if}
+
+    <div class="pulse-sec waiting-sec">
+      <span class="t">Waiting to hear back</span>
+      <span class="c">longest first</span>
+    </div>
+    <div class="pulse-list">
+      {#if waiting.length === 0}
+        <div class="pulse-empty">Nothing waiting — every open thread has a next step.</div>
+      {:else}
+        {#each waiting as w (w.id)}
+          <div class={`pulse-row ${w.stale ? 'quiet' : ''}`} onclick={() => openDetail(w.id)} role="button" tabindex="0">
+            {#if w.logoSrc}
+              <img class="row-logo" src={w.logoSrc} alt="" />
+            {:else}
+              <span class={`row-logo letter ${w.logoCls}`}>{w.coShort}</span>
+            {/if}
+            <span class="wx"><b>{w.co}</b><small>{STATUS_LABEL[w.status]}</small></span>
+            <span class="days">{waitDays(w)}d</span>
+            <span class="ok"><span class={`okdot ${w.stale ? 'warn' : ''}`}></span></span>
+          </div>
+        {/each}
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -484,6 +490,10 @@
   .lede { font-size: 14.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 30px; max-width: 50ch; }
   .lede .hot { color: var(--warm-text); font-weight: 500; }
 
+  .brief-counts { font-size: 13px; color: var(--mute); margin: 0 0 26px; letter-spacing: -0.003em; }
+  .brief-counts .mid { margin: 0 8px; color: var(--mute-2); }
+  .brief-counts .quiet { color: var(--warm-text); font-weight: 500; }
+
   .kick { font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
   .kick::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
 
@@ -519,8 +529,9 @@
   .ag-row .co { font-weight: 500; }
   .ag-row .role { color: var(--mute); font-size: 12.5px; }
 
-  .foot { margin-top: 22px; font-size: 12.5px; color: var(--mute); display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
-  .foot b { color: var(--ink-2); font-weight: 500; }
+  .foot { margin-top: 28px; display: flex; justify-content: flex-end; }
+  .foot-link { background: none; border: none; padding: 4px 0; font-family: inherit; font-size: 12.5px; color: var(--mute); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: color .12s; }
+  .foot-link:hover { color: var(--accent-text); }
 
   /* status pills (agenda) */
   .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); width: max-content; }
@@ -571,8 +582,9 @@
   .pulse-row .okdot { width: 7px; height: 7px; border-radius: 50%; background: var(--positive); box-shadow: 0 0 0 3px var(--positive-tint); }
   .pulse-row .okdot.warn { background: var(--warm); box-shadow: 0 0 0 3px var(--warm-tint); }
 
-  .tasks { margin-top: 26px; }
+  .tasks { margin-top: 0; }
   .tasks .pulse-sec { margin-bottom: 10px; }
+  .waiting-sec { margin-top: 32px; }
   .task { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: center; padding: 11px 4px; border-top: 1px solid var(--rule); cursor: pointer; border-radius: 8px; transition: background .12s; }
   .task:hover { background: var(--surface-2); }
   .task .box { width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--rule-strong); background: var(--card); flex-shrink: 0; position: relative; }

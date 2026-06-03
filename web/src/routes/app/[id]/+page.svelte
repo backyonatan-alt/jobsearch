@@ -18,8 +18,8 @@
   let interviews = $state([]);
   let interviewsLoading = $state(false);
 
-  // Add-event flow (relocated — opens inline below the timeline)
-  let showAddEvent = $state(false);
+  // Add-event flow (popup modal)
+  let showEventModal = $state(false);
   let icsText = $state('');
   let aiText = $state('');
   let aiImage = $state(null); // { name, mediaType, size, file }
@@ -164,7 +164,7 @@
       }
       icsText = ''; aiText = ''; aiImage = null;
       icsPreview = [];
-      showAddEvent = false;
+      showEventModal = false;
       await loadInterviews();
     } catch (e) {
       icsParseError = e.message || 'Could not save events.';
@@ -179,9 +179,15 @@
   }
 
   function openAddEvent() {
-    showAddEvent = true;
+    showEventModal = true;
     icsParseError = '';
     icsPreview = [];
+  }
+  function closeEventModal() {
+    showEventModal = false;
+  }
+  function onWindowKeydown(e) {
+    if (e.key === 'Escape' && showEventModal) closeEventModal();
   }
 
   // ── Status / edit / delete (preserved) ───────────────────────
@@ -372,6 +378,8 @@
   <title>{app?.co ? `${app.co} — Pursuit` : 'Pursuit'}</title>
 </svelte:head>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
 <div class="topbar">
   <div class="crumb">
     <span class="root" onclick={back}>Applications</span>
@@ -448,11 +456,12 @@
                 {#if evDuration(upcoming)}<span>{evDuration(upcoming)} min</span>{/if}
               </div>
               <div class="row">
-                <button class="cta" onclick={openPlaybook}>Open the playbook
+                <button class="cta" onclick={openPlaybook}>Open interview prep
                   <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
                 <button class="ghost" onclick={openAddEvent}>Add to calendar</button>
               </div>
+              <p class="next-prep-note">AI brief on your interviewer — their style, what lands, and questions to ask.</p>
             </div>
           {:else if awaiting}
             <div class="det-next muted">
@@ -526,86 +535,6 @@
             {:else}
               <p style="color:var(--mute); font-size:13px;">No interviews on file yet.</p>
             {/if}
-
-            {#if showAddEvent}
-              <div class="add-card">
-                <div class="add-hd">
-                  <h3>Add an interview</h3>
-                  <p>Drop a calendar file, paste a screenshot, or just paste the email body — we'll extract the event.</p>
-                </div>
-                <div class="zones">
-                  <!-- LEFT — .ics -->
-                  <div class="zone">
-                    <div class="zone-hd">
-                      <span class="zone-ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg></span>
-                      <div>
-                        <div class="zone-title">Calendar file</div>
-                        <div class="zone-sub">.ics from Google / Outlook / Apple</div>
-                      </div>
-                    </div>
-                    <label class="drop drop-file">
-                      <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
-                      <span class="drop-l1">Drop .ics file</span>
-                      <span class="drop-l2">or click to browse</span>
-                      <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} style="display:none" />
-                    </label>
-                    <div class="or">or paste raw .ics text below</div>
-                    <textarea class="ai-ta" rows="3" placeholder={"BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT…"} bind:value={icsText}></textarea>
-                    <button class="btn btn-primary zone-parse" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
-                      {icsParsing ? 'Parsing…' : 'Parse .ics'}
-                    </button>
-                  </div>
-
-                  <!-- RIGHT — screenshot/text AI -->
-                  <div class="zone">
-                    <div class="zone-hd">
-                      <span class="zone-ic accent"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg></span>
-                      <div>
-                        <div class="zone-title">Screenshot or email text<span class="ai-pill">AI</span></div>
-                        <div class="zone-sub">Gmail invite, Calendar screenshot, anything readable</div>
-                      </div>
-                    </div>
-                    <label class="drop drop-image" class:drag={aiDragOver} ondragover={onAiDragOver} ondragleave={() => (aiDragOver = false)} ondrop={onAiDrop}>
-                      {#if aiImage}
-                        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-                        <span class="drop-l1">{aiImage.name}</span>
-                        <span class="drop-l2">{Math.round(aiImage.size / 1024)} KB · click to replace</span>
-                      {:else}
-                        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-                        <span class="drop-l1">Drop a screenshot</span>
-                        <span class="drop-l2"><kbd>⌘V</kbd> works too</span>
-                      {/if}
-                      <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onchange={onAiFile} style="display:none" />
-                    </label>
-                    <div class="or">or paste the email body below</div>
-                    <textarea class="ai-ta" rows="3" placeholder={"You're invited to: Stripe — Technical screen&#10;When: Tue, May 28, 2:00 PM EDT&#10;Where: Google Meet"} bind:value={aiText} onpaste={onAiPaste}></textarea>
-                    <button class="btn btn-primary zone-parse" onclick={parseAi} disabled={icsParsing || (!aiImage && !aiText.trim())}>
-                      {icsParsing ? 'Parsing…' : 'Parse with AI'}
-                    </button>
-                  </div>
-                </div>
-
-                {#if icsParseError}<p class="dossier-err" style="margin-top: 14px">{icsParseError}</p>{/if}
-
-                {#if icsPreview.length > 0}
-                  <div class="ics-preview">
-                    <h4>Preview</h4>
-                    {#each icsPreview as ev}
-                      <div class="prev-row">
-                        <div class="prev-summary">{ev.summary || 'Untitled event'}</div>
-                        <div class="prev-when">{fmtEventWhen(ev)}</div>
-                        {#if ev.location}<div class="prev-loc">📍 {ev.location}</div>{/if}
-                      </div>
-                    {/each}
-                    <button class="btn btn-primary" onclick={saveParsedEvents} disabled={icsSaving}>
-                      {icsSaving ? 'Saving…' : `Save ${icsPreview.length} event${icsPreview.length === 1 ? '' : 's'}`}
-                    </button>
-                  </div>
-                {/if}
-
-                <button class="add-cancel" onclick={() => (showAddEvent = false)}>Close</button>
-              </div>
-            {/if}
           </div>
         </div>
 
@@ -668,12 +597,12 @@
             </div>
           </div>
 
-          <!-- Playbook link -->
+          <!-- Interview prep link -->
           <div class="side-card playbook-card">
-            <div class="ttl">Interview playbook<span class="ai-pill">AI</span></div>
-            <p class="playbook-blurb">Claude's prep brief — the company, their process, and a read on your interviewer.</p>
+            <div class="ttl">Interview prep<span class="ai-pill">AI</span></div>
+            <p class="playbook-blurb">AI brief on your interviewer — their style, what lands, and questions to ask.</p>
             <button class="playbook-link" onclick={openPlaybook}>
-              Open the playbook
+              Open interview prep
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>
@@ -713,6 +642,89 @@
         </button>
       </div>
     </form>
+  </div>
+{/if}
+
+{#if showEventModal}
+  <div class="ev-overlay" onclick={closeEventModal} role="presentation">
+    <div class="ev-card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Add an interview">
+      <button class="x-close" onclick={closeEventModal} aria-label="Close">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="add-hd">
+        <h3>Add an interview</h3>
+        <p>Drop a calendar file, paste a screenshot, or just paste the email body — we'll extract the event.</p>
+      </div>
+      <div class="zones">
+        <!-- LEFT — .ics -->
+        <div class="zone">
+          <div class="zone-hd">
+            <span class="zone-ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg></span>
+            <div>
+              <div class="zone-title">Calendar file</div>
+              <div class="zone-sub">.ics from Google / Outlook / Apple</div>
+            </div>
+          </div>
+          <label class="drop drop-file">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
+            <span class="drop-l1">Drop .ics file</span>
+            <span class="drop-l2">or click to browse</span>
+            <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} style="display:none" />
+          </label>
+          <div class="or">or paste raw .ics text below</div>
+          <textarea class="ai-ta" rows="3" placeholder={"BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT…"} bind:value={icsText}></textarea>
+          <button class="btn btn-primary zone-parse" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
+            {icsParsing ? 'Parsing…' : 'Parse .ics'}
+          </button>
+        </div>
+
+        <!-- RIGHT — screenshot/text AI -->
+        <div class="zone">
+          <div class="zone-hd">
+            <span class="zone-ic accent"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg></span>
+            <div>
+              <div class="zone-title">Screenshot or email text<span class="ai-pill">AI</span></div>
+              <div class="zone-sub">Gmail invite, Calendar screenshot, anything readable</div>
+            </div>
+          </div>
+          <label class="drop drop-image" class:drag={aiDragOver} ondragover={onAiDragOver} ondragleave={() => (aiDragOver = false)} ondrop={onAiDrop}>
+            {#if aiImage}
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+              <span class="drop-l1">{aiImage.name}</span>
+              <span class="drop-l2">{Math.round(aiImage.size / 1024)} KB · click to replace</span>
+            {:else}
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+              <span class="drop-l1">Drop a screenshot</span>
+              <span class="drop-l2"><kbd>⌘V</kbd> works too</span>
+            {/if}
+            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onchange={onAiFile} style="display:none" />
+          </label>
+          <div class="or">or paste the email body below</div>
+          <textarea class="ai-ta" rows="3" placeholder={"You're invited to: Stripe — Technical screen&#10;When: Tue, May 28, 2:00 PM EDT&#10;Where: Google Meet"} bind:value={aiText} onpaste={onAiPaste}></textarea>
+          <button class="btn btn-primary zone-parse" onclick={parseAi} disabled={icsParsing || (!aiImage && !aiText.trim())}>
+            {icsParsing ? 'Parsing…' : 'Parse with AI'}
+          </button>
+        </div>
+      </div>
+
+      {#if icsParseError}<p class="dossier-err" style="margin-top: 14px">{icsParseError}</p>{/if}
+
+      {#if icsPreview.length > 0}
+        <div class="ics-preview">
+          <h4>Preview</h4>
+          {#each icsPreview as ev}
+            <div class="prev-row">
+              <div class="prev-summary">{ev.summary || 'Untitled event'}</div>
+              <div class="prev-when">{fmtEventWhen(ev)}</div>
+              {#if ev.location}<div class="prev-loc">📍 {ev.location}</div>{/if}
+            </div>
+          {/each}
+          <button class="btn btn-primary" onclick={saveParsedEvents} disabled={icsSaving}>
+            {icsSaving ? 'Saving…' : `Save ${icsPreview.length} event${icsPreview.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      {/if}
+    </div>
   </div>
 {/if}
 
@@ -820,9 +832,12 @@
   .iv-summary { font-size: 14px; color: var(--ink); margin-bottom: 2px; }
   .iv-loc { font-size: 12px; color: var(--mute); margin-top: 2px; }
 
-  /* ADD-EVENT CARD */
-  .add-card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 20px 22px; margin-top: 14px; box-shadow: var(--sh-1); }
-  .add-hd { margin-bottom: 16px; }
+  /* ADD-EVENT MODAL */
+  .ev-overlay { position: fixed; inset: 0; background: rgba(10,10,13,0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: grid; place-items: center; z-index: 200; padding: 24px; overflow-y: auto; }
+  .ev-card { position: relative; width: 100%; max-width: 540px; background: var(--card); border: 1px solid var(--rule); border-radius: 18px; padding: 26px 28px 24px; box-shadow: 0 24px 80px -8px rgba(10,10,13,0.30), var(--sh-1); margin: 24px auto; display: flex; flex-direction: column; }
+  .x-close { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 8px; background: transparent; border: 0; display: grid; place-items: center; color: var(--mute); cursor: pointer; transition: background 100ms ease, color 100ms ease; }
+  .x-close:hover { background: var(--surface-2); color: var(--ink); }
+  .add-hd { margin-bottom: 16px; padding-right: 26px; }
   .add-hd h3 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em; }
   .add-hd p { font-size: 13px; color: var(--mute); margin: 0; line-height: 1.5; }
   .zones { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -849,8 +864,6 @@
   .prev-summary { font-size: 13.5px; font-weight: 600; color: var(--ink); }
   .prev-when { font-size: 12.5px; color: var(--accent-text); margin-top: 3px; font-weight: 500; }
   .prev-loc { font-size: 12px; color: var(--mute); margin-top: 4px; }
-  .add-cancel { margin-top: 14px; background: transparent; border: none; color: var(--mute); font: inherit; font-size: 12.5px; cursor: pointer; padding: 4px 0; }
-  .add-cancel:hover { color: var(--ink); }
   .dossier-err { color: var(--danger-text); background: var(--danger-tint); border: 1px solid var(--danger-tint); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: .75rem 0 0; }
 
   /* TOAST */
@@ -896,6 +909,8 @@
     .zones { grid-template-columns: 1fr; gap: 10px; }
     .modal-overlay { padding: 0; }
     .modal { max-width: 100%; border-radius: 0; min-height: 100vh; padding: 1rem; }
+    .ev-overlay { padding: 0; }
+    .ev-card { max-width: 100%; border-radius: 0; min-height: 100vh; margin: 0; padding: 20px 16px; }
     .fields { grid-template-columns: 1fr; }
     .fields .span-2 { grid-column: auto; }
   }
