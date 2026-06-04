@@ -34,12 +34,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/beta-interest", s.handleBetaInterestCreate)
 	mux.HandleFunc("GET /api/me", s.requireUser(s.handleMe))
 	mux.HandleFunc("POST /api/me/onboarded", s.requireUser(s.handleMarkOnboarded))
-	// Demo seed for the calling user — same handlers as the admin route, just
-	// open to anyone signed in so a friend can populate their account with
-	// realistic data in one click from the empty Today state.
-	mux.HandleFunc("POST /api/me/demo-seed", s.requireUser(s.handleDemoSeed))
-	mux.HandleFunc("DELETE /api/me/demo-seed", s.requireUser(s.handleDemoClear))
-
 	mux.HandleFunc("GET /api/applications", s.requireUser(s.handleApplicationsList))
 	mux.HandleFunc("POST /api/applications", s.requireUser(s.handleApplicationCreate))
 	mux.HandleFunc("POST /api/applications/parse", s.requireUser(s.handleApplicationParse))
