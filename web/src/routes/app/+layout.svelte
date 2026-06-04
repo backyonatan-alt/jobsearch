@@ -30,6 +30,9 @@
   const forceTour = $derived(page.url.searchParams.get('tour') === '1');
   $effect(() => {
     if (tourDismissed) { tourActive = false; return; }
+    // Latch on: once the tour starts it stays mounted until finished/skipped,
+    // so it can't blink off if a navigation changes the trigger conditions.
+    if (tourActive) return;
     tourActive = forceTour || (!loading && me != null && !me.onboarded_at);
   });
 

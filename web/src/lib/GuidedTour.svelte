@@ -77,7 +77,13 @@
   $effect(() => {
     const s = STEPS[i];
     if (done) return;
-    if (s && s.view) goto(VIEW_PATH[s.view], { keepFocus: true, noScroll: true });
+    // Navigate to the step's view only when the path actually differs — and
+    // PRESERVE the current query string (?preview=1&tour=1) so the tour (and
+    // preview data) survive the navigation.
+    if (s && s.view) {
+      const dest = VIEW_PATH[s.view];
+      if (location.pathname !== dest) goto(dest + location.search, { keepFocus: true, noScroll: true });
+    }
     if (!s || s.kind === 'welcome') { target = null; return; }
     scheduleMeasure();
   });
