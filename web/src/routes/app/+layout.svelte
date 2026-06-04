@@ -134,7 +134,7 @@
 </div>
 
 {#if tourActive}
-  <GuidedTour onDone={finishTour} seedDemo={me != null && !me.onboarded_at} />
+  <GuidedTour onDone={finishTour} seedDemo={(me != null && !me.onboarded_at) || (page.url.searchParams.get('preview') === '1' && forceTour)} />
 {/if}
 
 <style>

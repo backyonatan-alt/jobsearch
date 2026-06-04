@@ -68,7 +68,14 @@ const INITIAL_APPS = [
 ];
 
 // In-memory state for the session. Mutations stick until reload.
-let apps = INITIAL_APPS.map(a => ({ ...a, last_follow_up_at: null, created_at: a.applied_at || new Date().toISOString(), updated_at: new Date().toISOString() }));
+// Demo rows are tagged `_demo` so the guided tour can seed/clear them in
+// preview exactly like the real backend (which tags via a [demo] notes prefix).
+const demoSet = () => INITIAL_APPS.map(a => ({
+  ...a, _demo: true, last_follow_up_at: null,
+  created_at: a.applied_at || new Date().toISOString(),
+  updated_at: new Date().toISOString()
+}));
+let apps = demoSet();
 let interviewsByApp = {}; // appId -> []
 let dossiersByApp = {};   // appId -> { content, meeting, generatedAgo, interviewer_name }
 let followUpsByApp = {};  // appId -> [] (newest first)
@@ -206,10 +213,19 @@ export async function mockApi(path, opts = {}) {
     return ok({ company: 'Preview Co', role: 'Senior Engineer', source: 'LinkedIn', location: 'Remote' });
   }
 
-  // POST/DELETE /api/me/demo-seed — preview is already populated, no-op.
+  // POST/DELETE /api/me/demo-seed — mirror the real backend so the guided tour
+  // demonstrates seed→clear in preview: POST (re)seeds the demo rows, DELETE
+  // removes only demo rows (user-added apps, with no _demo flag, survive).
   if (cleanPath === '/api/me/demo-seed') {
-    if (method === 'POST') return ok({ inserted: 0 });
-    if (method === 'DELETE') return ok({ deleted: 0 });
+    if (method === 'POST') {
+      apps = [...demoSet(), ...apps.filter(a => !a._demo)];
+      return ok({ inserted: INITIAL_APPS.length });
+    }
+    if (method === 'DELETE') {
+      const before = apps.length;
+      apps = apps.filter(a => !a._demo);
+      return ok({ deleted: before - apps.length });
+    }
   }
 
   // /api/applications/:id …
