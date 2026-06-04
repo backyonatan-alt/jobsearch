@@ -4,6 +4,8 @@
 
   let invites = $state([]);
   let interest = $state([]);
+  let users = $state([]);
+  let granting = $state(0); // user id currently being granted
   let loading = $state(true);
   let email = $state('');
   let note = $state('');
@@ -14,12 +16,14 @@
   onMount(refresh);
   async function refresh() {
     try {
-      const [inv, intr] = await Promise.all([
+      const [inv, intr, usr] = await Promise.all([
         api('/api/admin/invites'),
-        api('/api/admin/beta-interest')
+        api('/api/admin/beta-interest'),
+        api('/api/admin/users').catch(() => [])
       ]);
       invites = inv;
       interest = intr;
+      users = usr;
     } catch (e) {
       if (e.message !== 'unauthorized') console.error(e);
     } finally {
@@ -66,6 +70,19 @@
 
   function fmtDate(d) {
     return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // Grant a user more AI interview-prep generations.
+  async function grantPrep(u, add) {
+    granting = u.id;
+    try {
+      await api(`/api/admin/users/${u.id}/prep-credits`, { method: 'POST', body: JSON.stringify({ add }) });
+      await refresh();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      granting = 0;
+    }
   }
 
   // Demo-data seeding — admin-only, scoped to the calling admin's own
@@ -183,6 +200,32 @@
   {/if}
 </section>
 
+<section class="users">
+  <header class="dh">
+    <h2>Users <span class="count">{users.length}</span></h2>
+    <p>Everyone who's signed in. <b>AI prep</b> shows interview-prep generations used vs the cap (new users start at 10). Grant more when someone runs out — each generation costs you Claude credits.</p>
+  </header>
+  {#if users.length === 0}
+    <p class="empty">No users yet.</p>
+  {:else}
+    <ul class="ulist">
+      {#each users as u (u.id)}
+        {@const capped = u.prep_credits_used >= u.prep_credits_limit}
+        <li>
+          <div class="ux">
+            <span class="uemail">{u.email}{#if u.is_admin}<span class="utag">admin</span>{/if}</span>
+            <span class="umeta">AI prep: <b class:warn={capped}>{u.prep_credits_used} / {u.prep_credits_limit}</b>{#if !u.onboarded_at} · not onboarded{/if}</span>
+          </div>
+          <div class="uactions">
+            <button class="btn sm" onclick={() => grantPrep(u, 5)} disabled={granting === u.id}>+5</button>
+            <button class="btn sm" onclick={() => grantPrep(u, 10)} disabled={granting === u.id}>+10</button>
+          </div>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</section>
+
 <section class="demo">
   <header class="dh">
     <h2>Demo data</h2>
@@ -244,4 +287,19 @@
   .invited-fold summary { cursor: pointer; font-size: 12.5px; color: var(--mute); padding: 6px 0; }
   .invited-fold summary:hover { color: var(--ink-2); }
   .invited-fold[open] summary { margin-bottom: 8px; }
+
+  /* Users + AI-prep credits */
+  .users { margin-top: 36px; }
+  .users .ulist { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; }
+  .users .ulist li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 2px; border-top: 1px solid var(--rule); }
+  .users .ulist li:first-child { border-top: 0; }
+  .users .ux { min-width: 0; }
+  .users .uemail { font-size: 13.5px; font-weight: 500; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+  .users .utag { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent-text); background: var(--accent-tint); border-radius: 4px; padding: 1px 6px; }
+  .users .umeta { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
+  .users .umeta b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .users .umeta b.warn { color: var(--warm-text); }
+  .users .uactions { display: flex; gap: 6px; flex-shrink: 0; }
+  .users .btn.sm { height: 30px; padding: 0 12px; font-size: 12.5px; }
+  .users .empty { color: var(--mute); font-size: 13px; margin-top: 10px; }
 </style>

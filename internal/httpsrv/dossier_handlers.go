@@ -117,6 +117,21 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	req.InterviewerName = strings.TrimSpace(req.InterviewerName)
 
+	// Per-user cap on AI generations (beta cost control). Admin can grant more.
+	var prepUsed, prepLimit int
+	if err := s.Pool.QueryRow(r.Context(),
+		`SELECT prep_credits_used, prep_credits_limit FROM users WHERE id = $1`, u.ID,
+	).Scan(&prepUsed, &prepLimit); err != nil {
+		s.Logger.Error("prep credits read", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	if prepUsed >= prepLimit {
+		writeJSONError(w, http.StatusTooManyRequests,
+			"You've reached your interview-prep limit for the beta. Ask the admin to add more.")
+		return
+	}
+
 	s.Logger.Info("dossier generate start",
 		"user_id", u.ID, "app_id", appID,
 		"company", app.Company, "role", app.Role,
@@ -150,6 +165,13 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Logger.Info("dossier generate done", "app_id", appID, "bytes", len(content))
+
+	// Count this generation against the user's beta cap.
+	if _, err := s.Pool.Exec(r.Context(),
+		`UPDATE users SET prep_credits_used = prep_credits_used + 1 WHERE id = $1`, u.ID,
+	); err != nil {
+		s.Logger.Error("prep credits increment", "err", err) // non-fatal
+	}
 
 	writeJSON(w, http.StatusOK, dossierDTO{
 		ApplicationID:   appID,
