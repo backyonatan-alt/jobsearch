@@ -34,6 +34,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/beta-interest", s.handleBetaInterestCreate)
 	mux.HandleFunc("GET /api/me", s.requireUser(s.handleMe))
 	mux.HandleFunc("POST /api/me/onboarded", s.requireUser(s.handleMarkOnboarded))
+	// Seed/clear the caller's own demo data — used by the first-run guided tour
+	// to populate the screens during the tour, then clear them on finish.
+	mux.HandleFunc("POST /api/me/demo-seed", s.requireUser(s.handleDemoSeed))
+	mux.HandleFunc("DELETE /api/me/demo-seed", s.requireUser(s.handleDemoClear))
 	mux.HandleFunc("GET /api/applications", s.requireUser(s.handleApplicationsList))
 	mux.HandleFunc("POST /api/applications", s.requireUser(s.handleApplicationCreate))
 	mux.HandleFunc("POST /api/applications/parse", s.requireUser(s.handleApplicationParse))

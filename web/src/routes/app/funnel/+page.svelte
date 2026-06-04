@@ -9,7 +9,7 @@
   let apps = $state([]);
   let loading = $state(true);
 
-  onMount(async () => {
+  async function load() {
     try {
       apps = (await call('/api/applications')).map(toDisplayApp);
     } catch (e) {
@@ -17,6 +17,13 @@
     } finally {
       loading = false;
     }
+  }
+  onMount(() => {
+    load();
+    // The guided tour seeds/clears demo data and fires this so the view refetches.
+    const h = () => load();
+    window.addEventListener('pursuit:refresh', h);
+    return () => window.removeEventListener('pursuit:refresh', h);
   });
 
   // ── Funnel counts (cumulative reach) ──────────────────────

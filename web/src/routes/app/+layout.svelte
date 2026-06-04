@@ -134,7 +134,7 @@
 </div>
 
 {#if tourActive}
-  <GuidedTour onDone={finishTour} />
+  <GuidedTour onDone={finishTour} seedDemo={me != null && !me.onboarded_at} />
 {/if}
 
 <style>

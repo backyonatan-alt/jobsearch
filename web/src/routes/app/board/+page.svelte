@@ -22,7 +22,12 @@
     { k: 'offer',      lbl: 'Offer'      },
   ];
 
-  onMount(refresh);
+  onMount(() => {
+    refresh();
+    const h = () => refresh();
+    window.addEventListener('pursuit:refresh', h);
+    return () => window.removeEventListener('pursuit:refresh', h);
+  });
   async function refresh() {
     try { apps = (await call('/api/applications')).map(toDisplayApp); }
     catch (e) { if (e.message !== 'unauthorized') console.error(e); }

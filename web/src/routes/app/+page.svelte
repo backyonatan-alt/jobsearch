@@ -22,7 +22,13 @@
   let eventsByApp = $state({});   // id -> [{starts_at, ends_at, summary, location, medium, panel, interviewer}]
   let dossierByApp = $state({});  // id -> dossier DTO (content + meeting + interviewer_name)
 
-  onMount(refresh);
+  onMount(() => {
+    refresh();
+    // The guided tour seeds/clears demo data and fires this so the view refetches.
+    const h = () => refresh();
+    window.addEventListener('pursuit:refresh', h);
+    return () => window.removeEventListener('pursuit:refresh', h);
+  });
 
   async function refresh() {
     try {

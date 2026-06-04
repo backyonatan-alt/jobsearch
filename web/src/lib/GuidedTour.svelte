@@ -3,7 +3,33 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
 
-  let { onDone = () => {} } = $props();
+  let { onDone = () => {}, seedDemo = false } = $props();
+
+  // First-run only: clear any stale demo rows, seed fresh ones so the tour's
+  // screens look alive, then tell the views to refetch. Cleared again on finish.
+  let seeded = false;
+  async function seedDemoData() {
+    if (!seedDemo || seeded) return;
+    seeded = true;
+    try {
+      await api('/api/me/demo-seed', { method: 'DELETE' }).catch(() => {});
+      await api('/api/me/demo-seed', { method: 'POST' });
+      window.dispatchEvent(new Event('pursuit:refresh'));
+    } catch {}
+  }
+  async function clearDemoData() {
+    if (!seedDemo) return;
+    try { await api('/api/me/demo-seed', { method: 'DELETE' }); } catch {}
+    window.dispatchEvent(new Event('pursuit:refresh'));
+  }
+  // finish = clean up demo rows (keeps the user's own added app), then hand off.
+  let finishing = false;
+  async function finish() {
+    if (finishing) return;
+    finishing = true;
+    await clearDemoData();
+    onDone();
+  }
 
   // ── tour script: welcome → 5 highlights → add-application modal ──
   const STEPS = [
@@ -89,6 +115,7 @@
   });
 
   onMount(() => {
+    seedDemoData();
     window.addEventListener('resize', measure);
     window.addEventListener('scroll', measure, true);
   });
@@ -102,7 +129,7 @@
   // confirmation auto-dismisses after 3.4s
   $effect(() => {
     if (!done) return;
-    const t = setTimeout(() => onDone(), 3400);
+    const t = setTimeout(() => finish(), 3400);
     return () => clearTimeout(t);
   });
 
@@ -165,7 +192,7 @@
         <b>You're all set.</b>
         <span>Your applications live here — add another anytime from <em>New application</em></span>
       </div>
-      <button class="cmA-toast-x" onclick={() => onDone()}>{@render Icon('x', 12)}</button>
+      <button class="cmA-toast-x" onclick={() => finish()}>{@render Icon('x', 12)}</button>
     </div>
   </div>
 {:else if step.kind === 'welcome'}
@@ -179,7 +206,7 @@
         </div>
       </div>
       <div class="cmA-intro-foot">
-        <button class="t-ghost sm" onclick={() => onDone()}>No thanks</button>
+        <button class="t-ghost sm" onclick={() => finish()}>No thanks</button>
         <button class="t-cta sm" onclick={() => (i = 1)}>Show me {@render Icon('arrow')}</button>
       </div>
     </div>
@@ -223,7 +250,7 @@
   <div class="t-card cmA-bubble tail-{pos.actual}" style="top:{pos.top}px;left:{pos.left}px;width:{CW}px;--tail:{tail}px">
     <div class="cmA-head">
       <span class="cmA-num">{i} <span>/ {N}</span></span>
-      <button class="cmA-skip" onclick={() => onDone()}>Skip tour</button>
+      <button class="cmA-skip" onclick={() => finish()}>Skip tour</button>
     </div>
     <h4><span class="cmA-h-ic">{@render Icon(step.icon, 15)}</span>{step.title}</h4>
     <p>{step.body}</p>
