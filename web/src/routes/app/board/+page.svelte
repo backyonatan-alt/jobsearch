@@ -136,7 +136,7 @@
         <p>Add your first one from the Today page (⌘N) — they'll appear here grouped by status.</p>
       </div>
     {:else}
-      <div class="bcols">
+      <div class="bcols" data-tour="board">
         {#each COLS as col (col.k)}
           <section
             class="bcol"

@@ -1,12 +1,10 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
   import { api } from '$lib/api.js';
   import {
     STATUS_LABEL, toDisplayApp, daysSince, fmtRelativeDate
   } from '$lib/app-helpers.js';
-  import Onboarding from '$lib/Onboarding.svelte';
   import AddApplication from '$lib/AddApplication.svelte';
 
   // `api` self-routes to the in-memory mock when ?preview=1 is on (see
@@ -17,7 +15,6 @@
   let me = $state(null);
   let loading = $state(true);
   let showNewModal = $state(false);
-  let showOnboarding = $state(false);
 
   // Per-app interview events + dossier, keyed by app id. Loaded lazily for the
   // "live" statuses so the Brief can find the soonest upcoming interview and a
@@ -35,7 +32,6 @@
       ]);
       me = meRes;
       apps = raw.map(toDisplayApp);
-      maybeShowOnboarding();
       loading = false;
       await hydrateBrief(raw);
     } catch (e) {
@@ -61,13 +57,6 @@
     dossierByApp = { ...dossierByApp };
     seedTasks();
   }
-
-  function maybeShowOnboarding() {
-    const forced = page.url.searchParams.get('onboarding') === '1';
-    const fresh = !me?.onboarded_at && apps.length === 0;
-    showOnboarding = forced || fresh;
-  }
-  function finishOnboarding() { showOnboarding = false; refresh(); }
 
   // ⌘N / Ctrl+N opens the new-application modal from anywhere on Today.
   function onKeydown(e) {
@@ -348,10 +337,6 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-{#if showOnboarding}
-  <Onboarding onDone={finishOnboarding} />
-{/if}
-
 <div class="topbar">
   <div class="crumb"><span class="here">Today</span></div>
   <div class="right">
@@ -362,7 +347,7 @@
       <span>Search applications, people…</span>
       <span class="kbd">⌘K</span>
     </div>
-    <button class="btn btn-primary" onclick={() => (showNewModal = true)}>
+    <button class="btn btn-primary" data-tour="new-app" onclick={() => (showNewModal = true)}>
       New application <span class="kbd">⌘N</span>
     </button>
   </div>
@@ -376,7 +361,7 @@
       <div class="brief-head">
         <h1>{greeting}, <b>{firstName}.</b></h1>
         {#if !loading}
-          <div class="brief-stats">
+          <div class="brief-stats" data-tour="stats">
             <button class="bstat" onclick={openBoard} title="Applications still active — applied through offer">
               <span class="bstat-n">{activeCount}</span>
               <span class="bstat-l">In progress</span>
@@ -406,7 +391,7 @@
         <div class="kick">{@render Spark()}&nbsp;Prep for today</div>
 
         {#if insightText}
-          <div class="insight">
+          <div class="insight" data-tour="prep">
             <span class="ic">{@render Spark(15)}</span>
             <span class="tx">{@html insightText}</span>
           </div>
@@ -442,7 +427,7 @@
 
         {#if suggestions.length}
           <div class="kick">{@render Spark()}&nbsp;What you can do today</div>
-          <div class="suggest">
+          <div class="suggest" data-tour="prep">
             {#each suggestions as s}
               <div class="sg" onclick={s.go} role="button" tabindex="0">
                 <span class="sg-ic" class:plain={!s.spark}>

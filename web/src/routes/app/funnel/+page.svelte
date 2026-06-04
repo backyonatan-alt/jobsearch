@@ -235,7 +235,7 @@
           <!-- Pipeline funnel -->
           <div class="ph">Pipeline funnel</div>
           <div class="psub">Where your {activeCount} active application{activeCount !== 1 ? 's' : ''} sit today</div>
-          <div class="funnel">
+          <div class="funnel" data-tour="funnel">
             {#each funnelStages as s}
               {@const width = funnelCounts.applied ? Math.max(4, (s.n / funnelCounts.applied) * 100) : 0}
               {@const pct = funnelCounts.applied ? Math.round((s.n / funnelCounts.applied) * 100) : 0}

@@ -4,12 +4,15 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { isPreview } from '$lib/preview-mode.js';
+  import GuidedTour from '$lib/GuidedTour.svelte';
 
   let { children } = $props();
   let me = $state(null);
   let applications = $state([]);
   let loading = $state(true);
   let previewMode = $state(false);
+  let tourActive = $state(false);
+  let tourDismissed = $state(false);
   $effect(() => { previewMode = isPreview(); });
 
   onMount(async () => {
@@ -22,6 +25,19 @@
       loading = false;
     }
   });
+
+  // First-run guided tour: force via ?tour=1, otherwise first run (no onboarded_at).
+  const forceTour = $derived(page.url.searchParams.get('tour') === '1');
+  $effect(() => {
+    if (tourDismissed) { tourActive = false; return; }
+    tourActive = forceTour || (!loading && me != null && !me.onboarded_at);
+  });
+
+  async function finishTour() {
+    tourDismissed = true;
+    tourActive = false;
+    try { await api('/api/me/onboarded', { method: 'POST' }); } catch {}
+  }
 
   async function signOut() {
     await api('/api/auth/logout', { method: 'POST' });
@@ -113,6 +129,10 @@
     {@render children()}
   </section>
 </div>
+
+{#if tourActive}
+  <GuidedTour onDone={finishTour} />
+{/if}
 
 <style>
   .preview-banner {
