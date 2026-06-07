@@ -1,5 +1,6 @@
 <script>
   import { page } from '$app/state';
+  import { track } from '$lib/analytics.js';
 
   const messages = {
     oauth_denied:  'Sign-in was canceled.',
@@ -37,8 +38,10 @@
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.error || 'Something went wrong.');
       interestState = body.status === 'already_invited' ? 'already_invited' : 'sent';
+      track('beta_interest_submit', { source: source || 'direct', outcome: interestState });
     } catch (e) {
       interestError = e.message;
+      track('beta_interest_submit', { source: source || 'direct', outcome: 'error' });
     } finally {
       submitting = false;
     }

@@ -73,20 +73,3 @@ func (s *Server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 		h(w, r)
 	})
 }
-
-func (s *Server) serveStaticFile(name string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		f, err := s.Static.Open("/" + name)
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		defer f.Close()
-		fi, err := f.Stat()
-		if err != nil {
-			http.Error(w, "stat", http.StatusInternalServerError)
-			return
-		}
-		http.ServeContent(w, r, name, fi.ModTime(), f)
-	}
-}

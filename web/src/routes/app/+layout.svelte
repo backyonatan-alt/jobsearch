@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { isPreview } from '$lib/preview-mode.js';
+  import { track } from '$lib/analytics.js';
   import GuidedTour from '$lib/GuidedTour.svelte';
 
   let { children } = $props();
@@ -19,6 +20,15 @@
     try {
       me = await api('/api/me');
       applications = await api('/api/applications');
+      // GA4 recommended `login` event. Fired once per browser session on the
+      // first authenticated app load — the closest client signal to a real
+      // sign-in, since OAuth success is a server-side redirect. Skipped in
+      // preview (no real auth).
+      if (!isPreview() && typeof sessionStorage !== 'undefined'
+          && !sessionStorage.getItem('pursuit_login_tracked')) {
+        sessionStorage.setItem('pursuit_login_tracked', '1');
+        track('login', { method: 'google' });
+      }
     } catch (e) {
       if (e.message !== 'unauthorized') console.error(e);
     } finally {
