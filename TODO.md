@@ -34,15 +34,31 @@ Time-bound items. Cross off as completed. Things that don't have a date go in `C
 - [ ] Backup story for Postgres: nightly `pg_dump` → off-VM (S3 or Hetzner Storage Box)
 - [ ] A single Plausible (or GA4) property wired into the frontend
 
-## Product analytics (GA4 — funnel-first)
+## Product analytics
 
-- [ ] Create GA4 property + web data stream; put the Measurement ID in a `GA4_MEASUREMENT_ID` env var and inject the gtag snippet into the SvelteKit shell (skip in dev / on localhost)
-- [ ] SPA pageview tracking on Svelte client-side navigation (GA4 won't auto-fire on route changes)
-- [ ] Instrument the AI-native moments — one event each: `paste_parse`, `screenshot_parse`, `dossier_open`, `dossier_refresh`, `interview_parse`
-- [ ] Instrument the application funnel — `application_create` + a `status_change` event carrying old→new status (so applied→screen→onsite→offer is reconstructable)
-- [ ] Instrument onboarding + activation — `onboarding_view`, `onboarding_dismiss`, `demo_seed_click`, first-application milestone
-- [ ] Saved GA4 Explorations: application funnel (applied→offer) and AI-feature adoption funnel
-- [ ] Verify events land in GA4 Realtime/DebugView from prod before calling it done (rendered-surface bar: confirm in the GA4 UI, not just that gtag fired)
+Architecture (locked Jun 7 2026): **GA4 = public homepage / acquisition only**
+(it thresholds low-volume beta data); **first-party `events` table = in-app
+product behaviour** (source of truth, read per-user journeys). Application-stage
+funnel stays the existing `/app/funnel` DB query — not reconstructed in GA4.
+
+### Shipped
+
+- [x] **PR 1 (#13)** — GA4 property `G-XJFYSBRVEW` (Google Signals off); gtag injected server-side only when `GA4_MEASUREMENT_ID` set (dev/local emit nothing); SPA `page_view` on Svelte nav; homepage events `beta_interest_submit`, `login`. Verified live via curl + Realtime.
+- [x] **PR 1.5 (#14)** — in-app-browser (LinkedIn/IG/FB) sign-in nudge → fixes Google `disallowed_useragent` 403; `signin_webview_nudge` event.
+- [x] **PR 2 (#15)** — `events` table + `POST /api/events` + `GET /api/admin/events` (per-user timeline). Server-side AI-moment events `paste_parse` / `screenshot_parse` / `dossier_refresh` / `interview_parse` (outcome + `duration_ms`). Client events `application_create` {via}, `status_change` {from,to,surface} (confirmed-success), `dossier_open` (fire-once). `first_application` milestone (demo rows excluded). PII rule enforced at call sites.
+
+### PR 3 — parked until beta data rolls in (Jun 7 2026)
+
+- [ ] Onboarding/activation events: `tutorial_begin`, `tutorial_complete`, `onboarding_dismiss`, `demo_seed_click`
+- [ ] Internal-traffic filter — exclude admin/own user_id so my own clicks don't skew the beta numbers (GA4 internal-traffic + an exclusion in the events queries)
+- [ ] `ANALYTICS.md` tracking plan — North Star, activation/retention definitions, event dictionary, the PII rule, which store answers which question
+- [ ] Saved analyses: GA4 acquisition Exploration (homepage→`beta_interest_submit`→`login`); Postgres activation funnel (real-data-only); **AI-moment → week-2 retention cohort** (the core-thesis test)
+- [ ] Quality/voice layer (from the PM review): `ai_feedback` thumbs-up/down on dossier+parse; `outcome_selfreport` at offer; churn ping; beta-interview script
+
+### Launch ops (Jun 7 2026 — LinkedIn beta post is live)
+
+- [ ] Rotate the **Anthropic API key** — exposed in chat transcript (`tail` of `/opt/jobsearch/.env`). console.anthropic.com → revoke + new key → update VM `.env` → `systemctl restart jobsearch`.
+- [ ] Invite discipline: requests land on `/admin/people` tagged `source=linkedin` — invite a **~10 cohort, waitlist the rest** so per-user interviews stay doable.
 
 ## Parked decisions
 
