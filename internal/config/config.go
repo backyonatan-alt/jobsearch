@@ -22,6 +22,8 @@ type Config struct {
 	AnthropicAPIKey string
 	AllowedEmails   map[string]struct{} // bootstrap fallback only; invites live in DB
 	AdminEmails     map[string]struct{} // emails granted is_admin on sign-in
+
+	GA4MeasurementID string // empty = no analytics (dev/local); set in prod env
 }
 
 func FromEnv() (*Config, error) {
@@ -34,6 +36,7 @@ func FromEnv() (*Config, error) {
 		GoogleClientID:     getenv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getenv("GOOGLE_CLIENT_SECRET", ""),
 		AnthropicAPIKey:    getenv("ANTHROPIC_API_KEY", ""),
+		GA4MeasurementID:   strings.TrimSpace(getenv("GA4_MEASUREMENT_ID", "")),
 	}
 
 	if c.DatabaseURL == "" {

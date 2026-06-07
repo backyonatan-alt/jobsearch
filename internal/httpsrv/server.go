@@ -69,12 +69,15 @@ func (s *Server) Routes() http.Handler {
 	// SPA fallback: the SvelteKit static build emits a single index.html for
 	// all client-routed pages, so any /app/* or /admin/* or /preview/* URL
 	// hits the same entry file. The Svelte router takes over from there.
-	mux.HandleFunc("GET /app", s.serveStaticFile("index.html"))
-	mux.HandleFunc("GET /app/", s.serveStaticFile("index.html"))
-	mux.HandleFunc("GET /admin", s.serveStaticFile("index.html"))
-	mux.HandleFunc("GET /admin/", s.serveStaticFile("index.html"))
-	mux.HandleFunc("GET /preview", s.serveStaticFile("index.html"))
-	mux.HandleFunc("GET /preview/", s.serveStaticFile("index.html"))
+	mux.HandleFunc("GET /app", s.serveIndexHTML)
+	mux.HandleFunc("GET /app/", s.serveIndexHTML)
+	mux.HandleFunc("GET /admin", s.serveIndexHTML)
+	mux.HandleFunc("GET /admin/", s.serveIndexHTML)
+	mux.HandleFunc("GET /preview", s.serveIndexHTML)
+	mux.HandleFunc("GET /preview/", s.serveIndexHTML)
+	// Root serves the same shell (with GA injected); everything else under "/"
+	// is a static asset (js/css/favicon) served straight off disk.
+	mux.HandleFunc("GET /{$}", s.serveIndexHTML)
 	mux.Handle("/", http.FileServer(s.Static))
 
 	return s.withLogging(mux)
