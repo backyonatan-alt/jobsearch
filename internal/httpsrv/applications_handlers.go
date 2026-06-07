@@ -130,6 +130,16 @@ func (s *Server) handleApplicationCreate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusCreated, a)
+
+	// Activation milestone: first *real* application (demo-seeded rows excluded).
+	// Emitted after the response so it never adds latency to the create.
+	var realCount int
+	if err := s.Pool.QueryRow(r.Context(),
+		`SELECT count(*) FROM applications WHERE user_id = $1 AND (notes IS NULL OR notes NOT LIKE $2)`,
+		u.ID, demoNotePrefix+"%",
+	).Scan(&realCount); err == nil && realCount == 1 {
+		s.logEvent(r.Context(), u.ID, "first_application", nil)
+	}
 }
 
 func (s *Server) handleApplicationGet(w http.ResponseWriter, r *http.Request) {

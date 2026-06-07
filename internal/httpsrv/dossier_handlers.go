@@ -107,6 +107,7 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
+	start := time.Now()
 
 	var req refreshRequest
 	if r.ContentLength > 0 {
@@ -127,6 +128,9 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if prepUsed >= prepLimit {
+		s.logEvent(r.Context(), u.ID, "dossier_refresh", map[string]any{
+			"outcome": "limit", "duration_ms": time.Since(start).Milliseconds(),
+		})
 		writeJSONError(w, http.StatusTooManyRequests,
 			"You've reached your interview-prep limit for the beta. Ask the admin to add more.")
 		return
@@ -140,6 +144,10 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	content, err := s.LLM.GenerateDossier(r.Context(), app.Company, app.Role, req.InterviewerName)
 	if err != nil {
 		s.Logger.Info("dossier generate failed", "err", err)
+		s.logEvent(r.Context(), u.ID, "dossier_refresh", map[string]any{
+			"outcome": "error", "error_reason": "generate_failed",
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
 		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
@@ -165,6 +173,9 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Logger.Info("dossier generate done", "app_id", appID, "bytes", len(content))
+	s.logEvent(r.Context(), u.ID, "dossier_refresh", map[string]any{
+		"outcome": "success", "duration_ms": time.Since(start).Milliseconds(),
+	})
 
 	// Count this generation against the user's beta cap.
 	if _, err := s.Pool.Exec(r.Context(),

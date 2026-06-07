@@ -3,8 +3,12 @@
   // ⌘N / paste-to-parse / screenshot-vision flow stays intact and reusable.
   // Usage: <AddApplication bind:open onCreated={refresh} />  (open is bindable)
   import { api } from '$lib/api.js';
+  import { logEvent } from '$lib/analytics.js';
 
   let { open = $bindable(false), onCreated } = $props();
+
+  // Whether AI parse was used to fill the form (drives application_create `via`).
+  let parseUsed = $state(false);
 
   // new-application form state
   let form = $state({ company: '', role: '', status: 'applied', source: '', jd_url: '', cv_variant: '', location: '', salary_note: '' });
@@ -70,6 +74,7 @@
         payload.image = { media_type: attachedImage.mediaType, data };
       }
       const r = await api('/api/applications/parse', { method: 'POST', body: JSON.stringify(payload) });
+      parseUsed = true;
       if (r.company)     form.company     = r.company;
       if (r.role)        form.role        = r.role;
       if (r.location)    form.location    = r.location;
@@ -124,6 +129,7 @@
     parsedHint = '';
     attachedImage = null;
     isDraggingFile = false;
+    parseUsed = false;
     open = false;
   }
 
@@ -134,6 +140,12 @@
       const payload = { ...form };
       for (const k of ['jd_url', 'cv_variant', 'source', 'location', 'salary_note']) if (!payload[k]) delete payload[k];
       await api('/api/applications', { method: 'POST', body: JSON.stringify(payload) });
+      // Confirmed-success only (after the await), before resetModal clears state.
+      logEvent('application_create', {
+        via: parseUsed ? 'parse' : 'manual',
+        source: form.source || 'none',
+        status: form.status
+      });
       resetModal();
       onCreated?.();
     } finally {

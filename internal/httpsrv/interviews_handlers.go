@@ -69,9 +69,10 @@ type icsParseResponse struct {
 }
 
 // POST /api/applications/{id}/interviews/parse — three ways to parse:
-//   1. {ics: "BEGIN:VCALENDAR..."}   — strict ICS parsing, fastest, no LLM.
-//   2. {text: "You're invited..."}   — free-form email/notes through Haiku.
-//   3. {image: {media_type, data}}   — screenshot through Haiku Vision.
+//  1. {ics: "BEGIN:VCALENDAR..."}   — strict ICS parsing, fastest, no LLM.
+//  2. {text: "You're invited..."}   — free-form email/notes through Haiku.
+//  3. {image: {media_type, data}}   — screenshot through Haiku Vision.
+//
 // Returns the same {events: [...]} shape regardless so the frontend renders
 // the preview through one code path.
 func (s *Server) handleInterviewsParse(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +86,7 @@ func (s *Server) handleInterviewsParse(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
+	start := time.Now()
 
 	var req icsParseRequest
 	if err := readJSON(r, &req); err != nil {
@@ -106,10 +108,18 @@ func (s *Server) handleInterviewsParse(w http.ResponseWriter, r *http.Request) {
 		}
 		events, err := ics.Parse(strings.NewReader(icsBody))
 		if err != nil {
+			s.logEvent(r.Context(), u.ID, "interview_parse", map[string]any{
+				"source": "ics", "outcome": "error", "error_reason": "parse_failed",
+				"duration_ms": time.Since(start).Milliseconds(),
+			})
 			writeJSONError(w, http.StatusUnprocessableEntity, "could not parse calendar: "+err.Error())
 			return
 		}
 		if len(events) == 0 {
+			s.logEvent(r.Context(), u.ID, "interview_parse", map[string]any{
+				"source": "ics", "outcome": "error", "error_reason": "no_vevent",
+				"duration_ms": time.Since(start).Milliseconds(),
+			})
 			writeJSONError(w, http.StatusUnprocessableEntity, "no VEVENT found — is this an .ics calendar invite?")
 			return
 		}
@@ -117,6 +127,10 @@ func (s *Server) handleInterviewsParse(w http.ResponseWriter, r *http.Request) {
 		for _, e := range events {
 			out = append(out, toParsedDTO(e))
 		}
+		s.logEvent(r.Context(), u.ID, "interview_parse", map[string]any{
+			"source": "ics", "outcome": "success", "count": len(out),
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
 		writeJSON(w, http.StatusOK, icsParseResponse{Events: out})
 		return
 	}
@@ -139,17 +153,33 @@ func (s *Server) handleInterviewsParse(w http.ResponseWriter, r *http.Request) {
 		"user_id", u.ID, "app_id", appID,
 		"has_image", img != nil, "text_chars", len(text))
 
+	source := "text"
+	if img != nil {
+		source = "image"
+	}
 	ev, err := s.LLM.ParseEvent(r.Context(), text, img)
 	if err != nil {
 		s.Logger.Info("interview parse failed", "err", err)
+		s.logEvent(r.Context(), u.ID, "interview_parse", map[string]any{
+			"source": source, "outcome": "error", "error_reason": "parse_failed",
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
 		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	dto, err := llmEventToDTO(ev)
 	if err != nil {
+		s.logEvent(r.Context(), u.ID, "interview_parse", map[string]any{
+			"source": source, "outcome": "error", "error_reason": "bad_event",
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
 		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	s.logEvent(r.Context(), u.ID, "interview_parse", map[string]any{
+		"source": source, "outcome": "success", "count": 1,
+		"duration_ms": time.Since(start).Milliseconds(),
+	})
 	writeJSON(w, http.StatusOK, icsParseResponse{Events: []parsedEventDTO{dto}})
 }
 
