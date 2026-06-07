@@ -3,12 +3,16 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { isPreview, mockApi } from '$lib/preview-mode.js';
+  import { logEvent } from '$lib/analytics.js';
   import {
     toDisplayApp, STATUS_LABEL, STATUSES,
     fmtLongDate, fmtRelativeDate, daysSince, isStale
   } from '$lib/app-helpers.js';
 
   const call = isPreview() ? mockApi : api;
+
+  // Fire-once guard for dossier_open (one event per app viewed, not per render).
+  let lastDossierOpenId = null;
 
   let app = $state(null);
   let loading = $state(true);
@@ -66,6 +70,10 @@
     loadInterviews();
     loadFollowUps();
     loadDossier();
+    if (id && id !== lastDossierOpenId) {
+      lastDossierOpenId = id;
+      logEvent('dossier_open', { app_id: Number(id) });
+    }
   });
 
   async function loadApp() {
@@ -274,7 +282,9 @@
   async function setStatus(newStatus) {
     showStatusMenu = false;
     if (!app || newStatus === app.status) return;
+    const fromStatus = app.status;
     await call(`/api/applications/${id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
+    logEvent('status_change', { from: fromStatus, to: newStatus, surface: 'detail' });
     await loadApp();
   }
   function openEdit() {

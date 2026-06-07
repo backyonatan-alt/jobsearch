@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/backyonatan-alt/jobsearch/internal/llm"
 )
@@ -73,11 +74,28 @@ func (s *Server) handleApplicationParse(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// The screenshot path and the paste path are different product moments,
+	// so they get distinct event names. Emitted server-side with true latency
+	// so a client crash on error can't drop the signal.
+	u, _ := userFromCtx(r.Context())
+	eventName := "paste_parse"
+	if img != nil {
+		eventName = "screenshot_parse"
+	}
+	start := time.Now()
+
 	job, err := s.LLM.ParseJob(r.Context(), text, img)
 	if err != nil {
 		s.Logger.Info("parse failed", "err", err, "has_image", img != nil)
+		s.logEvent(r.Context(), u.ID, eventName, map[string]any{
+			"outcome": "error", "error_reason": "parse_failed",
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
 		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	s.logEvent(r.Context(), u.ID, eventName, map[string]any{
+		"outcome": "success", "duration_ms": time.Since(start).Milliseconds(),
+	})
 	writeJSON(w, http.StatusOK, job)
 }

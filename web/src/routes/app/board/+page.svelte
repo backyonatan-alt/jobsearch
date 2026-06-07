@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { isPreview, mockApi } from '$lib/preview-mode.js';
+  import { logEvent } from '$lib/analytics.js';
   import { STATUS_LABEL, toDisplayApp, fmtLongDate, isStale } from '$lib/app-helpers.js';
 
   const call = isPreview() ? mockApi : api;
@@ -84,6 +85,7 @@
 
     const app = apps.find(a => a.id === id);
     if (!app || app.status === newStatus) return;
+    const fromStatus = app.status;
 
     // Optimistic update: move card immediately + mark as "just moved" so
     // its time-ago reads "just now" and the stale border clears.
@@ -99,6 +101,8 @@
         method: 'PATCH',
         body: JSON.stringify({ status: newStatus })
       });
+      // Confirmed-success only — never on the optimistic update or a revert.
+      logEvent('status_change', { from: fromStatus, to: newStatus, surface: 'board' });
     } catch (err) {
       console.error('status update failed', err);
       apps = prevApps;
