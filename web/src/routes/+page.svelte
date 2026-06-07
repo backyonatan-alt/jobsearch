@@ -1,6 +1,31 @@
 <script>
   import { page } from '$app/state';
   import { track } from '$lib/analytics.js';
+  import { isInAppBrowser } from '$lib/webview.js';
+
+  // In-app browsers (LinkedIn/IG/FB) can't complete Google OAuth — show a
+  // nudge to open in a real browser instead of letting users hit the 403.
+  let inApp = $state(false);
+  let copied = $state(false);
+  let nudgeTracked = false;
+  $effect(() => {
+    // ?webview=1 forces the nudge on for preview/QA in a normal browser.
+    inApp = isInAppBrowser() || page.url.searchParams.get('webview') === '1';
+    if (inApp && !nudgeTracked) {
+      nudgeTracked = true;
+      track('signin_webview_nudge', { source: source || 'direct' });
+    }
+  });
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      copied = true;
+      setTimeout(() => (copied = false), 2000);
+    } catch {
+      copied = false;
+    }
+  }
 
   const messages = {
     oauth_denied:  'Sign-in was canceled.',
@@ -57,6 +82,14 @@
     <div class="mark"></div>
     <h1>Pursuit</h1>
     <p class="tagline">Track your job search. Beat the funnel.</p>
+
+    {#if inApp}
+      <div class="webview-note" role="note">
+        <strong>To sign in with Google, open this page in your browser.</strong>
+        <span>Tap the <b>•••</b> (or share) menu at the top, choose <b>“Open in Safari / Chrome”</b>, then sign in there.</span>
+        <button type="button" class="wv-copy" onclick={copyLink}>{copied ? 'Link copied ✓' : 'Copy link'}</button>
+      </div>
+    {/if}
 
     <a class="google" href="/auth/google/start" data-sveltekit-reload>
       <svg viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
@@ -157,6 +190,28 @@
 
   .status { font-size: 12.5px; min-height: 18px; margin: 12px 0 0; color: var(--mute); }
   .status.error { color: var(--danger-text); }
+
+  .webview-note {
+    text-align: left;
+    background: var(--warm-tint);
+    border: 1px solid var(--warm);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 0 0 14px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .webview-note strong { font-size: 13px; color: var(--warm-text); font-weight: 600; }
+  .webview-note span { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+  .webview-note b { font-weight: 600; }
+  .wv-copy {
+    align-self: flex-start; margin-top: 2px;
+    font: inherit; font-size: 12px; font-weight: 500;
+    height: 28px; padding: 0 12px;
+    background: var(--card); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 6px;
+    cursor: pointer;
+  }
+  .wv-copy:hover { background: var(--surface); }
 
   .interest-block { margin-top: 18px; text-align: left; }
   .link-btn {
