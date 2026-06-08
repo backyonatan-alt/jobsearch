@@ -72,6 +72,30 @@
     return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
+  // "3h ago" / "2d ago" / "just now" — for last-seen recency at a glance.
+  function fmtAgo(d) {
+    if (!d) return 'never';
+    const secs = Math.max(0, (Date.now() - new Date(d).getTime()) / 1000);
+    if (secs < 90) return 'just now';
+    const mins = secs / 60;
+    if (mins < 60) return `${Math.round(mins)}m ago`;
+    const hrs = mins / 60;
+    if (hrs < 24) return `${Math.round(hrs)}h ago`;
+    const days = hrs / 24;
+    if (days < 30) return `${Math.round(days)}d ago`;
+    return fmtDate(d);
+  }
+
+  // Emails that have actually signed in (activated their account), lowercased
+  // for case-insensitive matching against the invite list.
+  const activatedEmails = $derived(new Set(users.map(u => u.email.toLowerCase())));
+  function hasSignedIn(email) {
+    return activatedEmails.has(email.toLowerCase());
+  }
+  // Pilot funnel: of everyone invited, how many have signed in at least once.
+  const invitedCount = $derived(invites.length);
+  const activatedInvited = $derived(invites.filter(i => hasSignedIn(i.email)).length);
+
   // Grant a user more AI interview-prep generations.
   async function grantPrep(u, add) {
     granting = u.id;
@@ -134,6 +158,13 @@
   {#if error}<p class="error">{error}</p>{/if}
 </form>
 
+{#if !loading && invites.length > 0}
+  <p class="funnel">
+    <b>{activatedInvited}</b> of <b>{invitedCount}</b> invited have signed in.
+    {#if activatedInvited < invitedCount}<span class="funnel-note">The rest haven't activated yet — tagged below.</span>{/if}
+  </p>
+{/if}
+
 <section class="list">
   <header class="lh">
     <span>Email</span>
@@ -147,8 +178,13 @@
     <p style="color: var(--mute); padding: 1rem">Nobody on the list yet.</p>
   {:else}
     {#each invites as i (i.email)}
+      {@const signedIn = hasSignedIn(i.email)}
       <div class="lr">
-        <span class="email">{i.email}</span>
+        <span class="email">
+          {i.email}
+          {#if signedIn}<span class="status on" title="Signed in at least once">signed in</span>
+          {:else}<span class="status off" title="Invited but hasn't signed in yet">not signed in</span>{/if}
+        </span>
         <span class="note">{i.note || '—'}</span>
         <span class="when">{fmtDate(i.invited_at)}{i.invited_by_email ? ` · by ${i.invited_by_email}` : ''}</span>
         <button class="x" onclick={() => remove(i.email)} title="Remove">×</button>
@@ -203,7 +239,7 @@
 <section class="users">
   <header class="dh">
     <h2>Users <span class="count">{users.length}</span></h2>
-    <p>Everyone who's signed in. <b>AI prep</b> shows interview-prep generations used vs the cap (new users start at 10). Grant more when someone runs out — each generation costs you Claude credits.</p>
+    <p>Everyone who's signed in, most-recently-active first — your pilot contact list. <b>Used</b> = real applications they've created (demo rows excluded), plus interviews and dossiers. <b>AI prep</b> shows interview-prep generations used vs the cap (new users start at 10); grant more when someone runs out — each generation costs you Claude credits.</p>
   </header>
   {#if users.length === 0}
     <p class="empty">No users yet.</p>
@@ -211,10 +247,16 @@
     <ul class="ulist">
       {#each users as u (u.id)}
         {@const capped = u.prep_credits_used >= u.prep_credits_limit}
+        {@const tried = u.app_count > 0 || u.interview_count > 0 || u.dossier_count > 0}
         <li>
           <div class="ux">
-            <span class="uemail">{u.email}{#if u.is_admin}<span class="utag">admin</span>{/if}</span>
-            <span class="umeta">AI prep: <b class:warn={capped}>{u.prep_credits_used} / {u.prep_credits_limit}</b>{#if !u.onboarded_at} · not onboarded{/if}</span>
+            <span class="uemail">{u.email}{#if u.is_admin}<span class="utag">admin</span>{/if}{#if !tried}<span class="utag idle" title="Signed in but hasn't created anything yet">signed in, not tried</span>{/if}</span>
+            <span class="umeta">
+              Last seen <b>{fmtAgo(u.last_login_at)}</b> · joined {fmtDate(u.created_at)}{#if !u.onboarded_at} · not onboarded{/if}
+            </span>
+            <span class="umeta usage">
+              {u.app_count} app{u.app_count === 1 ? '' : 's'} · {u.interview_count} interview{u.interview_count === 1 ? '' : 's'} · {u.dossier_count} dossier{u.dossier_count === 1 ? '' : 's'} · AI prep <b class:warn={capped}>{u.prep_credits_used} / {u.prep_credits_limit}</b>
+            </span>
           </div>
           <div class="uactions">
             <button class="btn sm" onclick={() => grantPrep(u, 5)} disabled={granting === u.id}>+5</button>
@@ -251,12 +293,19 @@
   .row input:focus { border-color: var(--accent); }
   .error { color: var(--danger-text); font-size: 12px; margin: 8px 0 0; }
 
+  .funnel { font-size: 13px; color: var(--ink-2); margin: 0 0 10px; }
+  .funnel b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .funnel-note { color: var(--mute); margin-left: 4px; }
+
   .list { border: 1px solid var(--rule); border-radius: 10px; background: var(--card); overflow: hidden; }
   .lh, .lr { display: grid; grid-template-columns: 1.6fr 2fr 1.6fr 32px; gap: 12px; align-items: center; padding: 10px 16px; }
   .lh { font-size: 12px; color: var(--mute); background: var(--surface); border-bottom: 1px solid var(--rule); font-weight: 500; }
   .lr { border-top: 1px solid var(--rule); font-size: 13.5px; }
   .lr:first-of-type { border-top: none; }
-  .email { font-weight: 500; }
+  .email { font-weight: 500; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .status { font-size: 10.5px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+  .status.on { color: var(--positive-text); background: var(--positive-tint, rgba(34,160,90,0.12)); }
+  .status.off { color: var(--mute); background: var(--surface-2); }
   .note { color: var(--mute); }
   .when { color: var(--mute); font-size: 12px; font-variant-numeric: tabular-nums; }
   .x { background: transparent; border: 0; color: var(--mute-2); font-size: 18px; cursor: pointer; width: 24px; height: 24px; border-radius: 4px; }
@@ -296,7 +345,9 @@
   .users .ux { min-width: 0; }
   .users .uemail { font-size: 13.5px; font-weight: 500; color: var(--ink); display: flex; align-items: center; gap: 8px; }
   .users .utag { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent-text); background: var(--accent-tint); border-radius: 4px; padding: 1px 6px; }
+  .users .utag.idle { color: var(--mute); background: var(--surface-2); }
   .users .umeta { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
+  .users .umeta.usage { font-variant-numeric: tabular-nums; }
   .users .umeta b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
   .users .umeta b.warn { color: var(--warm-text); }
   .users .uactions { display: flex; gap: 6px; flex-shrink: 0; }

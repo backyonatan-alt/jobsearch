@@ -55,18 +55,36 @@ func (s *Server) handleAdminInvitesAdd(w http.ResponseWriter, r *http.Request) {
 // ── Users + AI interview-prep credits ──────────────────────────────────────
 
 type adminUserDTO struct {
-	ID          int64      `json:"id"`
-	Email       string     `json:"email"`
-	IsAdmin     bool       `json:"is_admin"`
-	PrepUsed    int        `json:"prep_credits_used"`
-	PrepLimit   int        `json:"prep_credits_limit"`
-	OnboardedAt *time.Time `json:"onboarded_at"`
+	ID             int64      `json:"id"`
+	Email          string     `json:"email"`
+	IsAdmin        bool       `json:"is_admin"`
+	PrepUsed       int        `json:"prep_credits_used"`
+	PrepLimit      int        `json:"prep_credits_limit"`
+	OnboardedAt    *time.Time `json:"onboarded_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LastLoginAt    *time.Time `json:"last_login_at"`
+	AppCount       int        `json:"app_count"`       // real applications, excludes [demo] seed rows
+	InterviewCount int        `json:"interview_count"`
+	DossierCount   int        `json:"dossier_count"`
 }
 
 func (s *Server) handleAdminUsersList(w http.ResponseWriter, r *http.Request) {
+	// Per-user pilot-usage snapshot: when they joined, when they were last
+	// seen, and what they've actually done in the product. Demo-seed rows
+	// (notes prefixed "[demo] ") are excluded so the app count reflects real use.
+	// Ordered by last sign-in so the most active pilots float to the top.
 	rows, err := s.Pool.Query(r.Context(),
-		`SELECT id, email, is_admin, prep_credits_used, prep_credits_limit, onboarded_at
-		 FROM users ORDER BY id`)
+		`SELECT u.id, u.email, u.is_admin, u.prep_credits_used, u.prep_credits_limit,
+		        u.onboarded_at, u.created_at, u.last_login_at,
+		        (SELECT count(*) FROM applications a
+		           WHERE a.user_id = u.id
+		             AND (a.notes IS NULL OR a.notes NOT LIKE '[demo] %')) AS app_count,
+		        (SELECT count(*) FROM interviews i WHERE i.user_id = u.id) AS interview_count,
+		        (SELECT count(*) FROM dossiers d
+		           JOIN applications a2 ON a2.id = d.application_id
+		           WHERE a2.user_id = u.id) AS dossier_count
+		 FROM users u
+		 ORDER BY u.last_login_at DESC NULLS LAST, u.id`)
 	if err != nil {
 		s.Logger.Error("list users", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal")
@@ -76,7 +94,8 @@ func (s *Server) handleAdminUsersList(w http.ResponseWriter, r *http.Request) {
 	out := make([]adminUserDTO, 0)
 	for rows.Next() {
 		var d adminUserDTO
-		if err := rows.Scan(&d.ID, &d.Email, &d.IsAdmin, &d.PrepUsed, &d.PrepLimit, &d.OnboardedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.Email, &d.IsAdmin, &d.PrepUsed, &d.PrepLimit, &d.OnboardedAt,
+			&d.CreatedAt, &d.LastLoginAt, &d.AppCount, &d.InterviewCount, &d.DossierCount); err != nil {
 			s.Logger.Error("scan user", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
