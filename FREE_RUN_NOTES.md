@@ -173,6 +173,18 @@ the moment you notice something; triage later.
 
 ## Shipped (move items here once fixed)
 
+### Michal feedback — Chunk 1: application capture (Jun 9 2026)
+
+- Migration 0016 adds `jd_text`, `recruiter_name/email/linkedin` to `applications`; backend list/get/create/update plumb all of them.
+- `jd_text`: free-text JD field on the Add modal; the AI parse path also captures the pasted body (not a bare URL/screenshot). Detail page shows a collapsible "Saved job description" so the body survives the posting coming down.
+- Source: free-text input backed by a `<datalist>` of 7 common values (LinkedIn / Company website / Referral / Recruiter reached out / Cold outreach / Job board / Other) on Add + Edit. Free text still works. Shared list in `app-helpers.js` (`SOURCE_SUGGESTIONS`).
+- Recruiter / point-of-contact (name + email + LinkedIn), distinct from hiring manager. Edit modal groups both; detail Contacts card renders recruiter (warm avatar) above hiring manager.
+
+### Michal feedback — Chunk 2: calendar weekday (Jun 9 2026)
+
+- `[bug]` Haiku put the wrong weekday on a year-less invite ("Tue, Jun 10" for a Wed Jun 10 — June 10 is a Tuesday in 2025, a Wednesday in 2026, and the model had no "today" to pick the year). Fixed: `ParseEvent` now passes the current date in the user message and the prompt requires weekday-consistency (a named weekday must match the resolved date) and resolves year-less/relative dates relative to today.
+- Preview now shows the full weekday + year computed from the parsed date (never the model's prose) — e.g. "Wednesday, June 10, 2026 · 11:00 AM" — with a "Double-check the day and time before saving" hint.
+
 ### Bug fixes
 
 - `[bug]` AI-parsed calendar events (text/screenshot → Haiku) could never be saved: the parse path tags them `source:"ai"` but `handleInterviewCreate` rejected anything but `ics`/`manual` with 400 "source must be 'ics' or 'manual'". Allowed `ai` as a valid source. (Jun 9 2026)

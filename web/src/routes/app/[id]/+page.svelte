@@ -549,6 +549,22 @@
     }
     return `${date}, ${time}${suffix}`;
   }
+  // Preview formatters: the weekday + year are always computed from the parsed
+  // date here, never taken from the model's prose, so a wrong day is visible.
+  function fmtEventDay(ev) {
+    const d = new Date(ev.starts_at);
+    return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  function fmtEventTimeSuffix(ev) {
+    const d = new Date(ev.starts_at);
+    if (ev.all_day) return ' · all day';
+    let s = ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    if (ev.ends_at) {
+      const mins = Math.round((new Date(ev.ends_at) - d) / 60000);
+      if (mins > 0) s += ` · ${mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`}`;
+    }
+    return s;
+  }
   function isPast(ev) { return new Date(ev.starts_at) < new Date(); }
 
   const monoDate = (iso) => iso ? new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) : '';
@@ -1164,10 +1180,11 @@
       {#if icsPreview.length > 0}
         <div class="ics-preview">
           <h4>Preview</h4>
+          <p class="prev-check">Double-check the day and time before saving.</p>
           {#each icsPreview as ev}
             <div class="prev-row">
               <div class="prev-summary">{ev.summary || 'Untitled event'}</div>
-              <div class="prev-when">{fmtEventWhen(ev)}</div>
+              <div class="prev-when"><strong>{fmtEventDay(ev)}</strong>{fmtEventTimeSuffix(ev)}</div>
               {#if ev.location}<div class="prev-loc">📍 {ev.location}</div>{/if}
             </div>
           {/each}
@@ -1472,7 +1489,9 @@
   .zone-title .ai-pill { font-size: 10px; padding: 1px 5px; border-radius: 4px; }
   .zone-parse { margin-top: 4px; align-self: flex-start; }
   .ics-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
-  .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 10px; }
+  .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 6px; }
+  .prev-check { font-size: 12px; color: var(--mute); margin: 0 0 10px; }
+  .prev-when strong { font-weight: 600; }
   .prev-row { background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
   .prev-summary { font-size: 13.5px; font-weight: 600; color: var(--ink); }
   .prev-when { font-size: 12.5px; color: var(--accent-text); margin-top: 3px; font-weight: 500; }
