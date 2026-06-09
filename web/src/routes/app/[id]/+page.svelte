@@ -63,6 +63,14 @@
   let fuSaving = $state(false);
   const FU_CHANNELS = ['Email', 'LinkedIn', 'Phone', 'In person', 'Other'];
 
+  // Per-app interview pipeline (ordered, user-defined stages).
+  let pipeline = $state([]);
+  let pipelineEditing = $state(false);
+  let pipelineDraft = $state([]);
+  let pipelineSaving = $state(false);
+  const TYPICAL_LOOP = ['Recruiter call', 'Hiring manager', 'Take-home', 'Team interview', 'Offer'];
+  const pipelineDone = $derived(pipeline.filter(s => s.done).length);
+
   const id = $derived(page.params.id);
 
   $effect(() => {
@@ -83,6 +91,7 @@
     try {
       const raw = await call(`/api/applications/${id}`);
       app = toDisplayApp(raw);
+      pipeline = Array.isArray(raw.pipeline) ? raw.pipeline : [];
       if (!interviewerInput) {
         if (dossier?.interviewer_name) interviewerInput = dossier.interviewer_name;
         else if (app?.raw?.hiring_manager_name) interviewerInput = app.raw.hiring_manager_name;
@@ -94,6 +103,45 @@
     } finally {
       loading = false;
     }
+  }
+
+  async function savePipeline(stages) {
+    pipelineSaving = true;
+    try {
+      const r = await call(`/api/applications/${id}/pipeline`, { method: 'PUT', body: JSON.stringify({ stages }) });
+      pipeline = Array.isArray(r.pipeline) ? r.pipeline : stages;
+    } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+    } finally {
+      pipelineSaving = false;
+    }
+  }
+  function toggleStage(i) {
+    const next = pipeline.map((s, idx) => idx === i ? { ...s, done: !s.done } : s);
+    pipeline = next;
+    savePipeline(next);
+  }
+  function startEditPipeline() {
+    pipelineDraft = pipeline.length ? pipeline.map(s => ({ ...s })) : [{ name: '', done: false }];
+    pipelineEditing = true;
+  }
+  function seedTypicalLoop() {
+    pipelineDraft = TYPICAL_LOOP.map(name => ({ name, done: false }));
+    pipelineEditing = true;
+  }
+  function addDraftStage() { pipelineDraft = [...pipelineDraft, { name: '', done: false }]; }
+  function removeDraftStage(i) { pipelineDraft = pipelineDraft.filter((_, idx) => idx !== i); }
+  function moveDraft(i, dir) {
+    const j = i + dir;
+    if (j < 0 || j >= pipelineDraft.length) return;
+    const next = [...pipelineDraft];
+    [next[i], next[j]] = [next[j], next[i]];
+    pipelineDraft = next;
+  }
+  async function saveEditPipeline() {
+    const cleaned = pipelineDraft.map(s => ({ name: s.name.trim(), done: !!s.done })).filter(s => s.name);
+    await savePipeline(cleaned);
+    pipelineEditing = false;
   }
 
   async function loadDossier() {
@@ -980,6 +1028,55 @@
             </div>
           {/if}
 
+          <!-- Pipeline -->
+          <div class="rail-card">
+            <div class="rc-hd rc-hd-row">
+              <span>Pipeline</span>
+              {#if pipeline.length && !pipelineEditing}
+                <button class="rc-edit" onclick={startEditPipeline}>Edit</button>
+              {/if}
+            </div>
+
+            {#if pipelineEditing}
+              <div class="pipe-edit">
+                {#each pipelineDraft as st, i (i)}
+                  <div class="pe-row">
+                    <input class="pe-input" bind:value={st.name} placeholder="Stage name" />
+                    <button class="pe-btn" onclick={() => moveDraft(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+                    <button class="pe-btn" onclick={() => moveDraft(i, 1)} disabled={i === pipelineDraft.length - 1} aria-label="Move down">↓</button>
+                    <button class="pe-btn pe-x" onclick={() => removeDraftStage(i)} aria-label="Remove stage">×</button>
+                  </div>
+                {/each}
+                <button class="add-hm" onclick={addDraftStage}>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
+                  Add stage
+                </button>
+                <div class="pe-actions">
+                  <button class="btn" onclick={() => (pipelineEditing = false)}>Cancel</button>
+                  <button class="btn btn-primary" onclick={saveEditPipeline} disabled={pipelineSaving}>{pipelineSaving ? 'Saving…' : 'Save'}</button>
+                </div>
+              </div>
+            {:else if pipeline.length}
+              <div class="pl-prog">{pipelineDone} of {pipeline.length} done</div>
+              <ol class="pipe">
+                {#each pipeline as st, i}
+                  <li class="pipe-step" class:done={st.done}>
+                    <button class="pipe-dot" onclick={() => toggleStage(i)} aria-label={st.done ? 'Mark not done' : 'Mark done'}>
+                      {#if st.done}<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg>{/if}
+                    </button>
+                    <span class="pipe-name">{st.name}</span>
+                  </li>
+                {/each}
+              </ol>
+            {:else}
+              <p class="contact-empty">No stages yet — map the steps the recruiter described.</p>
+              <button class="add-hm" onclick={seedTypicalLoop}>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
+                Start from a typical loop
+              </button>
+            {/if}
+          </div>
+
           <!-- Details -->
           <div class="rail-card">
             <div class="rc-hd">Details</div>
@@ -1409,6 +1506,32 @@
 
   .rail-card { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; box-shadow: var(--sh-1); }
   .rc-hd { font-size: 12.5px; font-weight: 600; color: var(--mute); margin-bottom: 12px; }
+  .rc-hd-row { display: flex; align-items: center; justify-content: space-between; }
+  .rc-edit { background: transparent; border: 0; color: var(--accent-text); font-size: 12px; font-weight: 500; cursor: pointer; padding: 0; font-family: inherit; }
+  .rc-edit:hover { text-decoration: underline; }
+
+  /* Pipeline stepper */
+  .pl-prog { font-size: 12px; color: var(--mute); margin: -4px 0 12px; }
+  .pipe { list-style: none; margin: 0; padding: 0; }
+  .pipe-step { position: relative; display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: center; padding-bottom: 14px; }
+  .pipe-step:not(:last-child)::before { content: ''; position: absolute; left: 10px; top: 22px; bottom: 0; width: 1.5px; background: var(--rule); }
+  .pipe-step.done:not(:last-child)::before { background: var(--positive, oklch(0.65 0.14 152)); }
+  .pipe-dot { position: relative; z-index: 1; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--rule-strong); background: var(--card); display: grid; place-items: center; cursor: pointer; color: white; padding: 0; transition: background 100ms ease, border-color 100ms ease; }
+  .pipe-dot:hover { border-color: var(--accent); }
+  .pipe-step.done .pipe-dot { background: var(--positive, oklch(0.65 0.14 152)); border-color: var(--positive, oklch(0.65 0.14 152)); }
+  .pipe-name { font-size: 13px; color: var(--ink-2); }
+  .pipe-step.done .pipe-name { color: var(--mute); text-decoration: line-through; }
+
+  /* Pipeline edit mode */
+  .pipe-edit { display: flex; flex-direction: column; gap: 8px; }
+  .pe-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 4px; align-items: center; }
+  .pe-input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 6px 9px; outline: none; min-width: 0; }
+  .pe-input:focus { border-color: var(--accent); }
+  .pe-btn { width: 26px; height: 30px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 7px; color: var(--mute); font-size: 13px; cursor: pointer; font-family: inherit; }
+  .pe-btn:hover:not(:disabled) { border-color: var(--rule-strong); color: var(--ink); }
+  .pe-btn:disabled { opacity: 0.4; cursor: default; }
+  .pe-x:hover:not(:disabled) { color: var(--danger-text); border-color: var(--danger-tint); }
+  .pe-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
   .kv { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 9px 12px; }
   .kv dt { font-size: 12.5px; color: var(--mute); }
   .kv dd { margin: 0; font-size: 12.5px; color: var(--ink); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }

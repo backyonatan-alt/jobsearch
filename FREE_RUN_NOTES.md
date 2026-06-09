@@ -199,6 +199,10 @@ the moment you notice something; triage later.
 
 - `[idea]` "Tell first users how to send feedback." Added a "Send feedback" link in the app sidebar that opens a pre-addressed email (subject + a small template). Fires a first-party `feedback_click` event.
 
+### Michal feedback — Chunk 6: per-app pipeline (Jun 9 2026)
+
+- `[idea]` Per-role customizable interview pipeline. Migration 0017 adds a `pipeline` JSONB array (`[{name, done}]`) to applications; `PUT /api/applications/{id}/pipeline` replaces it (sanitizes: trims, drops empties, caps 30 stages / 80 chars). Detail page rail gets a "Pipeline" card: a clean checkable vertical stepper (tap a node to mark done) with "N of M done", an Edit mode (rename / reorder ↑↓ / remove / add), and an empty-state "Start from a typical loop" seed. Mutable mid-process.
+
 ### Bug fixes
 
 - `[bug]` AI-parsed calendar events (text/screenshot → Haiku) could never be saved: the parse path tags them `source:"ai"` but `handleInterviewCreate` rejected anything but `ics`/`manual` with 400 "source must be 'ics' or 'manual'". Allowed `ai` as a valid source. (Jun 9 2026)
