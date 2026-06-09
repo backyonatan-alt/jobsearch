@@ -186,6 +186,10 @@ the moment you notice something; triage later.
 - Preview now shows the full weekday + year computed from the parsed date (never the model's prose) — e.g. "Wednesday, June 10, 2026 · 11:00 AM" — with a "Double-check the day and time before saving" hint.
 - `[ux]` "Add an interview" modal was too dense (two side-by-side zones, each with a drop area + textarea + button). Redesigned to one unified box that auto-routes .ics / screenshot / pasted-text, plus a single "Find the event" button — matches the New Application modal.
 
+### Michal feedback — Chunk 3: funnel outcomes (Jun 9 2026)
+
+- `[gap]` "Where do the rejected apps go in the funnel?" — they were folded silently into the cumulative Applied count. Added an Outcomes strip under the funnel (Offer / Rejected / Withdrawn, colored dots) + a one-liner that names where a "no" lands, so rejections have a visible home.
+
 ### Bug fixes
 
 - `[bug]` AI-parsed calendar events (text/screenshot → Haiku) could never be saved: the parse path tags them `source:"ai"` but `handleInterviewCreate` rejected anything but `ics`/`manual` with 400 "source must be 'ics' or 'manual'". Allowed `ai` as a valid source. (Jun 9 2026)
