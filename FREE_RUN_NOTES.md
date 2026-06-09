@@ -95,10 +95,87 @@ the moment you notice something; triage later.
 
 ---
 
+## Jun 9 2026 — first external beta feedback (Michal)
+
+> First real user. Walked the product mid-job-search (already has live
+> processes), so she hit the "I'm already deep in my search" edges a
+> brand-new user wouldn't. Raw notes, lightly triaged.
+
+### Add / edit application — JD ingest
+
+- `[gap]` Wants a **free-text JD paste** path on top of URL + screenshot.
+  Her case: applied, waiting for interview, the posting is already down
+  from both the company site and LinkedIn, but she has the JD text saved
+  (from a chat). No way to get that text in today.
+- `[gap]` **We don't store the JD body — only `jd_url`.** Postings get
+  taken down mid-process, so the saved URL rots and the description is
+  lost. Need a `jd_text` column + persist parsed/pasted JD text.
+- `[ux]` Adding a JD to an **existing** application is hard to find, and
+  when found it's **URL-only**. Make "add/replace JD" (URL / text /
+  screenshot) a first-class action on the detail page.
+
+### Source field
+
+- `[ux]/[gap]` Source is a free-text input; she effectively saw one value
+  ("Referral"). Wants a **dropdown of common sources** (LinkedIn,
+  Referral, Cold email, Company site, Recruiter reached out, Other) —
+  keep free-text as fallback.
+
+### Contacts
+
+- `[gap]` Wants a **recruiter / point-of-contact** field per application —
+  the person scheduling interviews and relaying answers. Distinct from
+  `hiring_manager_*` (the role's manager) which is all we have today.
+
+### Pipeline / funnel
+
+- `[idea]` **Per-application customizable pipeline.** After a recruiter
+  call she knows the exact stages (direct-manager interview → take-home →
+  HRBP → manager-X → offer). Wants to define/edit those per role, and
+  have them mutate mid-process. Hard; needs a design.
+- `[gap]` **Where do rejected apps go in the funnel?** No clear home for
+  "got a no" in the funnel view. Need an explicit rejected/closed lane
+  and conversion accounting.
+
+### Bulk import
+
+- `[idea]` She already runs an **Excel** of live + past roles. Wants a
+  **bulk import** (CSV/paste) instead of one-by-one entry. Irrelevant for
+  users who start in-app, valuable for switchers — likely an activation
+  lever for the beta cohort (all mid-search).
+
+### Calendar event parse → save
+
+- `[bug]` **Save fails on AI-parsed events.** Parse (text/screenshot via
+  Haiku) succeeded, but "Save 1 event" returned an error. Root cause:
+  the AI path tags events `source:"ai"`, and `handleInterviewCreate`
+  only allowed `ics`/`manual` → 400 "source must be 'ics' or 'manual'".
+  **FIXED Jun 9 2026** (allow `ai`). See Shipped.
+- `[bug]` Haiku got the **day-of-week wrong** on first parse ("Tue Jun 10"
+  for a Wednesday Jun 10 invite); a second parse corrected it. Worth
+  pinning a "today" anchor / weekday cross-check in the parse prompt so
+  it's deterministic, and surfacing the weekday in the preview so the
+  user can sanity-check before saving.
+
+### Trust / latency
+
+- `[gap]` Wants a **privacy line** — what's stored, who sees it — flagged
+  salary specifically ("curious who'll actually enter salary info").
+- `[ux]` **Interview-prep felt slow** (her gut: >2 min). Sonnet +
+  web_search. Add an explicit progress/expected-latency state; consider
+  measuring p50/p95 from the `interview_prep` events we already log.
+
+### Process
+
+- `[idea]` Tell first users **how to send feedback** in the invite email.
+
+---
+
 ## Shipped (move items here once fixed)
 
 ### Bug fixes
 
+- `[bug]` AI-parsed calendar events (text/screenshot → Haiku) could never be saved: the parse path tags them `source:"ai"` but `handleInterviewCreate` rejected anything but `ics`/`manual` with 400 "source must be 'ics' or 'manual'". Allowed `ai` as a valid source. (Jun 9 2026)
 - `[bug]` dossier meeting hero rendered start time in the **server's** TZ while the Scheduled list rendered it in the **browser's** TZ — same event showed two different wall-clock times. Fixed by sending raw `starts_at`/`ends_at` from `meetingDTO` and letting the Svelte component format. (May 25 2026)
 - `[bug]` Today's Applications table briefly showed **"-1 days ago"** for just-created rows because `Math.floor` on a negative ms diff rounds toward −∞. Fixed `fmtRelativeDate` to treat `d ≤ 0` as "today". (May 26 2026)
 

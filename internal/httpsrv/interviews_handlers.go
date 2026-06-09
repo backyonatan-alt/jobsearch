@@ -266,6 +266,17 @@ func toParsedDTO(e ics.Event) parsedEventDTO {
 	return d
 }
 
+// validInterviewSource gates the persisted source tag. 'ai' covers both the
+// free-text and screenshot parse paths (llmEventToDTO sets Source:"ai"), so it
+// must be accepted here or AI-parsed events can be previewed but never saved.
+func validInterviewSource(s string) bool {
+	switch s {
+	case "ics", "ai", "manual":
+		return true
+	}
+	return false
+}
+
 type interviewCreateRequest struct {
 	Source      string     `json:"source"`
 	UID         string     `json:"uid"`
@@ -302,8 +313,8 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 	if in.Source == "" {
 		in.Source = "manual"
 	}
-	if in.Source != "ics" && in.Source != "manual" {
-		writeJSONError(w, http.StatusBadRequest, "source must be 'ics' or 'manual'")
+	if !validInterviewSource(in.Source) {
+		writeJSONError(w, http.StatusBadRequest, "source must be 'ics', 'ai', or 'manual'")
 		return
 	}
 	in.Summary = strings.TrimSpace(in.Summary)
