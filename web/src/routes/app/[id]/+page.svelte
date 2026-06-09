@@ -5,7 +5,7 @@
   import { isPreview, mockApi } from '$lib/preview-mode.js';
   import { logEvent } from '$lib/analytics.js';
   import {
-    toDisplayApp, STATUS_LABEL, STATUSES,
+    toDisplayApp, STATUS_LABEL, STATUSES, SOURCE_SUGGESTIONS,
     fmtLongDate, fmtRelativeDate, daysSince, isStale
   } from '$lib/app-helpers.js';
 
@@ -22,6 +22,7 @@
   let dossier = $state(null);
   let dossierLoading = $state(true);
   let generating = $state(false);
+  let prepStage = $state('');
   let genError = $state('');
   let interviewerInput = $state('');
 
@@ -29,23 +30,23 @@
   let interviews = $state([]);
   let interviewsLoading = $state(false);
 
-  // Add-event flow (popup modal)
+  // Add-event flow (popup modal) — one unified input: paste / drop / type.
   let showEventModal = $state(false);
-  let icsText = $state('');
-  let aiText = $state('');
-  let aiImage = $state(null); // { name, mediaType, size, file }
-  let aiDragOver = $state(false);
+  let evText = $state('');
+  let evAttach = $state(null); // { kind:'image'|'ics', name, size, mediaType?, file?, content? }
+  let evDragOver = $state(false);
   let icsParsing = $state(false);
   let icsParseError = $state('');
   let icsPreview = $state([]);
   let icsSaving = $state(false);
-  const AI_ALLOWED_IMG = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-  const AI_MAX_BYTES = 6 * 1024 * 1024;
+  const EV_IMG_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  const EV_IMG_MAX = 6 * 1024 * 1024;
+  const looksLikeIcs = (t) => /BEGIN:VCALENDAR/i.test(t);
 
   // Inline-action state
   let showStatusMenu = $state(false);
   let showEditModal = $state(false);
-  let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', salary_note: '', hiring_manager_name: '', hiring_manager_linkedin: '' });
+  let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', jd_text: '', salary_note: '', hiring_manager_name: '', hiring_manager_linkedin: '', recruiter_name: '', recruiter_email: '', recruiter_linkedin: '' });
   let saving = $state(false);
 
   // Follow-up (records what the user did — sends nothing). Loaded from backend.
@@ -61,6 +62,14 @@
   let fuDate = $state('');
   let fuSaving = $state(false);
   const FU_CHANNELS = ['Email', 'LinkedIn', 'Phone', 'In person', 'Other'];
+
+  // Per-app interview pipeline (ordered, user-defined stages).
+  let pipeline = $state([]);
+  let pipelineEditing = $state(false);
+  let pipelineDraft = $state([]);
+  let pipelineSaving = $state(false);
+  const TYPICAL_LOOP = ['Recruiter call', 'Hiring manager', 'Take-home', 'Team interview', 'Offer'];
+  const pipelineDone = $derived(pipeline.filter(s => s.done).length);
 
   const id = $derived(page.params.id);
 
@@ -82,6 +91,7 @@
     try {
       const raw = await call(`/api/applications/${id}`);
       app = toDisplayApp(raw);
+      pipeline = Array.isArray(raw.pipeline) ? raw.pipeline : [];
       if (!interviewerInput) {
         if (dossier?.interviewer_name) interviewerInput = dossier.interviewer_name;
         else if (app?.raw?.hiring_manager_name) interviewerInput = app.raw.hiring_manager_name;
@@ -93,6 +103,45 @@
     } finally {
       loading = false;
     }
+  }
+
+  async function savePipeline(stages) {
+    pipelineSaving = true;
+    try {
+      const r = await call(`/api/applications/${id}/pipeline`, { method: 'PUT', body: JSON.stringify({ stages }) });
+      pipeline = Array.isArray(r.pipeline) ? r.pipeline : stages;
+    } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+    } finally {
+      pipelineSaving = false;
+    }
+  }
+  function toggleStage(i) {
+    const next = pipeline.map((s, idx) => idx === i ? { ...s, done: !s.done } : s);
+    pipeline = next;
+    savePipeline(next);
+  }
+  function startEditPipeline() {
+    pipelineDraft = pipeline.length ? pipeline.map(s => ({ ...s })) : [{ name: '', done: false }];
+    pipelineEditing = true;
+  }
+  function seedTypicalLoop() {
+    pipelineDraft = TYPICAL_LOOP.map(name => ({ name, done: false }));
+    pipelineEditing = true;
+  }
+  function addDraftStage() { pipelineDraft = [...pipelineDraft, { name: '', done: false }]; }
+  function removeDraftStage(i) { pipelineDraft = pipelineDraft.filter((_, idx) => idx !== i); }
+  function moveDraft(i, dir) {
+    const j = i + dir;
+    if (j < 0 || j >= pipelineDraft.length) return;
+    const next = [...pipelineDraft];
+    [next[i], next[j]] = [next[j], next[i]];
+    pipelineDraft = next;
+  }
+  async function saveEditPipeline() {
+    const cleaned = pipelineDraft.map(s => ({ name: s.name.trim(), done: !!s.done })).filter(s => s.name);
+    await savePipeline(cleaned);
+    pipelineEditing = false;
   }
 
   async function loadDossier() {
@@ -110,10 +159,23 @@
     }
   }
 
+  const PREP_STAGES = [
+    'Searching the web for recent posts, talks, and company news…',
+    'Reading through what we found…',
+    'Spotting how they tend to interview…',
+    'Writing your brief…'
+  ];
   async function generateDossier() {
     if (generating) return;
     generating = true;
     genError = '';
+    prepStage = PREP_STAGES[0];
+    // Web search + Sonnet can run ~1–2 min; cycle stages so it never looks stuck.
+    const timers = [
+      setTimeout(() => { if (generating) prepStage = PREP_STAGES[1]; }, 8000),
+      setTimeout(() => { if (generating) prepStage = PREP_STAGES[2]; }, 25000),
+      setTimeout(() => { if (generating) prepStage = PREP_STAGES[3]; }, 50000)
+    ];
     try {
       const d = await call(`/api/applications/${id}/dossier/refresh`, {
         method: 'POST',
@@ -124,7 +186,9 @@
     } catch (e) {
       genError = friendlyGenErr(e.message);
     } finally {
+      timers.forEach(clearTimeout);
       generating = false;
+      prepStage = '';
     }
   }
 
@@ -163,20 +227,7 @@
     }
   }
 
-  // ── Add-event parse/save flow (preserved) ────────────────────
-  function setAiImage(f) {
-    if (!f) return;
-    if (!AI_ALLOWED_IMG.includes(f.type)) { icsParseError = 'Only PNG / JPEG / GIF / WebP screenshots are supported.'; return; }
-    if (f.size > AI_MAX_BYTES) { icsParseError = 'Screenshot too large (6 MB max).'; return; }
-    icsParseError = '';
-    aiImage = { name: f.name || 'pasted.png', mediaType: f.type, size: f.size, file: f };
-  }
-  function onAiDrop(e) { e.preventDefault(); aiDragOver = false; setAiImage(e.dataTransfer?.files?.[0]); }
-  function onAiDragOver(e) { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); aiDragOver = true; } }
-  function onAiPaste(e) {
-    const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
-    if (item) setAiImage(item.getAsFile());
-  }
+  // ── Add-event flow — one box that takes an .ics file, a screenshot, or text ──
   function fileToBase64(f) {
     return new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -189,57 +240,57 @@
       r.readAsDataURL(f);
     });
   }
-  async function onIcsFile(e) {
-    const f = e.target.files?.[0];
-    e.target.value = '';
+  async function setEvFile(f) {
     if (!f) return;
-    if (f.size > 256 * 1024) { icsParseError = 'File too large (256 KB max).'; return; }
-    icsText = await f.text();
-    await parseIcs();
-  }
-  async function parseIcs() {
-    if (icsParsing) return;
     icsParseError = '';
-    icsPreview = [];
-    const body = icsText.trim();
-    if (!body) { icsParseError = 'Paste the .ics contents or pick a file.'; return; }
-    icsParsing = true;
-    try {
-      const r = await call(`/api/applications/${id}/interviews/parse`, { method: 'POST', body: JSON.stringify({ ics: body }) });
-      icsPreview = r.events ?? [];
-      if (icsPreview.length === 0) icsParseError = 'No events found in that file.';
-    } catch (e) {
-      icsParseError = e.message || 'Could not parse calendar.';
-    } finally {
-      icsParsing = false;
+    const name = (f.name || '').toLowerCase();
+    if (EV_IMG_TYPES.includes(f.type)) {
+      if (f.size > EV_IMG_MAX) { icsParseError = 'Screenshot too large (6 MB max).'; return; }
+      evAttach = { kind: 'image', name: f.name || 'pasted.png', size: f.size, mediaType: f.type, file: f };
+      return;
     }
+    if (name.endsWith('.ics') || f.type === 'text/calendar') {
+      if (f.size > 256 * 1024) { icsParseError = 'Calendar file too large (256 KB max).'; return; }
+      evAttach = { kind: 'ics', name: f.name || 'invite.ics', size: f.size, content: await f.text() };
+      return;
+    }
+    icsParseError = 'Drop a screenshot (PNG/JPEG) or an .ics calendar file.';
   }
-  async function parseAi() {
+  function onEvDrop(e) { e.preventDefault(); evDragOver = false; setEvFile(e.dataTransfer?.files?.[0]); }
+  function onEvDragOver(e) { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); evDragOver = true; } }
+  function onEvPaste(e) {
+    const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+    if (item) { e.preventDefault(); setEvFile(item.getAsFile()); }
+  }
+  async function onEvFileInput(e) { const f = e.target.files?.[0]; e.target.value = ''; await setEvFile(f); }
+
+  async function parseEvent() {
     if (icsParsing) return;
     icsParseError = '';
     icsPreview = [];
-    if (!aiImage && !aiText.trim()) { icsParseError = 'Drop a screenshot or paste the event text first.'; return; }
+    const text = evText.trim();
+    if (!evAttach && !text) { icsParseError = 'Drop a file or screenshot, or paste the invite text first.'; return; }
     icsParsing = true;
     try {
-      const payload = {};
-      if (aiText.trim()) payload.text = aiText.trim();
-      if (aiImage) {
-        const data = await fileToBase64(aiImage.file);
-        payload.image = { media_type: aiImage.mediaType, data };
+      let payload;
+      if (evAttach?.kind === 'ics') {
+        payload = { ics: evAttach.content };
+      } else if (evAttach?.kind === 'image') {
+        payload = { image: { media_type: evAttach.mediaType, data: await fileToBase64(evAttach.file) } };
+        if (text) payload.text = text;
+      } else if (looksLikeIcs(text)) {
+        payload = { ics: text };
+      } else {
+        payload = { text };
       }
       const r = await call(`/api/applications/${id}/interviews/parse`, { method: 'POST', body: JSON.stringify(payload) });
       icsPreview = r.events ?? [];
-      if (icsPreview.length === 0) icsParseError = "Couldn't extract an event.";
+      if (icsPreview.length === 0) icsParseError = "Couldn't find an event in that — try a screenshot or the email body.";
     } catch (e) {
       icsParseError = e.message || 'Could not parse.';
     } finally {
       icsParsing = false;
     }
-  }
-  async function onAiFile(e) {
-    const f = e.target.files?.[0];
-    e.target.value = '';
-    setAiImage(f);
   }
   async function saveParsedEvents() {
     if (icsSaving || icsPreview.length === 0) return;
@@ -248,7 +299,7 @@
       for (const ev of icsPreview) {
         await call(`/api/applications/${id}/interviews`, { method: 'POST', body: JSON.stringify(ev) });
       }
-      icsText = ''; aiText = ''; aiImage = null;
+      evText = ''; evAttach = null;
       icsPreview = [];
       showEventModal = false;
       await loadInterviews();
@@ -268,6 +319,8 @@
     showEventModal = true;
     icsParseError = '';
     icsPreview = [];
+    evText = '';
+    evAttach = null;
   }
   function closeEventModal() {
     showEventModal = false;
@@ -296,9 +349,13 @@
       location:                app.raw.location ?? '',
       cv_variant:              app.raw.cv_variant ?? '',
       jd_url:                  app.raw.jd_url ?? '',
+      jd_text:                 app.raw.jd_text ?? '',
       salary_note:             app.raw.salary_note ?? '',
       hiring_manager_name:     app.raw.hiring_manager_name ?? '',
-      hiring_manager_linkedin: app.raw.hiring_manager_linkedin ?? ''
+      hiring_manager_linkedin: app.raw.hiring_manager_linkedin ?? '',
+      recruiter_name:          app.raw.recruiter_name ?? '',
+      recruiter_email:         app.raw.recruiter_email ?? '',
+      recruiter_linkedin:      app.raw.recruiter_linkedin ?? ''
     };
     showEditModal = true;
   }
@@ -370,6 +427,7 @@
     return (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase();
   }
   const hiringManagerInitials = $derived(initialsOf(app?.raw?.hiring_manager_name));
+  const recruiterInitials = $derived(initialsOf(app?.raw?.recruiter_name));
 
   // ── Interview-prep (dossier) derived view data ───────────────
   const dosContent = $derived(dossier?.content ?? null);
@@ -531,18 +589,21 @@
     return '';
   }
 
-  function fmtEventWhen(ev) {
+  // Preview formatters: the weekday + year are always computed from the parsed
+  // date here, never taken from the model's prose, so a wrong day is visible.
+  function fmtEventDay(ev) {
     const d = new Date(ev.starts_at);
-    if (ev.all_day) return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
-    const date = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    let suffix = '';
+    return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  function fmtEventTimeSuffix(ev) {
+    const d = new Date(ev.starts_at);
+    if (ev.all_day) return ' · all day';
+    let s = ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
     if (ev.ends_at) {
-      const end = new Date(ev.ends_at);
-      const mins = Math.round((end - d) / 60000);
-      if (mins > 0) suffix = ` · ${mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`}`;
+      const mins = Math.round((new Date(ev.ends_at) - d) / 60000);
+      if (mins > 0) s += ` · ${mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`}`;
     }
-    return `${date}, ${time}${suffix}`;
+    return s;
   }
   function isPast(ev) { return new Date(ev.starts_at) < new Date(); }
 
@@ -699,8 +760,9 @@
               </div>
               {#if generating}
                 <h3>Researching {app.co}{interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
-                <p class="gen-sub">Claude is searching the web for recent posts, talks, and the company's current direction. This typically takes 30–60 seconds.</p>
+                <p class="gen-sub" aria-live="polite">{prepStage || PREP_STAGES[0]}</p>
                 <div class="big-spinner"></div>
+                <p class="gen-eta">This usually takes 1–2 minutes — you can keep working, it'll be here when it's done.</p>
               {:else}
                 <h3>Generate interview prep</h3>
                 <p class="gen-sub">
@@ -966,6 +1028,55 @@
             </div>
           {/if}
 
+          <!-- Pipeline -->
+          <div class="rail-card">
+            <div class="rc-hd rc-hd-row">
+              <span>Pipeline</span>
+              {#if pipeline.length && !pipelineEditing}
+                <button class="rc-edit" onclick={startEditPipeline}>Edit</button>
+              {/if}
+            </div>
+
+            {#if pipelineEditing}
+              <div class="pipe-edit">
+                {#each pipelineDraft as st, i (i)}
+                  <div class="pe-row">
+                    <input class="pe-input" bind:value={st.name} placeholder="Stage name" />
+                    <button class="pe-btn" onclick={() => moveDraft(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+                    <button class="pe-btn" onclick={() => moveDraft(i, 1)} disabled={i === pipelineDraft.length - 1} aria-label="Move down">↓</button>
+                    <button class="pe-btn pe-x" onclick={() => removeDraftStage(i)} aria-label="Remove stage">×</button>
+                  </div>
+                {/each}
+                <button class="add-hm" onclick={addDraftStage}>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
+                  Add stage
+                </button>
+                <div class="pe-actions">
+                  <button class="btn" onclick={() => (pipelineEditing = false)}>Cancel</button>
+                  <button class="btn btn-primary" onclick={saveEditPipeline} disabled={pipelineSaving}>{pipelineSaving ? 'Saving…' : 'Save'}</button>
+                </div>
+              </div>
+            {:else if pipeline.length}
+              <div class="pl-prog">{pipelineDone} of {pipeline.length} done</div>
+              <ol class="pipe">
+                {#each pipeline as st, i}
+                  <li class="pipe-step" class:done={st.done}>
+                    <button class="pipe-dot" onclick={() => toggleStage(i)} aria-label={st.done ? 'Mark not done' : 'Mark done'}>
+                      {#if st.done}<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg>{/if}
+                    </button>
+                    <span class="pipe-name">{st.name}</span>
+                  </li>
+                {/each}
+              </ol>
+            {:else}
+              <p class="contact-empty">No stages yet — map the steps the recruiter described.</p>
+              <button class="add-hm" onclick={seedTypicalLoop}>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
+                Start from a typical loop
+              </button>
+            {/if}
+          </div>
+
           <!-- Details -->
           <div class="rail-card">
             <div class="rc-hd">Details</div>
@@ -982,13 +1093,45 @@
                 Open job post
               </a>
             {/if}
+            {#if app.raw.jd_text}
+              <details class="jd-saved">
+                <summary>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2h6l3 3v9H4z"/><path d="M9 2v4h4"/></svg>
+                  Saved job description
+                </summary>
+                <p class="jd-body">{app.raw.jd_text}</p>
+              </details>
+            {/if}
           </div>
 
           <!-- Contact -->
           <div class="rail-card">
-            <div class="rc-hd">Contact</div>
-            {#if app.raw.hiring_manager_name}
+            <div class="rc-hd">Contacts</div>
+            {#if app.raw.recruiter_name}
               <div class="contact">
+                <div class="c-av c-av-warm">{recruiterInitials || '—'}</div>
+                <div class="c-info">
+                  <div class="c-name">{app.raw.recruiter_name}</div>
+                  <div class="c-role">Recruiter / contact</div>
+                </div>
+              </div>
+              <div class="c-links">
+                {#if app.raw.recruiter_email}
+                  <a class="c-li" href={`mailto:${app.raw.recruiter_email}`}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg>
+                    Email
+                  </a>
+                {/if}
+                {#if app.raw.recruiter_linkedin}
+                  <a class="c-li" href={app.raw.recruiter_linkedin} target="_blank" rel="noopener">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
+                    LinkedIn
+                  </a>
+                {/if}
+              </div>
+            {/if}
+            {#if app.raw.hiring_manager_name}
+              <div class="contact" class:contact-stacked={app.raw.recruiter_name}>
                 <div class="c-av">{hiringManagerInitials || '—'}</div>
                 <div class="c-info">
                   <div class="c-name">{app.raw.hiring_manager_name}</div>
@@ -1001,11 +1144,12 @@
                   LinkedIn
                 </a>
               {/if}
-            {:else}
-              <p class="contact-empty">No hiring manager yet.</p>
+            {/if}
+            {#if !app.raw.recruiter_name && !app.raw.hiring_manager_name}
+              <p class="contact-empty">No contacts yet — add the recruiter or hiring manager.</p>
               <button class="add-hm" onclick={openEdit}>
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
-                Add hiring manager
+                Add a contact
               </button>
             {/if}
           </div>
@@ -1030,14 +1174,29 @@
       <div class="fields">
         <label>Company <input bind:value={edit.company} required /></label>
         <label>Role <input bind:value={edit.role} required /></label>
-        <label>Source <input bind:value={edit.source} placeholder="LinkedIn / Referral / Cold email" /></label>
+        <label>Source <input bind:value={edit.source} list="edit-source-suggestions" placeholder="LinkedIn / Referral / Cold email" /></label>
+        <datalist id="edit-source-suggestions">
+          {#each SOURCE_SUGGESTIONS as s}<option value={s}></option>{/each}
+        </datalist>
         <label>Location <input bind:value={edit.location} placeholder="Remote / San Francisco" /></label>
         <label>CV variant <input bind:value={edit.cv_variant} placeholder="v3-ai-focus" /></label>
         <label>Salary note <input bind:value={edit.salary_note} placeholder="$220k-$280k base" /></label>
         <label class="span-2">JD URL <input bind:value={edit.jd_url} placeholder="https://…" /></label>
-        <label>Hiring manager <input bind:value={edit.hiring_manager_name} placeholder="Jane Doe" /></label>
-        <label>Hiring manager LinkedIn <input bind:value={edit.hiring_manager_linkedin} placeholder="https://linkedin.com/in/…" /></label>
+        <label class="span-2">Job description
+          <textarea class="jd-area" bind:value={edit.jd_text} rows="4" placeholder="Paste the full JD text so it's kept even if the posting comes down."></textarea>
+        </label>
+        <div class="field-group span-2">Hiring manager <span class="fg-sub">— who the role reports to</span></div>
+        <label>Name <input bind:value={edit.hiring_manager_name} placeholder="Jane Doe" /></label>
+        <label>LinkedIn <input bind:value={edit.hiring_manager_linkedin} placeholder="https://linkedin.com/in/…" /></label>
+        <div class="field-group span-2">Recruiter / contact <span class="fg-sub">— who's running your process</span></div>
+        <label>Name <input bind:value={edit.recruiter_name} placeholder="Sam Levi" /></label>
+        <label>Email <input bind:value={edit.recruiter_email} type="email" placeholder="sam@company.com" /></label>
+        <label class="span-2">LinkedIn <input bind:value={edit.recruiter_linkedin} placeholder="https://linkedin.com/in/…" /></label>
       </div>
+      <p class="privacy-note">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>
+        Private to your account. Your notes and salary info are never shared or shown to anyone else.
+      </p>
       <div class="modal-actions">
         <button type="button" class="btn" onclick={() => (showEditModal = false)}>Cancel</button>
         <button type="submit" class="btn btn-primary" disabled={saving || !edit.company || !edit.role}>
@@ -1056,58 +1215,59 @@
       </button>
       <div class="add-hd">
         <h3>Add an interview</h3>
-        <p>Drop a calendar file, paste a screenshot, or just paste the email body — we'll extract the event.</p>
+        <p>Paste the invite, drop a screenshot or .ics file, or just type the details — we'll pull out the event.</p>
       </div>
-      <div class="zones">
-        <!-- LEFT — .ics -->
-        <div class="zone">
-          <div class="zone-hd">
-            <span class="zone-ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg></span>
-            <div>
-              <div class="zone-title">Calendar file</div>
-              <div class="zone-sub">.ics from Google / Outlook / Apple</div>
-            </div>
-          </div>
-          <label class="drop drop-file">
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
-            <span class="drop-l1">Drop .ics file</span>
-            <span class="drop-l2">or click to browse</span>
-            <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} style="display:none" />
-          </label>
-          <div class="or">or paste raw .ics text below</div>
-          <textarea class="ai-ta" rows="3" placeholder={"BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT…"} bind:value={icsText}></textarea>
-          <button class="btn btn-primary zone-parse" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
-            {icsParsing ? 'Parsing…' : 'Parse .ics'}
-          </button>
-        </div>
 
-        <!-- RIGHT — screenshot/text AI -->
-        <div class="zone">
-          <div class="zone-hd">
-            <span class="zone-ic accent"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg></span>
-            <div>
-              <div class="zone-title">Screenshot or email text<span class="ai-pill">AI</span></div>
-              <div class="zone-sub">Gmail invite, Calendar screenshot, anything readable</div>
-            </div>
+      <div
+        class="ev-input"
+        class:drag={evDragOver}
+        class:loading={icsParsing}
+        ondragover={onEvDragOver}
+        ondragleave={() => (evDragOver = false)}
+        ondrop={onEvDrop}
+        role="presentation"
+      >
+        {#if evAttach}
+          <div class="ev-attached">
+            <span class="ev-att-ic">
+              {#if evAttach.kind === 'image'}
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg>
+              {/if}
+            </span>
+            <span class="ev-att-name">{evAttach.name}</span>
+            <span class="ev-att-kind">{evAttach.kind === 'image' ? 'screenshot' : 'calendar file'} · {Math.round(evAttach.size / 1024)} KB</span>
+            <button type="button" class="ev-att-x" onclick={() => (evAttach = null)} aria-label="Remove" disabled={icsParsing}>×</button>
           </div>
-          <label class="drop drop-image" class:drag={aiDragOver} ondragover={onAiDragOver} ondragleave={() => (aiDragOver = false)} ondrop={onAiDrop}>
-            {#if aiImage}
-              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-              <span class="drop-l1">{aiImage.name}</span>
-              <span class="drop-l2">{Math.round(aiImage.size / 1024)} KB · click to replace</span>
-            {:else}
-              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-              <span class="drop-l1">Drop a screenshot</span>
-              <span class="drop-l2"><kbd>⌘V</kbd> works too</span>
-            {/if}
-            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onchange={onAiFile} style="display:none" />
+        {:else}
+          <textarea
+            class="ev-ta"
+            rows="3"
+            bind:value={evText}
+            onpaste={onEvPaste}
+            placeholder={"Paste an invite, or type it — e.g. “Interview Wed Jun 10, 11:00, Google Meet”"}
+            disabled={icsParsing}
+          ></textarea>
+        {/if}
+
+        <div class="ev-foot">
+          <label class="ev-browse">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
+            <span>Drop a screenshot or .ics, paste, or <u>browse</u></span>
+            <input type="file" accept=".ics,text/calendar,image/png,image/jpeg,image/gif,image/webp" onchange={onEvFileInput} hidden />
           </label>
-          <div class="or">or paste the email body below</div>
-          <textarea class="ai-ta" rows="3" placeholder={"You're invited to: Stripe — Technical screen&#10;When: Tue, May 28, 2:00 PM EDT&#10;Where: Google Meet"} bind:value={aiText} onpaste={onAiPaste}></textarea>
-          <button class="btn btn-primary zone-parse" onclick={parseAi} disabled={icsParsing || (!aiImage && !aiText.trim())}>
-            {icsParsing ? 'Parsing…' : 'Parse with AI'}
-          </button>
+          {#if icsParsing}
+            <span class="ev-loading"><span class="ev-spin" aria-hidden="true"></span> Reading the event…</span>
+          {/if}
         </div>
+      </div>
+
+      <div class="ev-actions">
+        <span class="ev-hint"><kbd>⌘V</kbd> pastes a screenshot</span>
+        <button class="btn btn-primary" onclick={parseEvent} disabled={icsParsing || (!evText.trim() && !evAttach)}>
+          {icsParsing ? 'Reading…' : 'Find the event'}
+        </button>
       </div>
 
       {#if icsParseError}<p class="dossier-err" style="margin-top: 14px">{icsParseError}</p>{/if}
@@ -1115,10 +1275,11 @@
       {#if icsPreview.length > 0}
         <div class="ics-preview">
           <h4>Preview</h4>
+          <p class="prev-check">Double-check the day and time before saving.</p>
           {#each icsPreview as ev}
             <div class="prev-row">
               <div class="prev-summary">{ev.summary || 'Untitled event'}</div>
-              <div class="prev-when">{fmtEventWhen(ev)}</div>
+              <div class="prev-when"><strong>{fmtEventDay(ev)}</strong>{fmtEventTimeSuffix(ev)}</div>
               {#if ev.location}<div class="prev-loc">📍 {ev.location}</div>{/if}
             </div>
           {/each}
@@ -1345,6 +1506,32 @@
 
   .rail-card { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; box-shadow: var(--sh-1); }
   .rc-hd { font-size: 12.5px; font-weight: 600; color: var(--mute); margin-bottom: 12px; }
+  .rc-hd-row { display: flex; align-items: center; justify-content: space-between; }
+  .rc-edit { background: transparent; border: 0; color: var(--accent-text); font-size: 12px; font-weight: 500; cursor: pointer; padding: 0; font-family: inherit; }
+  .rc-edit:hover { text-decoration: underline; }
+
+  /* Pipeline stepper */
+  .pl-prog { font-size: 12px; color: var(--mute); margin: -4px 0 12px; }
+  .pipe { list-style: none; margin: 0; padding: 0; }
+  .pipe-step { position: relative; display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: center; padding-bottom: 14px; }
+  .pipe-step:not(:last-child)::before { content: ''; position: absolute; left: 10px; top: 22px; bottom: 0; width: 1.5px; background: var(--rule); }
+  .pipe-step.done:not(:last-child)::before { background: var(--positive, oklch(0.65 0.14 152)); }
+  .pipe-dot { position: relative; z-index: 1; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--rule-strong); background: var(--card); display: grid; place-items: center; cursor: pointer; color: white; padding: 0; transition: background 100ms ease, border-color 100ms ease; }
+  .pipe-dot:hover { border-color: var(--accent); }
+  .pipe-step.done .pipe-dot { background: var(--positive, oklch(0.65 0.14 152)); border-color: var(--positive, oklch(0.65 0.14 152)); }
+  .pipe-name { font-size: 13px; color: var(--ink-2); }
+  .pipe-step.done .pipe-name { color: var(--mute); text-decoration: line-through; }
+
+  /* Pipeline edit mode */
+  .pipe-edit { display: flex; flex-direction: column; gap: 8px; }
+  .pe-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 4px; align-items: center; }
+  .pe-input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 6px 9px; outline: none; min-width: 0; }
+  .pe-input:focus { border-color: var(--accent); }
+  .pe-btn { width: 26px; height: 30px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 7px; color: var(--mute); font-size: 13px; cursor: pointer; font-family: inherit; }
+  .pe-btn:hover:not(:disabled) { border-color: var(--rule-strong); color: var(--ink); }
+  .pe-btn:disabled { opacity: 0.4; cursor: default; }
+  .pe-x:hover:not(:disabled) { color: var(--danger-text); border-color: var(--danger-tint); }
+  .pe-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
   .kv { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 9px 12px; }
   .kv dt { font-size: 12.5px; color: var(--mute); }
   .kv dd { margin: 0; font-size: 12.5px; color: var(--ink); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
@@ -1360,6 +1547,16 @@
   .contact-empty { font-size: 12.5px; color: var(--mute); margin: 0 0 10px; }
   .add-hm { display: inline-flex; align-items: center; gap: 6px; width: 100%; justify-content: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; font-family: inherit; }
   .add-hm:hover { border-color: var(--rule-strong); color: var(--ink); }
+  .c-av-warm { background: var(--warm-tint, var(--accent-tint)); color: var(--warm-text, var(--accent-text)); }
+  .c-links { display: flex; gap: 8px; margin-bottom: 4px; }
+  .c-links .c-li { width: auto; flex: 1; }
+  .contact-stacked { padding-top: 12px; border-top: 1px solid var(--rule); }
+
+  .jd-saved { margin-top: 12px; }
+  .jd-saved summary { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--accent-text); cursor: pointer; list-style: none; }
+  .jd-saved summary::-webkit-details-marker { display: none; }
+  .jd-saved summary:hover { text-decoration: underline; }
+  .jd-body { margin: 10px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); white-space: pre-wrap; max-height: 280px; overflow-y: auto; padding: 10px 12px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
 
   /* FOLLOW-UP MODAL */
   .fu-card { max-width: 460px; }
@@ -1384,6 +1581,7 @@
   .btn-generate:disabled { opacity: 0.5; cursor: default; }
   .gen-err { color: var(--danger-text); font-size: 13px; margin: 14px 0 0; text-align: left; }
   .big-spinner { width: 36px; height: 36px; border: 2.5px solid var(--rule-strong); border-top-color: var(--accent); border-radius: 50%; animation: prep-spin 0.75s linear infinite; margin: 24px auto 0; }
+  .gen-eta { font-size: 12px; color: var(--mute-2); margin: 16px auto 0; max-width: 40ch; }
   @keyframes prep-spin { to { transform: rotate(360deg); } }
 
   /* ADD-EVENT MODAL */
@@ -1394,26 +1592,33 @@
   .add-hd { margin-bottom: 16px; padding-right: 26px; }
   .add-hd h3 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em; }
   .add-hd p { font-size: 13px; color: var(--mute); margin: 0; line-height: 1.5; }
-  .zones { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .zone { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-  .zone-hd { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: center; }
-  .zone-ic { width: 32px; height: 32px; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); display: grid; place-items: center; }
-  .zone-ic.accent { background: var(--accent-tint); color: var(--accent-text); }
-  .zone-title { font-size: 13.5px; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; }
-  .zone-sub { font-size: 12px; color: var(--mute); margin-top: 1px; }
-  .drop { background: var(--card); border: 1.5px dashed var(--rule-strong); border-radius: 10px; padding: 16px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--mute); transition: border-color 120ms, background 120ms; cursor: pointer; }
-  .drop:hover, .drop.drag { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text); }
-  .drop-l1 { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
-  .drop:hover .drop-l1, .drop.drag .drop-l1 { color: var(--accent-text); }
-  .drop-l2 { font-size: 11.5px; color: var(--mute-2); }
-  .drop kbd { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; background: var(--surface-2); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--ink-2); }
-  .or { font-size: 11.5px; color: var(--mute-2); text-align: center; }
-  .ai-ta { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; outline: none; resize: vertical; box-sizing: border-box; }
-  .ai-ta:focus { border-color: var(--accent); }
-  .zone-title .ai-pill { font-size: 10px; padding: 1px 5px; border-radius: 4px; }
-  .zone-parse { margin-top: 4px; align-self: flex-start; }
+  /* Unified add-event input: one box that takes a file, screenshot, or text. */
+  .ev-input { position: relative; background: var(--surface); border: 1.5px dashed var(--rule-strong); border-radius: 12px; overflow: hidden; transition: border-color 120ms ease, background 120ms ease; }
+  .ev-input.drag { border-color: var(--accent); background: var(--accent-tint); }
+  .ev-input.loading { border-style: solid; border-color: var(--accent); }
+  .ev-ta { width: 100%; font: inherit; font-family: var(--sans); font-size: 13.5px; line-height: 1.55; color: var(--ink); background: transparent; border: 0; padding: 13px 15px 8px; outline: none; resize: none; min-height: 78px; box-sizing: border-box; display: block; }
+  .ev-ta::placeholder { color: var(--mute-2); }
+  .ev-attached { display: flex; align-items: center; gap: 10px; padding: 14px 15px 10px; font-size: 13px; }
+  .ev-att-ic { color: var(--accent-text); display: inline-flex; flex-shrink: 0; }
+  .ev-att-name { font-weight: 500; color: var(--ink); }
+  .ev-att-kind { color: var(--mute); font-size: 11.5px; }
+  .ev-att-x { margin-left: auto; background: transparent; border: 0; color: var(--mute); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  .ev-att-x:hover { color: var(--ink); }
+  .ev-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px 10px; border-top: 1px dashed var(--rule); }
+  .ev-browse { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mute); cursor: pointer; }
+  .ev-browse svg { color: var(--mute-2); flex-shrink: 0; }
+  .ev-browse u { color: var(--accent-text); text-decoration: none; font-weight: 500; }
+  .ev-browse:hover u { text-decoration: underline; }
+  .ev-loading { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; color: var(--accent-text); }
+  .ev-spin { width: 13px; height: 13px; border: 1.8px solid var(--accent-tint-2); border-top-color: var(--accent); border-radius: 50%; animation: ev-spin 0.7s linear infinite; flex-shrink: 0; }
+  @keyframes ev-spin { to { transform: rotate(360deg); } }
+  .ev-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+  .ev-hint { font-size: 11.5px; color: var(--mute); }
+  .ev-hint kbd { font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px; background: var(--surface); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--ink-2); }
   .ics-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
-  .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 10px; }
+  .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 6px; }
+  .prev-check { font-size: 12px; color: var(--mute); margin: 0 0 10px; }
+  .prev-when strong { font-weight: 600; }
   .prev-row { background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
   .prev-summary { font-size: 13.5px; font-weight: 600; color: var(--ink); }
   .prev-when { font-size: 12.5px; color: var(--accent-text); margin-top: 3px; font-weight: 500; }
@@ -1439,15 +1644,21 @@
 
   /* EDIT MODAL */
   .modal-overlay { position: fixed; inset: 0; background: rgba(10,10,13,0.4); display: grid; place-items: center; z-index: 100; padding: 2rem; }
-  .modal { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: .75rem; box-shadow: var(--sh-pop); }
+  .modal { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 560px; max-height: calc(100vh - 4rem); overflow-y: auto; display: flex; flex-direction: column; gap: .75rem; box-shadow: var(--sh-pop); }
   .modal h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.018em; margin: 0; }
   .modal-hint { font-size: 12px; color: var(--mute); margin: 0 0 .5rem; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; }
   .fields .span-2 { grid-column: span 2; }
+  .field-group { grid-column: span 2; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); margin-top: .5rem; padding-top: .65rem; border-top: 1px solid var(--rule); }
+  .field-group .fg-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--mute-2); }
   .modal label { display: flex; flex-direction: column; font-size: 12px; color: var(--mute); gap: .35rem; }
   .modal input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: .45rem .6rem; font-size: 13.5px; outline: none; transition: border-color 100ms ease; }
   .modal input:focus { border-color: var(--accent); }
+  .modal .jd-area { font: inherit; font-family: var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: .45rem .6rem; font-size: 13.5px; line-height: 1.5; outline: none; resize: vertical; min-height: 72px; transition: border-color 100ms ease; }
+  .modal .jd-area:focus { border-color: var(--accent); }
   .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .75rem; }
+  .privacy-note { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mute); margin: 12px 0 0; line-height: 1.4; }
+  .privacy-note svg { color: var(--mute-2); flex-shrink: 0; }
 
   .empty-tab { border: 1px dashed var(--rule); border-radius: 12px; padding: 32px; text-align: center; background: var(--card); }
   .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
@@ -1460,7 +1671,6 @@
     .det-hd { gap: 12px; }
     .logo-big { width: 48px; height: 48px; }
     .det-hd .co { font-size: 21px; }
-    .zones { grid-template-columns: 1fr; gap: 10px; }
     .modal-overlay { padding: 0; }
     .modal { max-width: 100%; border-radius: 0; min-height: 100vh; padding: 1rem; }
     .ev-overlay { padding: 0; }

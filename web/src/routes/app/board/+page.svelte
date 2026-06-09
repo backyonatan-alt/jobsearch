@@ -5,11 +5,13 @@
   import { isPreview, mockApi } from '$lib/preview-mode.js';
   import { logEvent } from '$lib/analytics.js';
   import { STATUS_LABEL, toDisplayApp, fmtLongDate, isStale } from '$lib/app-helpers.js';
+  import ImportApplications from '$lib/ImportApplications.svelte';
 
   const call = isPreview() ? mockApi : api;
 
   let apps = $state([]);
   let loading = $state(true);
+  let showImport = $state(false);
   let dragOver = $state(null);   // column key being hovered during drag
   let dragging = $state(null);   // id of card being dragged
 
@@ -129,12 +131,18 @@
   <div class="board-page">
 
     <div class="board-hd">
-      <div class="bdate">{dateLong}</div>
-      <h1>Board.</h1>
-      <div class="bsub">
-        <b>{inFlight}</b> in flight · drag a card across columns to move its status.
-        <span class="legend"><span class="rd"></span>red border = no movement in 7+ days</span>
+      <div class="bhd-main">
+        <div class="bdate">{dateLong}</div>
+        <h1>Board.</h1>
+        <div class="bsub">
+          <b>{inFlight}</b> in flight · drag a card across columns to move its status.
+          <span class="legend"><span class="rd"></span>red border = no movement in 7+ days</span>
+        </div>
       </div>
+      <button class="import-btn" onclick={() => (showImport = true)}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 12v1.5h10V12"/></svg>
+        Import from spreadsheet
+      </button>
     </div>
 
     {#if loading}
@@ -207,13 +215,18 @@
   </div>
 </div>
 
+<ImportApplications bind:open={showImport} onImported={refresh} />
+
 <style>
   /* ── Layout ──────────────────────────────────────────────── */
   .body { padding: 30px 36px 60px; }
   .board-page { max-width: none; margin: 0; }
 
   /* ── Header ──────────────────────────────────────────────── */
-  .board-hd { margin-bottom: 26px; }
+  .board-hd { margin-bottom: 26px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .import-btn { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; background: var(--card); border: 1px solid var(--rule); border-radius: 9px; padding: 9px 14px; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; font-family: inherit; }
+  .import-btn:hover { border-color: var(--rule-strong); color: var(--ink); }
+  .import-btn svg { color: var(--mute); }
   .bdate { font-size: 13px; color: var(--mute); margin-bottom: 6px; letter-spacing: -0.003em; }
   .board-hd h1 {
     font-size: 34px; font-weight: 500; letter-spacing: -0.035em; margin: 0 0 11px; color: var(--ink);

@@ -52,6 +52,19 @@
     apps.filter(a => !['wishlist', 'rejected', 'withdrawn'].includes(a.status)).length
   );
 
+  // ── Outcomes: where applications end up ────────────────────
+  // The funnel above is cumulative reach, so a "no" is invisible — it stays
+  // folded into the Applied count. Make the exits explicit instead.
+  const outcomeCounts = $derived.by(() => {
+    let offer = 0, rejected = 0, withdrawn = 0;
+    for (const a of apps) {
+      if (a.status === 'offer') offer++;
+      else if (a.status === 'rejected') rejected++;
+      else if (a.status === 'withdrawn') withdrawn++;
+    }
+    return { offer, rejected, withdrawn };
+  });
+
   // ── KPI 1: Reply rate ──────────────────────────────────────
   // Numerator: apps that reached screen or further (screen, interview, offer, rejected after screen)
   // We only have current status, so: screen + interview + offer counts as "got a reply".
@@ -255,6 +268,32 @@
             {/each}
           </div>
 
+          <!-- Outcomes: where applications leave the funnel -->
+          <div class="outcomes">
+            <div class="oc oc-offer">
+              <span class="oc-dot"></span>
+              <span class="oc-n">{outcomeCounts.offer}</span>
+              <span class="oc-l">Offer{outcomeCounts.offer !== 1 ? 's' : ''}</span>
+            </div>
+            <div class="oc oc-rej">
+              <span class="oc-dot"></span>
+              <span class="oc-n">{outcomeCounts.rejected}</span>
+              <span class="oc-l">Rejected</span>
+            </div>
+            <div class="oc oc-wd">
+              <span class="oc-dot"></span>
+              <span class="oc-n">{outcomeCounts.withdrawn}</span>
+              <span class="oc-l">Withdrawn</span>
+            </div>
+          </div>
+          <p class="oc-note">
+            {#if outcomeCounts.rejected > 0}
+              {outcomeCounts.rejected} application{outcomeCounts.rejected !== 1 ? 's' : ''} got a “no” — they leave the funnel here. Every search has them.
+            {:else}
+              No rejections logged yet. When a “no” comes in, set the app to <strong>Rejected</strong> and it lands here.
+            {/if}
+          </p>
+
           <div class="divider"></div>
 
           <!-- Application activity -->
@@ -356,6 +395,17 @@
   .fn-bar { height: 30px; border-radius: 8px; display: flex; align-items: center; min-width: 30px; transition: width 280ms ease; }
   .fn-n { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; font-family: var(--mono, ui-monospace, monospace); text-align: right; }
   .fn-pct { font-size: 12.5px; color: var(--mute); font-variant-numeric: tabular-nums; text-align: right; }
+
+  /* Outcomes — where applications exit the funnel */
+  .outcomes { display: flex; gap: 10px; margin-top: 20px; }
+  .oc { flex: 1; display: flex; align-items: baseline; gap: 7px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 11px; background: var(--surface); }
+  .oc-dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; flex-shrink: 0; }
+  .oc-n { font-size: 19px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .oc-l { font-size: 12px; color: var(--mute); }
+  .oc-offer .oc-dot { background: oklch(0.65 0.14 152); }
+  .oc-rej .oc-dot { background: var(--danger, oklch(0.62 0.2 25)); }
+  .oc-wd .oc-dot { background: var(--mute-2); }
+  .oc-note { font-size: 12px; color: var(--mute); margin: 10px 0 0; line-height: 1.5; }
 
   /* Divider between funnel and activity */
   .divider { height: 1px; background: var(--rule); margin: 24px 0; }

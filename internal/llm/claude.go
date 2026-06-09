@@ -321,8 +321,9 @@ Return ONLY a JSON object with this shape (omit any you can't determine):
 
 Rules:
 - summary is required if any event is described; if you can't find a summary, fall back to the company / interview type (e.g. "Interview").
-- Default timezone: if the screenshot/text shows a timezone (PDT, EST, "America/New_York"), use it. Otherwise use US Eastern.
-- Dates without years: assume the next occurrence of that month/day.
+- Default timezone: if the screenshot/text shows a timezone (PDT, EST, "Israel Time", "America/New_York"), use it. Otherwise use US Eastern.
+- Date resolution: resolve dates relative to the "Current date" given in the user message. A year-less or relative date ("next Wednesday", "10 June", "tomorrow") means the SOONEST such date on or after the current date.
+- Weekday consistency: if the input names a weekday (e.g. "Wednesday, 10 June"), the resolved date MUST fall on that weekday. A bare month/day can land on different weekdays in different years — pick the year that makes the named weekday correct. Never emit a date whose weekday contradicts the text.
 - Times like "2pm" or "14:00": assume the local timezone you inferred.
 - If the input is a series (multiple events), pick the SOONEST one — only return a single event.
 
@@ -341,13 +342,18 @@ func (c *Client) ParseEvent(ctx context.Context, text string, image *ParseImage)
 		return nil, errors.New("paste an event screenshot or text first")
 	}
 
+	// Anchor relative/year-less dates and weekday checks to "now". Without this
+	// the model picks an arbitrary year for a bare "Wednesday, 10 June" and can
+	// land on the wrong weekday entirely.
+	dateAnchor := "Current date: " + time.Now().Format("Monday, 2006-01-02 -07:00") + "."
+
 	var msg Message
 	if image != nil {
-		caption := text
-		if caption == "" {
-			caption = "Extract the calendar event: title, time, location, attendees."
+		caption := dateAnchor + "\n"
+		if text == "" {
+			caption += "Extract the calendar event: title, time, location, attendees."
 		} else {
-			caption = "Extract the calendar event from this screenshot. User added: " + caption
+			caption += "Extract the calendar event from this screenshot. User added: " + text
 		}
 		msg = Message{
 			Role: "user",
@@ -357,7 +363,7 @@ func (c *Client) ParseEvent(ctx context.Context, text string, image *ParseImage)
 			},
 		}
 	} else {
-		msg = Message{Role: "user", Content: text}
+		msg = Message{Role: "user", Content: dateAnchor + "\n\n" + text}
 	}
 
 	resp, err := c.CreateMessage(ctx, ModelHaiku, eventParserSystemPrompt, []Message{msg}, 600)
