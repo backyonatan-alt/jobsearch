@@ -158,6 +158,81 @@ func (s *Server) handleApplicationCreate(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+type importRow struct {
+	Company    string     `json:"company"`
+	Role       string     `json:"role"`
+	Status     string     `json:"status"`
+	Source     string     `json:"source"`
+	Location   string     `json:"location"`
+	SalaryNote string     `json:"salary_note"`
+	Notes      string     `json:"notes"`
+	AppliedAt  *time.Time `json:"applied_at"`
+}
+
+type importRequest struct {
+	Applications []importRow `json:"applications"`
+}
+
+const maxImportRows = 500
+
+// POST /api/applications/import — bulk-create applications from a pasted
+// spreadsheet. Rows missing both company and role are skipped; unknown statuses
+// fall back to "applied". Returns how many were created and how many skipped.
+func (s *Server) handleApplicationsImport(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFromCtx(r.Context())
+	var in importRequest
+	if err := readJSON(r, &in); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(in.Applications) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "no rows to import")
+		return
+	}
+	if len(in.Applications) > maxImportRows {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "too many rows (500 max per import)")
+		return
+	}
+
+	created, skipped := 0, 0
+	for _, row := range in.Applications {
+		company := strings.TrimSpace(row.Company)
+		role := strings.TrimSpace(row.Role)
+		if company == "" || role == "" {
+			skipped++
+			continue
+		}
+		status := strings.ToLower(strings.TrimSpace(row.Status))
+		if !validStatus[status] {
+			status = "applied"
+		}
+		if _, err := s.Pool.Exec(r.Context(), `
+			INSERT INTO applications (user_id, company, role, status, source, location,
+			    salary_note, notes, applied_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+			u.ID, company, role, status,
+			nilIfEmpty(row.Source), nilIfEmpty(row.Location),
+			nilIfEmpty(row.SalaryNote), nilIfEmpty(row.Notes), row.AppliedAt,
+		); err != nil {
+			s.Logger.Error("import insert", "err", err)
+			skipped++
+			continue
+		}
+		created++
+	}
+
+	s.logEvent(r.Context(), u.ID, "bulk_import", map[string]any{"created": created, "skipped": skipped})
+	writeJSON(w, http.StatusOK, map[string]int{"created": created, "skipped": skipped})
+}
+
+func nilIfEmpty(s string) *string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 func (s *Server) handleApplicationGet(w http.ResponseWriter, r *http.Request) {
 	u, _ := userFromCtx(r.Context())
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

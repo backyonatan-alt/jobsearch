@@ -42,6 +42,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/applications", s.requireUser(s.handleApplicationsList))
 	mux.HandleFunc("POST /api/applications", s.requireUser(s.handleApplicationCreate))
 	mux.HandleFunc("POST /api/applications/parse", s.requireUser(s.handleApplicationParse))
+	mux.HandleFunc("POST /api/applications/import", s.requireUser(s.handleApplicationsImport))
 	mux.HandleFunc("GET /api/applications/{id}", s.requireUser(s.handleApplicationGet))
 	mux.HandleFunc("PATCH /api/applications/{id}", s.requireUser(s.handleApplicationUpdate))
 	mux.HandleFunc("DELETE /api/applications/{id}", s.requireUser(s.handleApplicationDelete))

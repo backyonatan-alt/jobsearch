@@ -203,6 +203,10 @@ the moment you notice something; triage later.
 
 - `[idea]` Per-role customizable interview pipeline. Migration 0017 adds a `pipeline` JSONB array (`[{name, done}]`) to applications; `PUT /api/applications/{id}/pipeline` replaces it (sanitizes: trims, drops empties, caps 30 stages / 80 chars). Detail page rail gets a "Pipeline" card: a clean checkable vertical stepper (tap a node to mark done) with "N of M done", an Edit mode (rename / reorder ↑↓ / remove / add), and an empty-state "Start from a typical loop" seed. Mutable mid-process.
 
+### Michal feedback — Chunk 7: bulk import (Jun 9 2026)
+
+- `[idea]` Load an existing spreadsheet of past/current roles in bulk. New `POST /api/applications/import` (caps 500 rows, skips rows missing company+role, normalizes unknown status → applied, sets nothing it isn't given). `ImportApplications.svelte` modal off the Board: paste TSV/CSV → auto-map columns by header (with manual override dropdowns + sample values) → preview + count → import → "Added N applications". Emits `bulk_import` event.
+
 ### Bug fixes
 
 - `[bug]` AI-parsed calendar events (text/screenshot → Haiku) could never be saved: the parse path tags them `source:"ai"` but `handleInterviewCreate` rejected anything but `ics`/`manual` with 400 "source must be 'ics' or 'manual'". Allowed `ai` as a valid source. (Jun 9 2026)
