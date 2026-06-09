@@ -184,6 +184,7 @@ the moment you notice something; triage later.
 
 - `[bug]` Haiku put the wrong weekday on a year-less invite ("Tue, Jun 10" for a Wed Jun 10 — June 10 is a Tuesday in 2025, a Wednesday in 2026, and the model had no "today" to pick the year). Fixed: `ParseEvent` now passes the current date in the user message and the prompt requires weekday-consistency (a named weekday must match the resolved date) and resolves year-less/relative dates relative to today.
 - Preview now shows the full weekday + year computed from the parsed date (never the model's prose) — e.g. "Wednesday, June 10, 2026 · 11:00 AM" — with a "Double-check the day and time before saving" hint.
+- `[ux]` "Add an interview" modal was too dense (two side-by-side zones, each with a drop area + textarea + button). Redesigned to one unified box that auto-routes .ics / screenshot / pasted-text, plus a single "Find the event" button — matches the New Application modal.
 
 ### Bug fixes
 

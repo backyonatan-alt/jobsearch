@@ -29,18 +29,18 @@
   let interviews = $state([]);
   let interviewsLoading = $state(false);
 
-  // Add-event flow (popup modal)
+  // Add-event flow (popup modal) — one unified input: paste / drop / type.
   let showEventModal = $state(false);
-  let icsText = $state('');
-  let aiText = $state('');
-  let aiImage = $state(null); // { name, mediaType, size, file }
-  let aiDragOver = $state(false);
+  let evText = $state('');
+  let evAttach = $state(null); // { kind:'image'|'ics', name, size, mediaType?, file?, content? }
+  let evDragOver = $state(false);
   let icsParsing = $state(false);
   let icsParseError = $state('');
   let icsPreview = $state([]);
   let icsSaving = $state(false);
-  const AI_ALLOWED_IMG = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-  const AI_MAX_BYTES = 6 * 1024 * 1024;
+  const EV_IMG_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  const EV_IMG_MAX = 6 * 1024 * 1024;
+  const looksLikeIcs = (t) => /BEGIN:VCALENDAR/i.test(t);
 
   // Inline-action state
   let showStatusMenu = $state(false);
@@ -163,20 +163,7 @@
     }
   }
 
-  // ── Add-event parse/save flow (preserved) ────────────────────
-  function setAiImage(f) {
-    if (!f) return;
-    if (!AI_ALLOWED_IMG.includes(f.type)) { icsParseError = 'Only PNG / JPEG / GIF / WebP screenshots are supported.'; return; }
-    if (f.size > AI_MAX_BYTES) { icsParseError = 'Screenshot too large (6 MB max).'; return; }
-    icsParseError = '';
-    aiImage = { name: f.name || 'pasted.png', mediaType: f.type, size: f.size, file: f };
-  }
-  function onAiDrop(e) { e.preventDefault(); aiDragOver = false; setAiImage(e.dataTransfer?.files?.[0]); }
-  function onAiDragOver(e) { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); aiDragOver = true; } }
-  function onAiPaste(e) {
-    const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
-    if (item) setAiImage(item.getAsFile());
-  }
+  // ── Add-event flow — one box that takes an .ics file, a screenshot, or text ──
   function fileToBase64(f) {
     return new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -189,57 +176,57 @@
       r.readAsDataURL(f);
     });
   }
-  async function onIcsFile(e) {
-    const f = e.target.files?.[0];
-    e.target.value = '';
+  async function setEvFile(f) {
     if (!f) return;
-    if (f.size > 256 * 1024) { icsParseError = 'File too large (256 KB max).'; return; }
-    icsText = await f.text();
-    await parseIcs();
-  }
-  async function parseIcs() {
-    if (icsParsing) return;
     icsParseError = '';
-    icsPreview = [];
-    const body = icsText.trim();
-    if (!body) { icsParseError = 'Paste the .ics contents or pick a file.'; return; }
-    icsParsing = true;
-    try {
-      const r = await call(`/api/applications/${id}/interviews/parse`, { method: 'POST', body: JSON.stringify({ ics: body }) });
-      icsPreview = r.events ?? [];
-      if (icsPreview.length === 0) icsParseError = 'No events found in that file.';
-    } catch (e) {
-      icsParseError = e.message || 'Could not parse calendar.';
-    } finally {
-      icsParsing = false;
+    const name = (f.name || '').toLowerCase();
+    if (EV_IMG_TYPES.includes(f.type)) {
+      if (f.size > EV_IMG_MAX) { icsParseError = 'Screenshot too large (6 MB max).'; return; }
+      evAttach = { kind: 'image', name: f.name || 'pasted.png', size: f.size, mediaType: f.type, file: f };
+      return;
     }
+    if (name.endsWith('.ics') || f.type === 'text/calendar') {
+      if (f.size > 256 * 1024) { icsParseError = 'Calendar file too large (256 KB max).'; return; }
+      evAttach = { kind: 'ics', name: f.name || 'invite.ics', size: f.size, content: await f.text() };
+      return;
+    }
+    icsParseError = 'Drop a screenshot (PNG/JPEG) or an .ics calendar file.';
   }
-  async function parseAi() {
+  function onEvDrop(e) { e.preventDefault(); evDragOver = false; setEvFile(e.dataTransfer?.files?.[0]); }
+  function onEvDragOver(e) { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); evDragOver = true; } }
+  function onEvPaste(e) {
+    const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+    if (item) { e.preventDefault(); setEvFile(item.getAsFile()); }
+  }
+  async function onEvFileInput(e) { const f = e.target.files?.[0]; e.target.value = ''; await setEvFile(f); }
+
+  async function parseEvent() {
     if (icsParsing) return;
     icsParseError = '';
     icsPreview = [];
-    if (!aiImage && !aiText.trim()) { icsParseError = 'Drop a screenshot or paste the event text first.'; return; }
+    const text = evText.trim();
+    if (!evAttach && !text) { icsParseError = 'Drop a file or screenshot, or paste the invite text first.'; return; }
     icsParsing = true;
     try {
-      const payload = {};
-      if (aiText.trim()) payload.text = aiText.trim();
-      if (aiImage) {
-        const data = await fileToBase64(aiImage.file);
-        payload.image = { media_type: aiImage.mediaType, data };
+      let payload;
+      if (evAttach?.kind === 'ics') {
+        payload = { ics: evAttach.content };
+      } else if (evAttach?.kind === 'image') {
+        payload = { image: { media_type: evAttach.mediaType, data: await fileToBase64(evAttach.file) } };
+        if (text) payload.text = text;
+      } else if (looksLikeIcs(text)) {
+        payload = { ics: text };
+      } else {
+        payload = { text };
       }
       const r = await call(`/api/applications/${id}/interviews/parse`, { method: 'POST', body: JSON.stringify(payload) });
       icsPreview = r.events ?? [];
-      if (icsPreview.length === 0) icsParseError = "Couldn't extract an event.";
+      if (icsPreview.length === 0) icsParseError = "Couldn't find an event in that — try a screenshot or the email body.";
     } catch (e) {
       icsParseError = e.message || 'Could not parse.';
     } finally {
       icsParsing = false;
     }
-  }
-  async function onAiFile(e) {
-    const f = e.target.files?.[0];
-    e.target.value = '';
-    setAiImage(f);
   }
   async function saveParsedEvents() {
     if (icsSaving || icsPreview.length === 0) return;
@@ -248,7 +235,7 @@
       for (const ev of icsPreview) {
         await call(`/api/applications/${id}/interviews`, { method: 'POST', body: JSON.stringify(ev) });
       }
-      icsText = ''; aiText = ''; aiImage = null;
+      evText = ''; evAttach = null;
       icsPreview = [];
       showEventModal = false;
       await loadInterviews();
@@ -268,6 +255,8 @@
     showEventModal = true;
     icsParseError = '';
     icsPreview = [];
+    evText = '';
+    evAttach = null;
   }
   function closeEventModal() {
     showEventModal = false;
@@ -536,19 +525,6 @@
     return '';
   }
 
-  function fmtEventWhen(ev) {
-    const d = new Date(ev.starts_at);
-    if (ev.all_day) return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
-    const date = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-    const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    let suffix = '';
-    if (ev.ends_at) {
-      const end = new Date(ev.ends_at);
-      const mins = Math.round((end - d) / 60000);
-      if (mins > 0) suffix = ` · ${mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`}`;
-    }
-    return `${date}, ${time}${suffix}`;
-  }
   // Preview formatters: the weekday + year are always computed from the parsed
   // date here, never taken from the model's prose, so a wrong day is visible.
   function fmtEventDay(ev) {
@@ -1121,58 +1097,59 @@
       </button>
       <div class="add-hd">
         <h3>Add an interview</h3>
-        <p>Drop a calendar file, paste a screenshot, or just paste the email body — we'll extract the event.</p>
+        <p>Paste the invite, drop a screenshot or .ics file, or just type the details — we'll pull out the event.</p>
       </div>
-      <div class="zones">
-        <!-- LEFT — .ics -->
-        <div class="zone">
-          <div class="zone-hd">
-            <span class="zone-ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg></span>
-            <div>
-              <div class="zone-title">Calendar file</div>
-              <div class="zone-sub">.ics from Google / Outlook / Apple</div>
-            </div>
-          </div>
-          <label class="drop drop-file">
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
-            <span class="drop-l1">Drop .ics file</span>
-            <span class="drop-l2">or click to browse</span>
-            <input type="file" accept=".ics,text/calendar" onchange={onIcsFile} style="display:none" />
-          </label>
-          <div class="or">or paste raw .ics text below</div>
-          <textarea class="ai-ta" rows="3" placeholder={"BEGIN:VCALENDAR&#10;VERSION:2.0&#10;BEGIN:VEVENT…"} bind:value={icsText}></textarea>
-          <button class="btn btn-primary zone-parse" onclick={parseIcs} disabled={icsParsing || !icsText.trim()}>
-            {icsParsing ? 'Parsing…' : 'Parse .ics'}
-          </button>
-        </div>
 
-        <!-- RIGHT — screenshot/text AI -->
-        <div class="zone">
-          <div class="zone-hd">
-            <span class="zone-ic accent"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg></span>
-            <div>
-              <div class="zone-title">Screenshot or email text<span class="ai-pill">AI</span></div>
-              <div class="zone-sub">Gmail invite, Calendar screenshot, anything readable</div>
-            </div>
+      <div
+        class="ev-input"
+        class:drag={evDragOver}
+        class:loading={icsParsing}
+        ondragover={onEvDragOver}
+        ondragleave={() => (evDragOver = false)}
+        ondrop={onEvDrop}
+        role="presentation"
+      >
+        {#if evAttach}
+          <div class="ev-attached">
+            <span class="ev-att-ic">
+              {#if evAttach.kind === 'image'}
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg>
+              {/if}
+            </span>
+            <span class="ev-att-name">{evAttach.name}</span>
+            <span class="ev-att-kind">{evAttach.kind === 'image' ? 'screenshot' : 'calendar file'} · {Math.round(evAttach.size / 1024)} KB</span>
+            <button type="button" class="ev-att-x" onclick={() => (evAttach = null)} aria-label="Remove" disabled={icsParsing}>×</button>
           </div>
-          <label class="drop drop-image" class:drag={aiDragOver} ondragover={onAiDragOver} ondragleave={() => (aiDragOver = false)} ondrop={onAiDrop}>
-            {#if aiImage}
-              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-              <span class="drop-l1">{aiImage.name}</span>
-              <span class="drop-l2">{Math.round(aiImage.size / 1024)} KB · click to replace</span>
-            {:else}
-              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-              <span class="drop-l1">Drop a screenshot</span>
-              <span class="drop-l2"><kbd>⌘V</kbd> works too</span>
-            {/if}
-            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onchange={onAiFile} style="display:none" />
+        {:else}
+          <textarea
+            class="ev-ta"
+            rows="3"
+            bind:value={evText}
+            onpaste={onEvPaste}
+            placeholder={"Paste an invite, or type it — e.g. “Interview Wed Jun 10, 11:00, Google Meet”"}
+            disabled={icsParsing}
+          ></textarea>
+        {/if}
+
+        <div class="ev-foot">
+          <label class="ev-browse">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
+            <span>Drop a screenshot or .ics, paste, or <u>browse</u></span>
+            <input type="file" accept=".ics,text/calendar,image/png,image/jpeg,image/gif,image/webp" onchange={onEvFileInput} hidden />
           </label>
-          <div class="or">or paste the email body below</div>
-          <textarea class="ai-ta" rows="3" placeholder={"You're invited to: Stripe — Technical screen&#10;When: Tue, May 28, 2:00 PM EDT&#10;Where: Google Meet"} bind:value={aiText} onpaste={onAiPaste}></textarea>
-          <button class="btn btn-primary zone-parse" onclick={parseAi} disabled={icsParsing || (!aiImage && !aiText.trim())}>
-            {icsParsing ? 'Parsing…' : 'Parse with AI'}
-          </button>
+          {#if icsParsing}
+            <span class="ev-loading"><span class="ev-spin" aria-hidden="true"></span> Reading the event…</span>
+          {/if}
         </div>
+      </div>
+
+      <div class="ev-actions">
+        <span class="ev-hint"><kbd>⌘V</kbd> pastes a screenshot</span>
+        <button class="btn btn-primary" onclick={parseEvent} disabled={icsParsing || (!evText.trim() && !evAttach)}>
+          {icsParsing ? 'Reading…' : 'Find the event'}
+        </button>
       </div>
 
       {#if icsParseError}<p class="dossier-err" style="margin-top: 14px">{icsParseError}</p>{/if}
@@ -1470,24 +1447,29 @@
   .add-hd { margin-bottom: 16px; padding-right: 26px; }
   .add-hd h3 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em; }
   .add-hd p { font-size: 13px; color: var(--mute); margin: 0; line-height: 1.5; }
-  .zones { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .zone { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-  .zone-hd { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: center; }
-  .zone-ic { width: 32px; height: 32px; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); display: grid; place-items: center; }
-  .zone-ic.accent { background: var(--accent-tint); color: var(--accent-text); }
-  .zone-title { font-size: 13.5px; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; }
-  .zone-sub { font-size: 12px; color: var(--mute); margin-top: 1px; }
-  .drop { background: var(--card); border: 1.5px dashed var(--rule-strong); border-radius: 10px; padding: 16px 12px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--mute); transition: border-color 120ms, background 120ms; cursor: pointer; }
-  .drop:hover, .drop.drag { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-text); }
-  .drop-l1 { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
-  .drop:hover .drop-l1, .drop.drag .drop-l1 { color: var(--accent-text); }
-  .drop-l2 { font-size: 11.5px; color: var(--mute-2); }
-  .drop kbd { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; background: var(--surface-2); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--ink-2); }
-  .or { font-size: 11.5px; color: var(--mute-2); text-align: center; }
-  .ai-ta { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; outline: none; resize: vertical; box-sizing: border-box; }
-  .ai-ta:focus { border-color: var(--accent); }
-  .zone-title .ai-pill { font-size: 10px; padding: 1px 5px; border-radius: 4px; }
-  .zone-parse { margin-top: 4px; align-self: flex-start; }
+  /* Unified add-event input: one box that takes a file, screenshot, or text. */
+  .ev-input { position: relative; background: var(--surface); border: 1.5px dashed var(--rule-strong); border-radius: 12px; overflow: hidden; transition: border-color 120ms ease, background 120ms ease; }
+  .ev-input.drag { border-color: var(--accent); background: var(--accent-tint); }
+  .ev-input.loading { border-style: solid; border-color: var(--accent); }
+  .ev-ta { width: 100%; font: inherit; font-family: var(--sans); font-size: 13.5px; line-height: 1.55; color: var(--ink); background: transparent; border: 0; padding: 13px 15px 8px; outline: none; resize: none; min-height: 78px; box-sizing: border-box; display: block; }
+  .ev-ta::placeholder { color: var(--mute-2); }
+  .ev-attached { display: flex; align-items: center; gap: 10px; padding: 14px 15px 10px; font-size: 13px; }
+  .ev-att-ic { color: var(--accent-text); display: inline-flex; flex-shrink: 0; }
+  .ev-att-name { font-weight: 500; color: var(--ink); }
+  .ev-att-kind { color: var(--mute); font-size: 11.5px; }
+  .ev-att-x { margin-left: auto; background: transparent; border: 0; color: var(--mute); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  .ev-att-x:hover { color: var(--ink); }
+  .ev-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px 10px; border-top: 1px dashed var(--rule); }
+  .ev-browse { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mute); cursor: pointer; }
+  .ev-browse svg { color: var(--mute-2); flex-shrink: 0; }
+  .ev-browse u { color: var(--accent-text); text-decoration: none; font-weight: 500; }
+  .ev-browse:hover u { text-decoration: underline; }
+  .ev-loading { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; color: var(--accent-text); }
+  .ev-spin { width: 13px; height: 13px; border: 1.8px solid var(--accent-tint-2); border-top-color: var(--accent); border-radius: 50%; animation: ev-spin 0.7s linear infinite; flex-shrink: 0; }
+  @keyframes ev-spin { to { transform: rotate(360deg); } }
+  .ev-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+  .ev-hint { font-size: 11.5px; color: var(--mute); }
+  .ev-hint kbd { font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px; background: var(--surface); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--ink-2); }
   .ics-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
   .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 6px; }
   .prev-check { font-size: 12px; color: var(--mute); margin: 0 0 10px; }
@@ -1542,7 +1524,6 @@
     .det-hd { gap: 12px; }
     .logo-big { width: 48px; height: 48px; }
     .det-hd .co { font-size: 21px; }
-    .zones { grid-template-columns: 1fr; gap: 10px; }
     .modal-overlay { padding: 0; }
     .modal { max-width: 100%; border-radius: 0; min-height: 100vh; padding: 1rem; }
     .ev-overlay { padding: 0; }
