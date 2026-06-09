@@ -5,7 +5,7 @@
   import { isPreview, mockApi } from '$lib/preview-mode.js';
   import { logEvent } from '$lib/analytics.js';
   import {
-    toDisplayApp, STATUS_LABEL, STATUSES,
+    toDisplayApp, STATUS_LABEL, STATUSES, SOURCE_SUGGESTIONS,
     fmtLongDate, fmtRelativeDate, daysSince, isStale
   } from '$lib/app-helpers.js';
 
@@ -45,7 +45,7 @@
   // Inline-action state
   let showStatusMenu = $state(false);
   let showEditModal = $state(false);
-  let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', salary_note: '', hiring_manager_name: '', hiring_manager_linkedin: '' });
+  let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', jd_text: '', salary_note: '', hiring_manager_name: '', hiring_manager_linkedin: '', recruiter_name: '', recruiter_email: '', recruiter_linkedin: '' });
   let saving = $state(false);
 
   // Follow-up (records what the user did — sends nothing). Loaded from backend.
@@ -296,9 +296,13 @@
       location:                app.raw.location ?? '',
       cv_variant:              app.raw.cv_variant ?? '',
       jd_url:                  app.raw.jd_url ?? '',
+      jd_text:                 app.raw.jd_text ?? '',
       salary_note:             app.raw.salary_note ?? '',
       hiring_manager_name:     app.raw.hiring_manager_name ?? '',
-      hiring_manager_linkedin: app.raw.hiring_manager_linkedin ?? ''
+      hiring_manager_linkedin: app.raw.hiring_manager_linkedin ?? '',
+      recruiter_name:          app.raw.recruiter_name ?? '',
+      recruiter_email:         app.raw.recruiter_email ?? '',
+      recruiter_linkedin:      app.raw.recruiter_linkedin ?? ''
     };
     showEditModal = true;
   }
@@ -370,6 +374,7 @@
     return (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase();
   }
   const hiringManagerInitials = $derived(initialsOf(app?.raw?.hiring_manager_name));
+  const recruiterInitials = $derived(initialsOf(app?.raw?.recruiter_name));
 
   // ── Interview-prep (dossier) derived view data ───────────────
   const dosContent = $derived(dossier?.content ?? null);
@@ -982,13 +987,45 @@
                 Open job post
               </a>
             {/if}
+            {#if app.raw.jd_text}
+              <details class="jd-saved">
+                <summary>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2h6l3 3v9H4z"/><path d="M9 2v4h4"/></svg>
+                  Saved job description
+                </summary>
+                <p class="jd-body">{app.raw.jd_text}</p>
+              </details>
+            {/if}
           </div>
 
           <!-- Contact -->
           <div class="rail-card">
-            <div class="rc-hd">Contact</div>
-            {#if app.raw.hiring_manager_name}
+            <div class="rc-hd">Contacts</div>
+            {#if app.raw.recruiter_name}
               <div class="contact">
+                <div class="c-av c-av-warm">{recruiterInitials || '—'}</div>
+                <div class="c-info">
+                  <div class="c-name">{app.raw.recruiter_name}</div>
+                  <div class="c-role">Recruiter / contact</div>
+                </div>
+              </div>
+              <div class="c-links">
+                {#if app.raw.recruiter_email}
+                  <a class="c-li" href={`mailto:${app.raw.recruiter_email}`}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg>
+                    Email
+                  </a>
+                {/if}
+                {#if app.raw.recruiter_linkedin}
+                  <a class="c-li" href={app.raw.recruiter_linkedin} target="_blank" rel="noopener">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
+                    LinkedIn
+                  </a>
+                {/if}
+              </div>
+            {/if}
+            {#if app.raw.hiring_manager_name}
+              <div class="contact" class:contact-stacked={app.raw.recruiter_name}>
                 <div class="c-av">{hiringManagerInitials || '—'}</div>
                 <div class="c-info">
                   <div class="c-name">{app.raw.hiring_manager_name}</div>
@@ -1001,11 +1038,12 @@
                   LinkedIn
                 </a>
               {/if}
-            {:else}
-              <p class="contact-empty">No hiring manager yet.</p>
+            {/if}
+            {#if !app.raw.recruiter_name && !app.raw.hiring_manager_name}
+              <p class="contact-empty">No contacts yet — add the recruiter or hiring manager.</p>
               <button class="add-hm" onclick={openEdit}>
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
-                Add hiring manager
+                Add a contact
               </button>
             {/if}
           </div>
@@ -1030,13 +1068,24 @@
       <div class="fields">
         <label>Company <input bind:value={edit.company} required /></label>
         <label>Role <input bind:value={edit.role} required /></label>
-        <label>Source <input bind:value={edit.source} placeholder="LinkedIn / Referral / Cold email" /></label>
+        <label>Source <input bind:value={edit.source} list="edit-source-suggestions" placeholder="LinkedIn / Referral / Cold email" /></label>
+        <datalist id="edit-source-suggestions">
+          {#each SOURCE_SUGGESTIONS as s}<option value={s}></option>{/each}
+        </datalist>
         <label>Location <input bind:value={edit.location} placeholder="Remote / San Francisco" /></label>
         <label>CV variant <input bind:value={edit.cv_variant} placeholder="v3-ai-focus" /></label>
         <label>Salary note <input bind:value={edit.salary_note} placeholder="$220k-$280k base" /></label>
         <label class="span-2">JD URL <input bind:value={edit.jd_url} placeholder="https://…" /></label>
-        <label>Hiring manager <input bind:value={edit.hiring_manager_name} placeholder="Jane Doe" /></label>
-        <label>Hiring manager LinkedIn <input bind:value={edit.hiring_manager_linkedin} placeholder="https://linkedin.com/in/…" /></label>
+        <label class="span-2">Job description
+          <textarea class="jd-area" bind:value={edit.jd_text} rows="4" placeholder="Paste the full JD text so it's kept even if the posting comes down."></textarea>
+        </label>
+        <div class="field-group span-2">Hiring manager <span class="fg-sub">— who the role reports to</span></div>
+        <label>Name <input bind:value={edit.hiring_manager_name} placeholder="Jane Doe" /></label>
+        <label>LinkedIn <input bind:value={edit.hiring_manager_linkedin} placeholder="https://linkedin.com/in/…" /></label>
+        <div class="field-group span-2">Recruiter / contact <span class="fg-sub">— who's running your process</span></div>
+        <label>Name <input bind:value={edit.recruiter_name} placeholder="Sam Levi" /></label>
+        <label>Email <input bind:value={edit.recruiter_email} type="email" placeholder="sam@company.com" /></label>
+        <label class="span-2">LinkedIn <input bind:value={edit.recruiter_linkedin} placeholder="https://linkedin.com/in/…" /></label>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn" onclick={() => (showEditModal = false)}>Cancel</button>
@@ -1360,6 +1409,16 @@
   .contact-empty { font-size: 12.5px; color: var(--mute); margin: 0 0 10px; }
   .add-hm { display: inline-flex; align-items: center; gap: 6px; width: 100%; justify-content: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; font-family: inherit; }
   .add-hm:hover { border-color: var(--rule-strong); color: var(--ink); }
+  .c-av-warm { background: var(--warm-tint, var(--accent-tint)); color: var(--warm-text, var(--accent-text)); }
+  .c-links { display: flex; gap: 8px; margin-bottom: 4px; }
+  .c-links .c-li { width: auto; flex: 1; }
+  .contact-stacked { padding-top: 12px; border-top: 1px solid var(--rule); }
+
+  .jd-saved { margin-top: 12px; }
+  .jd-saved summary { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--accent-text); cursor: pointer; list-style: none; }
+  .jd-saved summary::-webkit-details-marker { display: none; }
+  .jd-saved summary:hover { text-decoration: underline; }
+  .jd-body { margin: 10px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); white-space: pre-wrap; max-height: 280px; overflow-y: auto; padding: 10px 12px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
 
   /* FOLLOW-UP MODAL */
   .fu-card { max-width: 460px; }
@@ -1439,14 +1498,18 @@
 
   /* EDIT MODAL */
   .modal-overlay { position: fixed; inset: 0; background: rgba(10,10,13,0.4); display: grid; place-items: center; z-index: 100; padding: 2rem; }
-  .modal { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: .75rem; box-shadow: var(--sh-pop); }
+  .modal { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 560px; max-height: calc(100vh - 4rem); overflow-y: auto; display: flex; flex-direction: column; gap: .75rem; box-shadow: var(--sh-pop); }
   .modal h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.018em; margin: 0; }
   .modal-hint { font-size: 12px; color: var(--mute); margin: 0 0 .5rem; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; }
   .fields .span-2 { grid-column: span 2; }
+  .field-group { grid-column: span 2; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); margin-top: .5rem; padding-top: .65rem; border-top: 1px solid var(--rule); }
+  .field-group .fg-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--mute-2); }
   .modal label { display: flex; flex-direction: column; font-size: 12px; color: var(--mute); gap: .35rem; }
   .modal input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: .45rem .6rem; font-size: 13.5px; outline: none; transition: border-color 100ms ease; }
   .modal input:focus { border-color: var(--accent); }
+  .modal .jd-area { font: inherit; font-family: var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: .45rem .6rem; font-size: 13.5px; line-height: 1.5; outline: none; resize: vertical; min-height: 72px; transition: border-color 100ms ease; }
+  .modal .jd-area:focus { border-color: var(--accent); }
   .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .75rem; }
 
   .empty-tab { border: 1px dashed var(--rule); border-radius: 12px; padding: 32px; text-align: center; background: var(--card); }

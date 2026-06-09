@@ -6,6 +6,18 @@ export const STATUSES = [
   'wishlist', 'applied', 'screen', 'interview', 'offer', 'rejected', 'withdrawn'
 ];
 
+// Common application sources, offered as a dropdown (via <datalist>) while
+// keeping the field free-text so anything not listed still works.
+export const SOURCE_SUGGESTIONS = [
+  'LinkedIn',
+  'Company website',
+  'Referral',
+  'Recruiter reached out',
+  'Cold outreach',
+  'Job board',
+  'Other'
+];
+
 export const STATUS_LABEL = {
   wishlist:  'Wishlist',
   applied:   'Applied',

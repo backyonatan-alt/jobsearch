@@ -4,6 +4,7 @@
   // Usage: <AddApplication bind:open onCreated={refresh} />  (open is bindable)
   import { api } from '$lib/api.js';
   import { logEvent } from '$lib/analytics.js';
+  import { SOURCE_SUGGESTIONS } from '$lib/app-helpers.js';
 
   let { open = $bindable(false), onCreated } = $props();
 
@@ -11,7 +12,7 @@
   let parseUsed = $state(false);
 
   // new-application form state
-  let form = $state({ company: '', role: '', status: 'applied', source: '', jd_url: '', cv_variant: '', location: '', salary_note: '' });
+  let form = $state({ company: '', role: '', status: 'applied', source: '', jd_url: '', jd_text: '', cv_variant: '', location: '', salary_note: '' });
   let saving = $state(false);
 
   // paste-to-parse state
@@ -25,6 +26,8 @@
 
   const ALLOWED_IMG = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
   const MAX_IMG_BYTES = 6 * 1024 * 1024;
+
+  const isBareUrl = (s) => /^https?:\/\/\S+$/.test(s.trim());
 
   function setAttachedFile(f) {
     if (!f) return;
@@ -81,6 +84,12 @@
       if (r.jd_url)      form.jd_url      = r.jd_url;
       if (r.source)      form.source      = r.source;
       if (r.salary_note) form.salary_note = r.salary_note;
+      // Persist the pasted JD body so it survives the posting being taken down.
+      // Only a typed-out description counts — a bare URL or a screenshot has no
+      // body text worth keeping (the URL goes to jd_url, the image isn't stored).
+      if (!attachedImage && text && !isBareUrl(text) && text.length >= 40) {
+        form.jd_text = text;
+      }
       const filled = [];
       if (r.company) filled.push('Company');
       if (r.role)    filled.push('Role');
@@ -123,7 +132,7 @@
   }
 
   function resetModal() {
-    form = { company: '', role: '', status: 'applied', source: '', jd_url: '', cv_variant: '', location: '', salary_note: '' };
+    form = { company: '', role: '', status: 'applied', source: '', jd_url: '', jd_text: '', cv_variant: '', location: '', salary_note: '' };
     pasteText = '';
     parseError = '';
     parsedHint = '';
@@ -138,7 +147,7 @@
     saving = true;
     try {
       const payload = { ...form };
-      for (const k of ['jd_url', 'cv_variant', 'source', 'location', 'salary_note']) if (!payload[k]) delete payload[k];
+      for (const k of ['jd_url', 'jd_text', 'cv_variant', 'source', 'location', 'salary_note']) if (!payload[k]) delete payload[k];
       await api('/api/applications', { method: 'POST', body: JSON.stringify(payload) });
       // Confirmed-success only (after the await), before resetModal clears state.
       logEvent('application_create', {
@@ -261,7 +270,14 @@
         </label>
         <label>
           <span class="lbl">Source <span class="opt">— optional</span></span>
-          <input bind:value={form.source} placeholder="LinkedIn / Referral / Cold email" />
+          <input bind:value={form.source} list="source-suggestions" placeholder="LinkedIn / Referral / Cold email" />
+          <datalist id="source-suggestions">
+            {#each SOURCE_SUGGESTIONS as s}<option value={s}></option>{/each}
+          </datalist>
+        </label>
+        <label class="span-2">
+          <span class="lbl">Job description <span class="opt">— optional, kept even if the posting comes down</span></span>
+          <textarea class="jd-area" bind:value={form.jd_text} rows="3" placeholder="Paste the full JD text here so it's saved with the application."></textarea>
         </label>
       </div>
 
@@ -356,6 +372,11 @@
   .modal-divider::before, .modal-divider::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
   .fields { padding: 0 22px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
   .fields label { display: flex; flex-direction: column; gap: 5px; }
+  .fields .span-2 { grid-column: 1 / -1; }
+  .fields .jd-area { font: inherit; font-family: var(--sans); font-size: 13.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 11px; outline: 0; resize: vertical; min-height: 64px; line-height: 1.5; transition: border-color 100ms ease, box-shadow 100ms ease; }
+  .fields .jd-area:hover { border-color: var(--rule-strong); }
+  .fields .jd-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+  .fields .jd-area::placeholder { color: var(--mute-2); }
   .fields .lbl { font-size: 11.5px; color: var(--mute); font-weight: 500; letter-spacing: 0; }
   .fields .req { color: var(--accent-text); font-style: normal; margin-left: 1px; }
   .fields .opt { color: var(--mute-2); font-weight: 400; }

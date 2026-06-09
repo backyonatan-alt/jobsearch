@@ -17,12 +17,16 @@ type application struct {
 	Status                string     `json:"status"`
 	Source                *string    `json:"source"`
 	JDURL                 *string    `json:"jd_url"`
+	JDText                *string    `json:"jd_text"`
 	Location              *string    `json:"location"`
 	SalaryNote            *string    `json:"salary_note"`
 	CVVariant             *string    `json:"cv_variant"`
 	Notes                 *string    `json:"notes"`
 	HiringManagerName     *string    `json:"hiring_manager_name"`
 	HiringManagerLinkedIn *string    `json:"hiring_manager_linkedin"`
+	RecruiterName         *string    `json:"recruiter_name"`
+	RecruiterEmail        *string    `json:"recruiter_email"`
+	RecruiterLinkedIn     *string    `json:"recruiter_linkedin"`
 	AppliedAt             *time.Time `json:"applied_at"`
 	LastFollowUpAt        *time.Time `json:"last_follow_up_at"`
 	CreatedAt             time.Time  `json:"created_at"`
@@ -37,9 +41,10 @@ var validStatus = map[string]bool{
 func (s *Server) handleApplicationsList(w http.ResponseWriter, r *http.Request) {
 	u, _ := userFromCtx(r.Context())
 	rows, err := s.Pool.Query(r.Context(), `
-		SELECT a.id, a.company, a.role, a.status, a.source, a.jd_url, a.location,
+		SELECT a.id, a.company, a.role, a.status, a.source, a.jd_url, a.jd_text, a.location,
 		       a.salary_note, a.cv_variant, a.notes, a.hiring_manager_name,
-		       a.hiring_manager_linkedin, a.applied_at,
+		       a.hiring_manager_linkedin, a.recruiter_name, a.recruiter_email,
+		       a.recruiter_linkedin, a.applied_at,
 		       (SELECT MAX(f.occurred_at) FROM follow_ups f WHERE f.application_id = a.id) AS last_follow_up_at,
 		       a.created_at, a.updated_at
 		FROM applications a
@@ -56,8 +61,9 @@ func (s *Server) handleApplicationsList(w http.ResponseWriter, r *http.Request) 
 	for rows.Next() {
 		var a application
 		if err := rows.Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Source,
-			&a.JDURL, &a.Location, &a.SalaryNote, &a.CVVariant, &a.Notes,
+			&a.JDURL, &a.JDText, &a.Location, &a.SalaryNote, &a.CVVariant, &a.Notes,
 			&a.HiringManagerName, &a.HiringManagerLinkedIn,
+			&a.RecruiterName, &a.RecruiterEmail, &a.RecruiterLinkedIn,
 			&a.AppliedAt, &a.LastFollowUpAt, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			s.Logger.Error("scan application", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal")
@@ -74,12 +80,16 @@ type applicationInput struct {
 	Status                string     `json:"status"`
 	Source                *string    `json:"source"`
 	JDURL                 *string    `json:"jd_url"`
+	JDText                *string    `json:"jd_text"`
 	Location              *string    `json:"location"`
 	SalaryNote            *string    `json:"salary_note"`
 	CVVariant             *string    `json:"cv_variant"`
 	Notes                 *string    `json:"notes"`
 	HiringManagerName     *string    `json:"hiring_manager_name"`
 	HiringManagerLinkedIn *string    `json:"hiring_manager_linkedin"`
+	RecruiterName         *string    `json:"recruiter_name"`
+	RecruiterEmail        *string    `json:"recruiter_email"`
+	RecruiterLinkedIn     *string    `json:"recruiter_linkedin"`
 	AppliedAt             *time.Time `json:"applied_at"`
 }
 
@@ -111,18 +121,22 @@ func (s *Server) handleApplicationCreate(w http.ResponseWriter, r *http.Request)
 	var a application
 	err := s.Pool.QueryRow(r.Context(), `
 		INSERT INTO applications (user_id, company, role, status, source, jd_url,
-		    location, salary_note, cv_variant, notes, hiring_manager_name,
-		    hiring_manager_linkedin, applied_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-		RETURNING id, company, role, status, source, jd_url, location,
+		    jd_text, location, salary_note, cv_variant, notes, hiring_manager_name,
+		    hiring_manager_linkedin, recruiter_name, recruiter_email,
+		    recruiter_linkedin, applied_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		RETURNING id, company, role, status, source, jd_url, jd_text, location,
 		    salary_note, cv_variant, notes, hiring_manager_name,
-		    hiring_manager_linkedin, applied_at, created_at, updated_at`,
+		    hiring_manager_linkedin, recruiter_name, recruiter_email,
+		    recruiter_linkedin, applied_at, created_at, updated_at`,
 		u.ID, in.Company, in.Role, in.Status, in.Source, in.JDURL,
-		in.Location, in.SalaryNote, in.CVVariant, in.Notes,
-		in.HiringManagerName, in.HiringManagerLinkedIn, in.AppliedAt,
-	).Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Source, &a.JDURL,
+		in.JDText, in.Location, in.SalaryNote, in.CVVariant, in.Notes,
+		in.HiringManagerName, in.HiringManagerLinkedIn,
+		in.RecruiterName, in.RecruiterEmail, in.RecruiterLinkedIn, in.AppliedAt,
+	).Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Source, &a.JDURL, &a.JDText,
 		&a.Location, &a.SalaryNote, &a.CVVariant, &a.Notes,
 		&a.HiringManagerName, &a.HiringManagerLinkedIn,
+		&a.RecruiterName, &a.RecruiterEmail, &a.RecruiterLinkedIn,
 		&a.AppliedAt, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		s.Logger.Error("insert application", "err", err)
@@ -151,15 +165,17 @@ func (s *Server) handleApplicationGet(w http.ResponseWriter, r *http.Request) {
 	}
 	var a application
 	err = s.Pool.QueryRow(r.Context(), `
-		SELECT a.id, a.company, a.role, a.status, a.source, a.jd_url, a.location,
+		SELECT a.id, a.company, a.role, a.status, a.source, a.jd_url, a.jd_text, a.location,
 		    a.salary_note, a.cv_variant, a.notes, a.hiring_manager_name,
-		    a.hiring_manager_linkedin, a.applied_at,
+		    a.hiring_manager_linkedin, a.recruiter_name, a.recruiter_email,
+		    a.recruiter_linkedin, a.applied_at,
 		    (SELECT MAX(f.occurred_at) FROM follow_ups f WHERE f.application_id = a.id) AS last_follow_up_at,
 		    a.created_at, a.updated_at
 		FROM applications a WHERE a.id = $1 AND a.user_id = $2`, id, u.ID,
-	).Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Source, &a.JDURL,
+	).Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Source, &a.JDURL, &a.JDText,
 		&a.Location, &a.SalaryNote, &a.CVVariant, &a.Notes,
 		&a.HiringManagerName, &a.HiringManagerLinkedIn,
+		&a.RecruiterName, &a.RecruiterEmail, &a.RecruiterLinkedIn,
 		&a.AppliedAt, &a.LastFollowUpAt, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSONError(w, http.StatusNotFound, "not found")
@@ -206,17 +222,24 @@ func (s *Server) handleApplicationUpdate(w http.ResponseWriter, r *http.Request)
 		    applied_at              = COALESCE($12, applied_at),
 		    hiring_manager_name     = COALESCE($13, hiring_manager_name),
 		    hiring_manager_linkedin = COALESCE($14, hiring_manager_linkedin),
+		    jd_text                 = COALESCE($15, jd_text),
+		    recruiter_name          = COALESCE($16, recruiter_name),
+		    recruiter_email         = COALESCE($17, recruiter_email),
+		    recruiter_linkedin      = COALESCE($18, recruiter_linkedin),
 		    updated_at              = now()
 		WHERE id = $1 AND user_id = $2
-		RETURNING id, company, role, status, source, jd_url, location,
+		RETURNING id, company, role, status, source, jd_url, jd_text, location,
 		    salary_note, cv_variant, notes, hiring_manager_name,
-		    hiring_manager_linkedin, applied_at, created_at, updated_at`,
+		    hiring_manager_linkedin, recruiter_name, recruiter_email,
+		    recruiter_linkedin, applied_at, created_at, updated_at`,
 		id, u.ID, in.Company, in.Role, in.Status, in.Source, in.JDURL,
 		in.Location, in.SalaryNote, in.CVVariant, in.Notes, in.AppliedAt,
 		in.HiringManagerName, in.HiringManagerLinkedIn,
-	).Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Source, &a.JDURL,
+		in.JDText, in.RecruiterName, in.RecruiterEmail, in.RecruiterLinkedIn,
+	).Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Source, &a.JDURL, &a.JDText,
 		&a.Location, &a.SalaryNote, &a.CVVariant, &a.Notes,
 		&a.HiringManagerName, &a.HiringManagerLinkedIn,
+		&a.RecruiterName, &a.RecruiterEmail, &a.RecruiterLinkedIn,
 		&a.AppliedAt, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSONError(w, http.StatusNotFound, "not found")
