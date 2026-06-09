@@ -4,8 +4,13 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { isPreview } from '$lib/preview-mode.js';
-  import { track } from '$lib/analytics.js';
+  import { track, logEvent } from '$lib/analytics.js';
   import GuidedTour from '$lib/GuidedTour.svelte';
+
+  // Beta feedback channel — a pre-addressed email so first users have an
+  // obvious way to send notes (Michal's first ask).
+  const FEEDBACK_EMAIL = 'back.yonatan@gmail.com';
+  const feedbackHref = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent('Pursuit feedback')}&body=${encodeURIComponent("What I was doing:\n\n\nWhat happened / what I'd expect instead:\n\n")}`;
 
   let { children } = $props();
   let me = $state(null);
@@ -113,6 +118,15 @@
     </a>
 
     <div class="sidebar-footer">
+      <a class="nav-item feedback-link" href={feedbackHref} onclick={() => logEvent('feedback_click', { surface: 'sidebar' })}>
+        <span class="nav-icon">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+            <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7l-3 2.5V11H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
+          </svg>
+        </span>
+        <span>Send feedback</span>
+        <span class="nav-count"></span>
+      </a>
       <button class="profile" onclick={signOut} title="Sign out">
         {#if me?.picture_url}
           <img class="av av-img" src={me.picture_url} alt={me.email ?? ''} referrerpolicy="no-referrer" />

@@ -195,6 +195,10 @@ the moment you notice something; triage later.
 - `[gap]` "A few words on privacy?" (she flagged salary specifically) — added a privacy microcopy line to the New Application modal and the detail Edit modal ("Private to your account — never shared…"), naming notes/salary explicitly.
 - `[ux]` Interview-prep felt slow / looked stuck (>2 min, static "30–60s" copy). The generating state now cycles honest stages (searching → reading → spotting signals → writing) and sets an accurate "1–2 minutes, keep working" estimate.
 
+### Michal feedback — Chunk 5: in-app feedback link (Jun 9 2026)
+
+- `[idea]` "Tell first users how to send feedback." Added a "Send feedback" link in the app sidebar that opens a pre-addressed email (subject + a small template). Fires a first-party `feedback_click` event.
+
 ### Bug fixes
 
 - `[bug]` AI-parsed calendar events (text/screenshot → Haiku) could never be saved: the parse path tags them `source:"ai"` but `handleInterviewCreate` rejected anything but `ics`/`manual` with 400 "source must be 'ics' or 'manual'". Allowed `ai` as a valid source. (Jun 9 2026)

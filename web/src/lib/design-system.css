@@ -199,6 +199,9 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
 }
 .profile:hover { background: var(--surface-2); }
+.feedback-link { color: var(--mute); margin-bottom: 2px; text-decoration: none; }
+.feedback-link .nav-icon { color: var(--mute-2); }
+.feedback-link:hover { color: var(--ink-2); }
 .profile .av {
   width: 26px; height: 26px;
   border-radius: 6px;
