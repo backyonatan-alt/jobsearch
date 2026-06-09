@@ -190,6 +190,11 @@ the moment you notice something; triage later.
 
 - `[gap]` "Where do the rejected apps go in the funnel?" — they were folded silently into the cumulative Applied count. Added an Outcomes strip under the funnel (Offer / Rejected / Withdrawn, colored dots) + a one-liner that names where a "no" lands, so rejections have a visible home.
 
+### Michal feedback — Chunk 4: privacy + prep latency (Jun 9 2026)
+
+- `[gap]` "A few words on privacy?" (she flagged salary specifically) — added a privacy microcopy line to the New Application modal and the detail Edit modal ("Private to your account — never shared…"), naming notes/salary explicitly.
+- `[ux]` Interview-prep felt slow / looked stuck (>2 min, static "30–60s" copy). The generating state now cycles honest stages (searching → reading → spotting signals → writing) and sets an accurate "1–2 minutes, keep working" estimate.
+
 ### Bug fixes
 
 - `[bug]` AI-parsed calendar events (text/screenshot → Haiku) could never be saved: the parse path tags them `source:"ai"` but `handleInterviewCreate` rejected anything but `ics`/`manual` with 400 "source must be 'ics' or 'manual'". Allowed `ai` as a valid source. (Jun 9 2026)

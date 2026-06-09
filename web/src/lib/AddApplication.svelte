@@ -279,6 +279,10 @@
           <span class="lbl">Job description <span class="opt">— optional, kept even if the posting comes down</span></span>
           <textarea class="jd-area" bind:value={form.jd_text} rows="3" placeholder="Paste the full JD text here so it's saved with the application."></textarea>
         </label>
+        <p class="privacy-note span-2">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>
+          Private to your account — never shared with companies or anyone else.
+        </p>
       </div>
 
       <footer class="m-foot">
@@ -373,6 +377,8 @@
   .fields { padding: 0 22px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
   .fields label { display: flex; flex-direction: column; gap: 5px; }
   .fields .span-2 { grid-column: 1 / -1; }
+  .privacy-note { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mute); margin: 2px 0 0; line-height: 1.4; }
+  .privacy-note svg { color: var(--mute-2); flex-shrink: 0; }
   .fields .jd-area { font: inherit; font-family: var(--sans); font-size: 13.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 11px; outline: 0; resize: vertical; min-height: 64px; line-height: 1.5; transition: border-color 100ms ease, box-shadow 100ms ease; }
   .fields .jd-area:hover { border-color: var(--rule-strong); }
   .fields .jd-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }

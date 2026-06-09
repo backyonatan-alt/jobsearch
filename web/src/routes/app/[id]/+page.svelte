@@ -22,6 +22,7 @@
   let dossier = $state(null);
   let dossierLoading = $state(true);
   let generating = $state(false);
+  let prepStage = $state('');
   let genError = $state('');
   let interviewerInput = $state('');
 
@@ -110,10 +111,23 @@
     }
   }
 
+  const PREP_STAGES = [
+    'Searching the web for recent posts, talks, and company news…',
+    'Reading through what we found…',
+    'Spotting how they tend to interview…',
+    'Writing your brief…'
+  ];
   async function generateDossier() {
     if (generating) return;
     generating = true;
     genError = '';
+    prepStage = PREP_STAGES[0];
+    // Web search + Sonnet can run ~1–2 min; cycle stages so it never looks stuck.
+    const timers = [
+      setTimeout(() => { if (generating) prepStage = PREP_STAGES[1]; }, 8000),
+      setTimeout(() => { if (generating) prepStage = PREP_STAGES[2]; }, 25000),
+      setTimeout(() => { if (generating) prepStage = PREP_STAGES[3]; }, 50000)
+    ];
     try {
       const d = await call(`/api/applications/${id}/dossier/refresh`, {
         method: 'POST',
@@ -124,7 +138,9 @@
     } catch (e) {
       genError = friendlyGenErr(e.message);
     } finally {
+      timers.forEach(clearTimeout);
       generating = false;
+      prepStage = '';
     }
   }
 
@@ -696,8 +712,9 @@
               </div>
               {#if generating}
                 <h3>Researching {app.co}{interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
-                <p class="gen-sub">Claude is searching the web for recent posts, talks, and the company's current direction. This typically takes 30–60 seconds.</p>
+                <p class="gen-sub" aria-live="polite">{prepStage || PREP_STAGES[0]}</p>
                 <div class="big-spinner"></div>
+                <p class="gen-eta">This usually takes 1–2 minutes — you can keep working, it'll be here when it's done.</p>
               {:else}
                 <h3>Generate interview prep</h3>
                 <p class="gen-sub">
@@ -1079,6 +1096,10 @@
         <label>Email <input bind:value={edit.recruiter_email} type="email" placeholder="sam@company.com" /></label>
         <label class="span-2">LinkedIn <input bind:value={edit.recruiter_linkedin} placeholder="https://linkedin.com/in/…" /></label>
       </div>
+      <p class="privacy-note">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>
+        Private to your account. Your notes and salary info are never shared or shown to anyone else.
+      </p>
       <div class="modal-actions">
         <button type="button" class="btn" onclick={() => (showEditModal = false)}>Cancel</button>
         <button type="submit" class="btn btn-primary" disabled={saving || !edit.company || !edit.role}>
@@ -1437,6 +1458,7 @@
   .btn-generate:disabled { opacity: 0.5; cursor: default; }
   .gen-err { color: var(--danger-text); font-size: 13px; margin: 14px 0 0; text-align: left; }
   .big-spinner { width: 36px; height: 36px; border: 2.5px solid var(--rule-strong); border-top-color: var(--accent); border-radius: 50%; animation: prep-spin 0.75s linear infinite; margin: 24px auto 0; }
+  .gen-eta { font-size: 12px; color: var(--mute-2); margin: 16px auto 0; max-width: 40ch; }
   @keyframes prep-spin { to { transform: rotate(360deg); } }
 
   /* ADD-EVENT MODAL */
@@ -1512,6 +1534,8 @@
   .modal .jd-area { font: inherit; font-family: var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: .45rem .6rem; font-size: 13.5px; line-height: 1.5; outline: none; resize: vertical; min-height: 72px; transition: border-color 100ms ease; }
   .modal .jd-area:focus { border-color: var(--accent); }
   .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .75rem; }
+  .privacy-note { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mute); margin: 12px 0 0; line-height: 1.4; }
+  .privacy-note svg { color: var(--mute-2); flex-shrink: 0; }
 
   .empty-tab { border: 1px dashed var(--rule); border-radius: 12px; padding: 32px; text-align: center; background: var(--card); }
   .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
