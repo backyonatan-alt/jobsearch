@@ -12,6 +12,7 @@
 - **MVP wedge:** application tracker + LinkedIn/calendar ingest (spine) + AI interviewer dossier (the AI-native moment).
 - **Working brand name:** **Pursuit** — repo stays `jobsearch`, brand is a single config string (`BRAND_NAME` env var) so we can swap it before public launch.
 - **Domain:** none for the beta. Running on `<public-ip>.nip.io` with a real Let's-Encrypt cert. Real domain decision deferred until after beta validates demand.
+  - **Live production URL: https://178.105.213.124.nip.io** (app at `/app`, admin at `/admin`). This is the public beta host — not a secret (it's the invite share link). The deploy host itself is the GitHub Actions secret `DEPLOY_HOST`; if the VM IP ever changes, update it here, in `web/src/routes/admin/people/+page.svelte`, and re-run certbot.
 - **Auth:** Google OAuth only (decision changed from magic-link on May 22 2026). All closed-beta users have Gmail anyway, one-click is better UX, and it removes the "where's my email" friction. Magic-link code removed.
 - **Mail (post-OAuth):** no longer required for auth. Deferred until we need outbound notifications (reminders, weekly review).
 - **Deferred (v1.5+):** post-interview recording analysis (privacy/consent story first), CV A/B testing (needs application volume to show signal).
