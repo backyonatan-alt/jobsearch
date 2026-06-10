@@ -4,6 +4,7 @@
   import { api } from '$lib/api.js';
   import { isPreview, mockApi } from '$lib/preview-mode.js';
   import { logEvent } from '$lib/analytics.js';
+  import ConfirmDialog from '$lib/ConfirmDialog.svelte';
   import {
     toDisplayApp, STATUS_LABEL, STATUSES, SOURCE_SUGGESTIONS,
     fmtLongDate, fmtRelativeDate, daysSince, isStale
@@ -309,10 +310,34 @@
       icsSaving = false;
     }
   }
-  async function deleteInterview(iv) {
-    if (!confirm(`Delete "${iv.summary}"?`)) return;
-    await call(`/api/applications/${id}/interviews/${iv.id}`, { method: 'DELETE' });
-    await loadInterviews();
+  // In-app confirmation for destructive actions (replaces window.confirm).
+  let confirmDlg = $state({ open: false, title: '', message: '', confirmLabel: 'Delete', busy: false, action: null });
+  function askConfirm(opts) {
+    confirmDlg = { open: true, busy: false, confirmLabel: 'Delete', ...opts };
+  }
+  async function runConfirm() {
+    if (!confirmDlg.action || confirmDlg.busy) return;
+    confirmDlg.busy = true;
+    try {
+      await confirmDlg.action();
+      confirmDlg.open = false;
+    } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+    } finally {
+      confirmDlg.busy = false;
+    }
+  }
+
+  function deleteInterview(iv) {
+    askConfirm({
+      title: 'Delete this event?',
+      message: `"${iv.summary}" will be removed from this application.`,
+      confirmLabel: 'Delete event',
+      action: async () => {
+        await call(`/api/applications/${id}/interviews/${iv.id}`, { method: 'DELETE' });
+        await loadInterviews();
+      }
+    });
   }
 
   function openAddEvent() {
@@ -372,11 +397,17 @@
       saving = false;
     }
   }
-  async function deleteApp() {
+  function deleteApp() {
     if (!app) return;
-    if (!confirm(`Delete the ${app.co} application? This can't be undone.`)) return;
-    await call(`/api/applications/${id}`, { method: 'DELETE' });
-    goto('/app', { replaceState: true });
+    askConfirm({
+      title: `Delete the ${app.co} application?`,
+      message: "This removes the application and everything attached to it — events, contacts, pipeline, and prep. This can't be undone.",
+      confirmLabel: 'Delete application',
+      action: async () => {
+        await call(`/api/applications/${id}`, { method: 'DELETE' });
+        goto('/app', { replaceState: true });
+      }
+    });
   }
   function back() { goto('/app'); }
 
@@ -1327,6 +1358,16 @@
     </form>
   </div>
 {/if}
+
+<ConfirmDialog
+  open={confirmDlg.open}
+  title={confirmDlg.title}
+  message={confirmDlg.message}
+  confirmLabel={confirmDlg.confirmLabel}
+  busy={confirmDlg.busy}
+  onConfirm={runConfirm}
+  onCancel={() => (confirmDlg.open = false)}
+/>
 
 <style>
   .body { padding: 28px; }
