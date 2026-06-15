@@ -207,6 +207,16 @@ type ParseImage struct {
 }
 
 // ParseJob asks Claude Haiku to extract structured job-listing fields from
+// ParseError carries a machine-readable reason alongside the user-facing
+// message, so analytics can tell *why* a parse failed instead of bucketing
+// everything as "parse_failed".
+type ParseError struct {
+	Reason string // linkedin_url, url_fetch_failed, llm_error, no_json, not_a_job, model_error, bad_json, empty_extraction
+	Msg    string
+}
+
+func (e *ParseError) Error() string { return e.Msg }
+
 // arbitrary text and/or a screenshot. If text is a bare URL we fetch it
 // server-side first (LinkedIn is rejected since they block scraping). When an
 // image is supplied we send it as a vision content block alongside the text.
@@ -222,11 +232,11 @@ func (c *Client) ParseJob(ctx context.Context, text string, image *ParseImage) (
 	if image == nil {
 		if u, ok := isBareURL(text); ok {
 			if isLinkedInURL(u) {
-				return nil, errors.New("LinkedIn blocks page fetching — copy the JD body text from the LinkedIn page and paste that instead")
+				return nil, &ParseError{"linkedin_url", "LinkedIn blocks page fetching — copy the JD body text from the LinkedIn page and paste that instead"}
 			}
 			body, err := c.fetchURL(ctx, u)
 			if err != nil {
-				return nil, fmt.Errorf("couldn't fetch %s (%v) — try pasting the JD text directly", u, err)
+				return nil, &ParseError{"url_fetch_failed", fmt.Sprintf("couldn't fetch %s (%v) — try pasting the JD text directly", u, err)}
 			}
 			text = "Source URL: " + u + "\n\nPage content:\n" + body
 		}
@@ -255,12 +265,12 @@ func (c *Client) ParseJob(ctx context.Context, text string, image *ParseImage) (
 
 	resp, err := c.CreateMessage(ctx, ModelHaiku, parseSystemPrompt, []Message{msg}, 600)
 	if err != nil {
-		return nil, err
+		return nil, &ParseError{"llm_error", err.Error()}
 	}
 
 	raw, err := extractFirstJSONObject(resp)
 	if err != nil {
-		return nil, fmt.Errorf("model didn't return JSON (raw: %.200s)", resp)
+		return nil, &ParseError{"no_json", fmt.Sprintf("model didn't return JSON (raw: %.200s)", resp)}
 	}
 
 	// Explicit-error reply: surface a friendlier message.
@@ -269,17 +279,17 @@ func (c *Client) ParseJob(ctx context.Context, text string, image *ParseImage) (
 	}
 	if json.Unmarshal(raw, &errProbe) == nil && errProbe.Error != "" {
 		if strings.EqualFold(errProbe.Error, "not a job listing") {
-			return nil, errors.New("that doesn't look like a job listing — try pasting the JD body text instead")
+			return nil, &ParseError{"not_a_job", "that doesn't look like a job listing — try pasting the JD body text instead"}
 		}
-		return nil, errors.New(errProbe.Error)
+		return nil, &ParseError{"model_error", errProbe.Error}
 	}
 
 	var job ParsedJob
 	if err := json.Unmarshal(raw, &job); err != nil {
-		return nil, fmt.Errorf("parse model JSON: %w", err)
+		return nil, &ParseError{"bad_json", fmt.Sprintf("parse model JSON: %v", err)}
 	}
 	if job.Company == "" && job.Role == "" {
-		return nil, errors.New("could not extract company or role from the input")
+		return nil, &ParseError{"empty_extraction", "could not extract company or role from the input"}
 	}
 	return &job, nil
 }
