@@ -2,6 +2,7 @@ package httpsrv
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -86,9 +87,14 @@ func (s *Server) handleApplicationParse(w http.ResponseWriter, r *http.Request) 
 
 	job, err := s.LLM.ParseJob(r.Context(), text, img)
 	if err != nil {
-		s.Logger.Info("parse failed", "err", err, "has_image", img != nil)
+		reason := "parse_failed"
+		var pe *llm.ParseError
+		if errors.As(err, &pe) && pe.Reason != "" {
+			reason = pe.Reason
+		}
+		s.Logger.Info("parse failed", "err", err, "reason", reason, "has_image", img != nil)
 		s.logEvent(r.Context(), u.ID, eventName, map[string]any{
-			"outcome": "error", "error_reason": "parse_failed",
+			"outcome": "error", "error_reason": reason,
 			"duration_ms": time.Since(start).Milliseconds(),
 		})
 		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
