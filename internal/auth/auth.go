@@ -48,8 +48,10 @@ func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip
 	defer tx.Rollback(ctx)
 
 	// NULLIF so a missing picture claim doesn't clobber a previously stored one.
+	// last_login_at is set on INSERT *and* in the conflict branch — otherwise a
+	// user's very first login never records it and they show "Last seen never".
 	err = tx.QueryRow(ctx, `
-		INSERT INTO users (email, is_admin, picture_url) VALUES ($1, $2, NULLIF($3, ''))
+		INSERT INTO users (email, is_admin, picture_url, last_login_at) VALUES ($1, $2, NULLIF($3, ''), now())
 		ON CONFLICT (email) DO UPDATE SET
 		    last_login_at = now(),
 		    is_admin = users.is_admin OR EXCLUDED.is_admin,
