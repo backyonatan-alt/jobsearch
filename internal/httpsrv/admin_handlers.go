@@ -63,7 +63,7 @@ type adminUserDTO struct {
 	OnboardedAt    *time.Time `json:"onboarded_at"`
 	CreatedAt      time.Time  `json:"created_at"`
 	LastLoginAt    *time.Time `json:"last_login_at"`
-	AppCount       int        `json:"app_count"`       // real applications, excludes [demo] seed rows
+	AppCount       int        `json:"app_count"` // real applications, excludes [demo] seed rows
 	InterviewCount int        `json:"interview_count"`
 	DossierCount   int        `json:"dossier_count"`
 }
@@ -103,6 +103,121 @@ func (s *Server) handleAdminUsersList(w http.ResponseWriter, r *http.Request) {
 		out = append(out, d)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// ── Invite funnel ──────────────────────────────────────────────────────────
+
+type inviteFunnelDTO struct {
+	Email          string     `json:"email"`
+	Note           string     `json:"note,omitempty"`
+	InvitedAt      time.Time  `json:"invited_at"`
+	InvitedByEmail string     `json:"invited_by_email,omitempty"`
+	SignedInAt     *time.Time `json:"signed_in_at,omitempty"` // users.created_at — first OAuth login
+	LastLoginAt    *time.Time `json:"last_login_at,omitempty"`
+	OnboardedAt    *time.Time `json:"onboarded_at,omitempty"`
+	AppCount       int        `json:"app_count"` // real apps, excludes [demo] seed rows
+	InterviewCount int        `json:"interview_count"`
+	DossierCount   int        `json:"dossier_count"`
+	EventCount     int        `json:"event_count"`
+	LastActivityAt *time.Time `json:"last_activity_at,omitempty"` // max(last_login, last event)
+	Stage          string     `json:"stage"`                      // invited | signed_in | activated | active | dormant
+	PendingCount   int        `json:"pending_count,omitempty"`    // only on summary head
+}
+
+// handleAdminInviteFunnel returns one row per invited email joined to the user
+// they became (matched on lowercased email), with the activity that tells you
+// whether they actually use the product. Stage is the funnel position:
+//
+//	invited   — on the list, never signed in
+//	signed_in — signed in, but created nothing yet
+//	activated — created ≥1 app/interview/dossier
+//	active    — activated AND seen in the last 7 days
+//	dormant   — activated but not seen in 21+ days
+func (s *Server) handleAdminInviteFunnel(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.Pool.Query(r.Context(), `
+		SELECT i.email, i.note, i.invited_at, inv.email AS invited_by_email,
+		       u.created_at AS signed_in_at, u.last_login_at, u.onboarded_at,
+		       COALESCE(app.c, 0)  AS app_count,
+		       COALESCE(iv.c, 0)   AS interview_count,
+		       COALESCE(dos.c, 0)  AS dossier_count,
+		       COALESCE(ev.c, 0)   AS event_count,
+		       ev.last_at          AS last_event_at
+		FROM invited_emails i
+		LEFT JOIN users inv ON inv.id = i.invited_by_user_id
+		LEFT JOIN users u   ON lower(u.email) = lower(i.email)
+		LEFT JOIN LATERAL (SELECT count(*) c FROM applications a
+		    WHERE a.user_id = u.id
+		      AND (a.notes IS NULL OR a.notes NOT LIKE '[demo] %')) app ON true
+		LEFT JOIN LATERAL (SELECT count(*) c FROM interviews x WHERE x.user_id = u.id) iv ON true
+		LEFT JOIN LATERAL (SELECT count(*) c FROM dossiers d
+		    JOIN applications a2 ON a2.id = d.application_id
+		    WHERE a2.user_id = u.id) dos ON true
+		LEFT JOIN LATERAL (SELECT count(*) c, max(created_at) last_at
+		    FROM events e WHERE e.user_id = u.id) ev ON true
+		ORDER BY i.invited_at DESC`)
+	if err != nil {
+		s.Logger.Error("invite funnel", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	defer rows.Close()
+
+	now := time.Now()
+	out := make([]inviteFunnelDTO, 0)
+	for rows.Next() {
+		var d inviteFunnelDTO
+		var note, invitedBy *string
+		var lastEventAt *time.Time
+		if err := rows.Scan(&d.Email, &note, &d.InvitedAt, &invitedBy,
+			&d.SignedInAt, &d.LastLoginAt, &d.OnboardedAt,
+			&d.AppCount, &d.InterviewCount, &d.DossierCount, &d.EventCount, &lastEventAt); err != nil {
+			s.Logger.Error("invite funnel scan", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+		if note != nil {
+			d.Note = *note
+		}
+		if invitedBy != nil {
+			d.InvitedByEmail = *invitedBy
+		}
+		// Last activity = most recent of last login and last logged event.
+		d.LastActivityAt = d.LastLoginAt
+		if lastEventAt != nil && (d.LastActivityAt == nil || lastEventAt.After(*d.LastActivityAt)) {
+			d.LastActivityAt = lastEventAt
+		}
+		d.Stage = inviteStage(d, now)
+		out = append(out, d)
+	}
+
+	// Top-of-funnel: people who asked for access but aren't invited yet.
+	var pending int
+	_ = s.Pool.QueryRow(r.Context(),
+		`SELECT count(*) FROM beta_interest WHERE invited_at IS NULL`).Scan(&pending)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"pending_count": pending,
+		"invitees":      out,
+	})
+}
+
+func inviteStage(d inviteFunnelDTO, now time.Time) string {
+	if d.SignedInAt == nil {
+		return "invited"
+	}
+	activated := d.AppCount > 0 || d.InterviewCount > 0 || d.DossierCount > 0
+	if !activated {
+		return "signed_in"
+	}
+	if d.LastActivityAt != nil {
+		if now.Sub(*d.LastActivityAt) <= 7*24*time.Hour {
+			return "active"
+		}
+		if now.Sub(*d.LastActivityAt) >= 21*24*time.Hour {
+			return "dormant"
+		}
+	}
+	return "activated"
 }
 
 type grantPrepRequest struct {

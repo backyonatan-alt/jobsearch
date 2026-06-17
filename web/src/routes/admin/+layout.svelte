@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { api } from '$lib/api.js';
 
   let { children } = $props();
@@ -34,6 +35,10 @@
       <span class="name">Pursuit</span>
       <span style="color: var(--mute-2); font-size: 11px; margin-left: 6px;">admin</span>
     </div>
+    <nav class="tabs">
+      <a href="/admin/people" class:active={page.url.pathname.startsWith('/admin/people')}>People</a>
+      <a href="/admin/invites" class:active={page.url.pathname.startsWith('/admin/invites')}>Invite funnel</a>
+    </nav>
     <div class="right">
       <a class="btn" href="/app">‹ back to app</a>
     </div>
@@ -68,5 +73,12 @@
     width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
   }
   .brand .name { font-weight: 600; font-size: 14px; letter-spacing: -0.015em; }
+  .tabs { display: flex; gap: 4px; margin-left: 24px; flex: 1; }
+  .tabs a {
+    font-size: 13px; color: var(--mute); text-decoration: none;
+    padding: 6px 10px; border-radius: 6px; line-height: 1;
+  }
+  .tabs a:hover { color: var(--ink-2); background: var(--surface-2); }
+  .tabs a.active { color: var(--ink); background: var(--surface-2); font-weight: 500; }
   .admin-body { padding: 32px; max-width: 720px; width: 100%; margin: 0 auto; }
 </style>
