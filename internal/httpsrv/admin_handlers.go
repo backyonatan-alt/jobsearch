@@ -251,6 +251,88 @@ func (s *Server) handleAdminGrantPrep(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"prep_credits_used": used, "prep_credits_limit": limit})
 }
 
+// ── Adoption / activation ──────────────────────────────────────────────────
+
+type milestoneDTO struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Users int    `json:"users"` // distinct users who reached this milestone
+}
+
+type eventStatDTO struct {
+	Name   string     `json:"name"`
+	Users  int        `json:"users"`  // distinct users who fired it
+	Total  int        `json:"total"`  // all-time count
+	Recent int        `json:"recent"` // count in the last 7 days
+	LastAt *time.Time `json:"last_at"`
+}
+
+type adoptionResp struct {
+	TotalUsers int            `json:"total_users"`
+	Milestones []milestoneDTO `json:"milestones"`
+	Events     []eventStatDTO `json:"events"`
+}
+
+// handleAdminAdoption answers "of everyone who signed in, how many reached each
+// AI-wedge moment, and which surfaces are actually used." Milestones are counted
+// from the real tables (demo rows excluded) so they reflect genuine activation;
+// the events table gives the raw per-surface usage, including dead surfaces.
+func (s *Server) handleAdminAdoption(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var resp adoptionResp
+
+	var total, createdApp, addedInterview, genDossier, ranPrep, bulkImport int
+	err := s.Pool.QueryRow(ctx, `
+		SELECT
+		  (SELECT count(*) FROM users),
+		  (SELECT count(DISTINCT user_id) FROM applications
+		     WHERE notes IS NULL OR notes NOT LIKE '[demo] %'),
+		  (SELECT count(DISTINCT user_id) FROM interviews),
+		  (SELECT count(DISTINCT a.user_id) FROM dossiers d
+		     JOIN applications a ON a.id = d.application_id),
+		  (SELECT count(*) FROM users WHERE prep_credits_used > 0),
+		  (SELECT count(DISTINCT user_id) FROM events WHERE name = 'bulk_import')
+	`).Scan(&total, &createdApp, &addedInterview, &genDossier, &ranPrep, &bulkImport)
+	if err != nil {
+		s.Logger.Error("adoption milestones", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	resp.TotalUsers = total
+	resp.Milestones = []milestoneDTO{
+		{Key: "created_app", Label: "Created an application", Users: createdApp},
+		{Key: "added_interview", Label: "Added an interview", Users: addedInterview},
+		{Key: "generated_dossier", Label: "Generated a dossier", Users: genDossier},
+		{Key: "ran_prep", Label: "Ran interview prep", Users: ranPrep},
+		{Key: "bulk_import", Label: "Used bulk import", Users: bulkImport},
+	}
+
+	rows, err := s.Pool.Query(ctx, `
+		SELECT name, count(*) AS total, count(DISTINCT user_id) AS users,
+		       count(*) FILTER (WHERE created_at > now() - interval '7 days') AS recent,
+		       max(created_at) AS last_at
+		FROM events
+		GROUP BY name
+		ORDER BY users DESC, total DESC`)
+	if err != nil {
+		s.Logger.Error("adoption events", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	defer rows.Close()
+	resp.Events = make([]eventStatDTO, 0)
+	for rows.Next() {
+		var e eventStatDTO
+		if err := rows.Scan(&e.Name, &e.Total, &e.Users, &e.Recent, &e.LastAt); err != nil {
+			s.Logger.Error("adoption events scan", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+		resp.Events = append(resp.Events, e)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) handleAdminInvitesDelete(w http.ResponseWriter, r *http.Request) {
 	email := r.PathValue("email")
 	if email == "" {
