@@ -348,6 +348,9 @@
     icsPreview = [];
     evText = '';
     evAttach = null;
+    // Intent signal: opened the add-interview flow. The drop to a saved
+    // interview tells us if the flow we just fixed is actually converting.
+    logEvent('addevent_open', { app_id: Number(id) });
   }
   function closeEventModal() {
     showEventModal = false;

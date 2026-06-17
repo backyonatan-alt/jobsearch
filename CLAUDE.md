@@ -49,6 +49,41 @@
 - CV A/B with per-variant tracking link or unique submission email
 - Public signup, payments
 
+### Activation work — sequenced plan (set Jun 17 2026)
+
+Driven by the admin Adoption view (`/admin/adoption`). Funnel as of Jun 17:
+**36 invited → 22 signed in → 13 activated → 7 active.** The interview flow
+was the biggest hole (0/22) — three bugs found & fixed (see FREE_RUN_NOTES
+"Interview flow", Jun 17). Sequence from here:
+
+1. ~~**Close the instrumentation blind spot.**~~ **DONE Jun 17** — added
+   `addmodal_open` (New Application modal) + `addevent_open` (Add Interview
+   modal) intent events. Combined with existing `paste_parse`/`screenshot_parse`/
+   `interview_parse` (which already log success/error), we can now see who
+   *opens* an add flow but never *completes* it. Watch open→create and
+   open→save conversion in the Adoption event table.
+2. **WAIT ~1 week, then re-read the data.** The interview fix + new intent
+   events need real cohort traffic before they say anything. Do not act on
+   the activation leak or build nudges until the numbers come in. (User
+   explicitly chose to wait a few days before nudging stalled invitees.)
+   - When re-reading: does `addevent_open` → saved-interview now convert
+     (proves the interview fix worked)? Where's the biggest open→complete drop?
+3. **Then the fork — let the data pick:**
+   - **If activation still leaks** → build the **nudge-email system**
+     (re-engage signed-in-but-stalled users). This is the deferred "outbound
+     notifications" piece; it also unlocks v0.3 #11 reminders. Needs the mail
+     decision (deferred since OAuth replaced magic-link).
+   - **If people activate but the product feels thin** → work the **UX polish
+     backlog** in FREE_RUN_NOTES (May 24 items still open: "debrief" card
+     concept, the unclear word "loop", proactive "what can you do today"
+     section [wants a design preview first], rename "dossier").
+4. **Once activation is healthy** → resume v0.3 *Insight* features (AI weekly
+   review #10). Don't chase features before activation converts.
+
+> Possible Adoption-view enhancement when data warrants: show explicit
+> open→complete conversion (addmodal_open→application_create,
+> addevent_open→interview saved) as a stat, not just raw event counts.
+
 ---
 
 ## Project vision (initial sketch from the user, May 21 2026)

@@ -8,6 +8,15 @@
 
   let { open = $bindable(false), onCreated } = $props();
 
+  // Intent signal: fire once each time the modal opens, so we can see who opens
+  // the add flow but never completes it (application_create). The drop between
+  // the two is the onboarding leak we're trying to make visible.
+  let wasOpen = false;
+  $effect(() => {
+    if (open && !wasOpen) logEvent('addmodal_open');
+    wasOpen = open;
+  });
+
   // Whether AI parse was used to fill the form (drives application_create `via`).
   let parseUsed = $state(false);
 
