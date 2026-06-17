@@ -38,6 +38,7 @@
     <nav class="tabs">
       <a href="/admin/people" class:active={page.url.pathname.startsWith('/admin/people')}>People</a>
       <a href="/admin/invites" class:active={page.url.pathname.startsWith('/admin/invites')}>Invite funnel</a>
+      <a href="/admin/adoption" class:active={page.url.pathname.startsWith('/admin/adoption')}>Adoption</a>
     </nav>
     <div class="right">
       <a class="btn" href="/app">‹ back to app</a>
