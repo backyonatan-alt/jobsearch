@@ -65,6 +65,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/demo-seed", s.requireAdmin(s.handleDemoSeed))
 	mux.HandleFunc("DELETE /api/admin/demo-seed", s.requireAdmin(s.handleDemoClear))
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminUsersList))
+	mux.HandleFunc("GET /api/admin/invite-funnel", s.requireAdmin(s.handleAdminInviteFunnel))
 	mux.HandleFunc("POST /api/admin/users/{id}/prep-credits", s.requireAdmin(s.handleAdminGrantPrep))
 	mux.HandleFunc("GET /api/admin/events", s.requireAdmin(s.handleAdminEventsList))
 	mux.HandleFunc("GET /api/admin/beta-interest", s.requireAdmin(s.handleBetaInterestList))
