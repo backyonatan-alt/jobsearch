@@ -34,6 +34,7 @@
 ### Adjacent infra shipped (not on original roadmap)
 - **Demo data seed/clear** (`/api/admin/demo-seed`) — admin button on /admin/people that populates the calling admin's account with 15 realistic apps spanning every status. Tagged `[demo]` for clean teardown.
 - **Beta interest form** on the homepage — anyone can drop their email; admin promotes them with one click. Replaces the old "I'll add you to .env manually" flow.
+- **Invite funnel** (`/admin/invites` + `/api/admin/invite-funnel`) — per-invitee view joining `invited_emails` → users (on lowercased email) → activity counts. Stages: invited → signed_in → activated → active (seen ≤7d) / dormant (quiet ≥21d). Shows who actually showed up and what they created; demo rows excluded. First-party, not GA4 (GA4 can't tie behavior to a specific invited email).
 - **Onboarding overlay v2** — leads with the three AI moments (paste / screenshot / dossier) as feature pills before the seed-your-search step.
 - **`FREE_RUN_NOTES.md`** at the repo root — scratchpad for live-use observations during exploration sessions. Tagged `[bug]`/`[ux]`/`[gap]`/`[idea]`/`[wow]`. The SessionStart hook (see below) prints it into the next agent's context automatically.
 - **SessionStart hook** at `.claude/hooks/session-start.sh` — installs Go + pnpm deps in remote-web sessions, then prints `FREE_RUN_NOTES.md` and a one-line repo-state summary so the next agent walks in already oriented.
