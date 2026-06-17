@@ -173,6 +173,36 @@ the moment you notice something; triage later.
 
 ## Shipped (move items here once fixed)
 
+### Interview flow — three bugs found via adoption data + QA (Jun 17 2026)
+
+> Triggered by the new admin Adoption view: **0 / 22** signed-in users had
+> ever saved an interview, despite the dossier (interview prep) being the
+> #1 surface. Investigation + Claude-for-Chrome QA surfaced three distinct
+> bugs, all on the path to a saved interview. Fixed and verified end-to-end
+> (parse → save → reload-persists → delete).
+
+- `[ux]` **Discoverability dead-end.** The empty "Next interview" rail card
+  had no way to add one, and the only entry point was a vaguely-named
+  "+ Log an event" buried in the Activity actions. Added a "+ Add interview"
+  CTA to the empty card and renamed the Activity button to match. Explains
+  why only 2/22 ever fired `interview_parse`.
+- `[bug]` **Time parsed in the wrong timezone.** A bare "2:30pm" was read as
+  US Eastern (prompt default) → 9:30 PM for an Israel-tz user. Frontend now
+  sends the browser IANA timezone; `ParseEvent` anchors "now" in it and
+  interprets untimezoned times in it (US Eastern only as last resort).
+  Regression test guards offset survival through `parseFlexibleTime`.
+- `[bug]` **Interviews could be created but never deleted.** Backend delete +
+  a `deleteInterview()` JS fn existed, but the timeline only rendered a
+  delete button for follow-ups. Now renders for interview rows too (reuses
+  the existing confirm dialog).
+
+### Adjacent: admin analytics shipped alongside (Jun 17 2026)
+
+- **Invite funnel** (`/admin/invites`) and **Adoption** (`/admin/adoption`)
+  views — see CLAUDE.md "Adjacent infra shipped". The Adoption view is what
+  surfaced the interview-flow hole in the first place.
+
+
 ### Michal feedback — Chunk 1: application capture (Jun 9 2026)
 
 - Migration 0016 adds `jd_text`, `recruiter_name/email/linkedin` to `applications`; backend list/get/create/update plumb all of them.
