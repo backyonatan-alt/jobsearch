@@ -22,6 +22,23 @@ func TestValidInterviewSource(t *testing.T) {
 	}
 }
 
+// Regression: a bare "2:30pm" from an Israeli user was read as US Eastern and
+// shown as 9:30pm. The fix sends the browser tz so the model emits a tz-aware
+// ISO string; this guards that parseFlexibleTime keeps the offset (and the
+// instant) instead of flattening to a naive/UTC time.
+func TestParseFlexibleTimePreservesOffset(t *testing.T) {
+	got, err := parseFlexibleTime("2026-06-25T14:30:00+03:00")
+	if err != nil {
+		t.Fatalf("parseFlexibleTime: %v", err)
+	}
+	if _, off := got.Zone(); off != 3*3600 {
+		t.Errorf("offset = %ds, want 10800 (the +03:00 must survive)", off)
+	}
+	if want := time.Date(2026, 6, 25, 11, 30, 0, 0, time.UTC); !got.UTC().Equal(want) {
+		t.Errorf("instant = %v, want %v UTC — time was shifted", got.UTC(), want)
+	}
+}
+
 // Golden round-trip: the parse endpoint returns parsedEventDTO; the frontend
 // posts those objects straight back to the save endpoint, which reads them as
 // interviewCreateRequest. If the two shapes drift (a renamed json tag, a

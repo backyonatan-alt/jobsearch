@@ -284,6 +284,8 @@
       } else {
         payload = { text };
       }
+      // So a bare "2:30pm" resolves to the user's wall clock, not US Eastern.
+      try { payload.tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch {}
       const r = await call(`/api/applications/${id}/interviews/parse`, { method: 'POST', body: JSON.stringify(payload) });
       icsPreview = r.events ?? [];
       if (icsPreview.length === 0) icsParseError = "Couldn't find an event in that — try a screenshot or the email body.";

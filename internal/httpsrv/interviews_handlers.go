@@ -57,6 +57,7 @@ type icsParseRequest struct {
 	ICS   string         `json:"ics,omitempty"`
 	Text  string         `json:"text,omitempty"`
 	Image *parseImageReq `json:"image,omitempty"`
+	TZ    string         `json:"tz,omitempty"` // IANA name from the browser, e.g. "Asia/Jerusalem"
 }
 
 type parseImageReq struct {
@@ -157,7 +158,7 @@ func (s *Server) handleInterviewsParse(w http.ResponseWriter, r *http.Request) {
 	if img != nil {
 		source = "image"
 	}
-	ev, err := s.LLM.ParseEvent(r.Context(), text, img)
+	ev, err := s.LLM.ParseEvent(r.Context(), text, img, strings.TrimSpace(req.TZ))
 	if err != nil {
 		s.Logger.Info("interview parse failed", "err", err)
 		s.logEvent(r.Context(), u.ID, "interview_parse", map[string]any{

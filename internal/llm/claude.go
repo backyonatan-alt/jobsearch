@@ -331,7 +331,7 @@ Return ONLY a JSON object with this shape (omit any you can't determine):
 
 Rules:
 - summary is required if any event is described; if you can't find a summary, fall back to the company / interview type (e.g. "Interview").
-- Default timezone: if the screenshot/text shows a timezone (PDT, EST, "Israel Time", "America/New_York"), use it. Otherwise use US Eastern.
+- Default timezone: if the screenshot/text shows a timezone (PDT, EST, "Israel Time", "America/New_York"), use it. Otherwise use the user's timezone given in the message; only if none is given, fall back to US Eastern.
 - Date resolution: resolve dates relative to the "Current date" given in the user message. A year-less or relative date ("next Wednesday", "10 June", "tomorrow") means the SOONEST such date on or after the current date.
 - Weekday consistency: if the input names a weekday (e.g. "Wednesday, 10 June"), the resolved date MUST fall on that weekday. A bare month/day can land on different weekdays in different years — pick the year that makes the named weekday correct. Never emit a date whose weekday contradicts the text.
 - Times like "2pm" or "14:00": assume the local timezone you inferred.
@@ -342,7 +342,7 @@ Output the JSON object only — no prose, no markdown. If the input has no event
 // ParseEvent asks Claude to extract a single calendar event from a screenshot
 // and/or pasted text. Same Haiku + Vision flow as ParseJob. Returns nil with
 // an error if nothing extractable is found.
-func (c *Client) ParseEvent(ctx context.Context, text string, image *ParseImage) (*ParsedEvent, error) {
+func (c *Client) ParseEvent(ctx context.Context, text string, image *ParseImage, tz string) (*ParsedEvent, error) {
 	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	ctx = cctx
@@ -352,10 +352,21 @@ func (c *Client) ParseEvent(ctx context.Context, text string, image *ParseImage)
 		return nil, errors.New("paste an event screenshot or text first")
 	}
 
-	// Anchor relative/year-less dates and weekday checks to "now". Without this
-	// the model picks an arbitrary year for a bare "Wednesday, 10 June" and can
-	// land on the wrong weekday entirely.
-	dateAnchor := "Current date: " + time.Now().Format("Monday, 2006-01-02 -07:00") + "."
+	// Anchor relative/year-less dates and weekday checks to "now", and do it in
+	// the user's own timezone so a bare "2:30pm" resolves to their wall clock —
+	// not the server's tz, and not a hardcoded US Eastern default. Without this
+	// an Israeli user typing "2:30pm" gets it read as US Eastern and shifted.
+	loc := time.Local
+	if tz != "" {
+		if l, err := time.LoadLocation(tz); err == nil {
+			loc = l
+		}
+	}
+	now := time.Now().In(loc)
+	dateAnchor := "Current date: " + now.Format("Monday, 2006-01-02 -07:00") + "."
+	if tz != "" {
+		dateAnchor += " User's timezone: " + tz + ". Interpret any time without an explicit timezone in the user's timezone."
+	}
 
 	var msg Message
 	if image != nil {
