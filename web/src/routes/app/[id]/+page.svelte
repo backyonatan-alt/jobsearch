@@ -665,7 +665,8 @@
         date: monoDate(iv.starts_at),
         title: iv.summary || 'Interview',
         note: isPast(iv) ? 'Past event' : 'Scheduled',
-        tag: 'accent'
+        tag: 'accent',
+        interview: iv
       });
     }
     for (const f of (followUps || [])) {
@@ -1024,6 +1025,10 @@
                         {e.title}
                         {#if e.followUp}
                           <button class="tl-del" title="Delete follow-up" aria-label="Delete follow-up" onclick={() => deleteFollowUp(e.followUp)}>
+                            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
+                          </button>
+                        {:else if e.interview}
+                          <button class="tl-del" title="Delete interview" aria-label="Delete interview" onclick={() => deleteInterview(e.interview)}>
                             <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
                           </button>
                         {/if}
