@@ -1008,7 +1008,7 @@
               <div class="act-actions">
                 <button class="ghost-btn" onclick={openFollowUp}>+ Log a follow-up</button>
                 <button class="ghost-btn" onclick={openEdit}>+ Add a note</button>
-                <button class="ghost-btn" onclick={openAddEvent}>+ Log an event</button>
+                <button class="ghost-btn" onclick={openAddEvent}>+ Add interview</button>
               </div>
             </div>
             {#if timeline.length > 0}
@@ -1056,6 +1056,7 @@
             <div class="rail-card next-empty">
               <div class="rc-hd">Next interview</div>
               <p class="next-empty-line">No interview scheduled yet — your prep's ready for when one is.</p>
+              <button class="next-add-btn" onclick={openAddEvent}>+ Add interview</button>
             </div>
           {/if}
 
@@ -1544,6 +1545,13 @@
   .nc-rows { display: flex; flex-direction: column; gap: 7px; border-top: 1px solid rgba(255,255,255,0.14); padding-top: 12px; }
   .nc-row { font-size: 13px; color: rgba(255,255,255,0.85); }
   .next-empty .next-empty-line { font-size: 12.5px; color: var(--mute); line-height: 1.5; margin: 0; }
+  .next-add-btn {
+    margin-top: 12px; width: 100%; padding: 8px 12px;
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+    color: var(--accent-text); background: var(--accent-tint);
+    border: 1px solid transparent; border-radius: 8px;
+  }
+  .next-add-btn:hover { border-color: var(--accent); }
 
   .rail-card { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; box-shadow: var(--sh-1); }
   .rc-hd { font-size: 12.5px; font-weight: 600; color: var(--mute); margin-bottom: 12px; }
