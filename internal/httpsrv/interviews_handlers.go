@@ -315,6 +315,7 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 		in.Source = "manual"
 	}
 	if !validInterviewSource(in.Source) {
+		s.logEvent(r.Context(), u.ID, "interview_save", map[string]any{"result": "error", "reason": "bad_source"})
 		writeJSONError(w, http.StatusBadRequest, "source must be 'ics', 'ai', or 'manual'")
 		return
 	}
@@ -323,6 +324,7 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 		in.Summary = "Interview"
 	}
 	if in.StartsAt.IsZero() {
+		s.logEvent(r.Context(), u.ID, "interview_save", map[string]any{"result": "error", "reason": "no_start", "source": in.Source})
 		writeJSONError(w, http.StatusBadRequest, "starts_at is required")
 		return
 	}
@@ -390,10 +392,15 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 			&iv.CreatedAt)
 	}
 	if err != nil {
+		s.logEvent(r.Context(), u.ID, "interview_save", map[string]any{"result": "error", "reason": "db", "source": in.Source})
 		s.Logger.Error("interview insert", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal")
 		return
 	}
+	// Activation signal: a real saved interview. Pairs with addevent_open
+	// (intent) so the Adoption view can show open→save conversion, and with
+	// interview_parse to tell "parsed but abandoned" from "save failed".
+	s.logEvent(r.Context(), u.ID, "interview_save", map[string]any{"result": "ok", "source": iv.Source})
 	writeJSON(w, http.StatusCreated, iv)
 }
 
