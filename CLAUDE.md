@@ -84,6 +84,50 @@ was the biggest hole (0/22) — three bugs found & fixed (see FREE_RUN_NOTES
 > open→complete conversion (addmodal_open→application_create,
 > addevent_open→interview saved) as a stat, not just raw event counts.
 
+#### Data re-read (Jun 22 2026) + decisions
+
+Funnel now: **36 invited → 25 signed in → 16 activated → ~6 active (login ≤7d).**
+Activation 16/25 = **64%**, sign-in 25/36 = **69%** — both healthy. Activation is
+**not** badly leaking, so the Jun-17 headline worry is in decent shape (+3 signed
+in, +3 activated since Jun 17).
+
+What the events actually say:
+
+- **The dossier is the wedge and it works.** `dossier_open` 12 users / **29 opens
+  in the last 7 days** (highest-engagement surface by far) + `dossier_refresh` 6
+  users. The AI-native moment lands.
+- **`interview_save` ≈ 0 for real users** (only the admin account has a saved
+  interview; `addevent_open` = 1 user). The Jun-17 interview-flow fix produced
+  zero real saves. But the dossier doesn't depend on a saved calendar-interview,
+  so this was a **vanity hole**, not the activation moment.
+- **The intent instrumentation marked "DONE" Jun 17 is NOT actually firing.** Last
+  7 days: `paste_parse` 6 (only fires *inside* the add modal) but `addmodal_open`
+  = 1. The modal opened ≥6× and logged one open. And **interview-save has no event
+  at all** — we can't tell "parsed then abandoned" from "save still broken." The
+  blind spot is **not** closed.
+
+**Decisions locked Jun 22:**
+
+1. **Dossier is the activation metric.** Demote the calendar "saved interview"
+   feature — stop investing in it; redefine activation around dossier
+   open/generate, where users actually find value. (Keep the feature, don't push
+   it.) → Update the Adoption view's milestone framing accordingly.
+2. **Neither fork fires yet — we're flying blind.** Do **not** build the
+   nudge-email system (heavy, needs the still-unmade mail decision) and do **not**
+   keep chasing the interview flow. **Fix the measurement first:**
+   - Make `addmodal_open`/`addevent_open` fire on *all* entry points (root-cause
+     the under-firing; ⌘N / paste / per-page mounts).
+   - Add an `interview_save` success/error event (and confirm app-create coverage).
+3. **Light manual touch** for the ~9 signed-in-never-activated (e.g.
+   `e.meshi.lev`, `dorenc28`) — done by the user personally, not a built system.
+4. **Hold the invite gate 2–3 more days,** until instrumentation is trustworthy,
+   then open the pending beta-interest list so the new cohort lands on measurable
+   rails. (User chose "decide after data"; data says fix rails before pouring in
+   users.)
+
+> Next concrete sprint = the instrumentation fix (#2) — it unblocks every later
+> decision. Build it before nudges or polish.
+
 ---
 
 ## Project vision (initial sketch from the user, May 21 2026)
