@@ -72,6 +72,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/admin/beta-interest", s.requireAdmin(s.handleBetaInterestList))
 	mux.HandleFunc("POST /api/admin/beta-interest/{email}/invite", s.requireAdmin(s.handleBetaInterestPromote))
 
+	// Machine-to-machine ops route (bearer token, no Google session) — polled
+	// by the beta-interest-alert cron workflow.
+	mux.HandleFunc("GET /api/ops/beta-interest/pending", s.requireOpsToken(s.handleOpsPendingBetaInterest))
+
 	// SPA fallback: the SvelteKit static build emits a single index.html for
 	// all client-routed pages, so any /app/* or /admin/* or /preview/* URL
 	// hits the same entry file. The Svelte router takes over from there.

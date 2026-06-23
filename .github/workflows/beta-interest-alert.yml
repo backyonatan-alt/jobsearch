@@ -1,0 +1,96 @@
+name: beta-interest-alert
+
+# Polls the live app once a day for un-invited beta-interest requests and
+# surfaces them as a single rolling GitHub issue (which emails the assignee),
+# so pending requests don't sit unnoticed on /admin/people.
+#
+# Requires:
+#   - secret OPS_TOKEN  : same value as the server's OPS_TOKEN env var
+#   - var    OPS_BASE_URL (optional): defaults to the prod beta host below
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC ≈ 09:00 Israel, daily
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+env:
+  BASE_URL: ${{ vars.OPS_BASE_URL || 'https://178.105.213.124.nip.io' }}
+  LABEL: beta-pending
+  ASSIGNEE: backyonatan-alt
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query pending beta-interest count
+        id: q
+        env:
+          OPS_TOKEN: ${{ secrets.OPS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPS_TOKEN:-}" ]; then
+            echo "OPS_TOKEN secret not set — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          code=$(curl -sS -o resp.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${OPS_TOKEN}" \
+            "${BASE_URL}/api/ops/beta-interest/pending" || echo 000)
+          echo "HTTP ${code}"
+          if [ "$code" != "200" ]; then
+            echo "Endpoint returned ${code} (ops route disabled or unreachable) — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          count=$(jq '.count' resp.json)
+          echo "pending=${count}" >> "$GITHUB_OUTPUT"
+          echo "Pending requests: ${count}"
+
+      - name: Build issue body
+        if: steps.q.outputs.skip != 'true' && steps.q.outputs.pending != '0'
+        run: |
+          set -euo pipefail
+          {
+            echo "**${{ steps.q.outputs.pending }} beta-interest request(s) waiting** for an invite on /admin/people."
+            echo
+            echo "| Email | Note | Source | Requested |"
+            echo "| --- | --- | --- | --- |"
+            jq -r '.pending[] | "| \(.email) | \(.note // "—") | \(.source // "—") | \(.created_at[0:10]) |"' resp.json
+            echo
+            echo "Invite them at ${BASE_URL}/admin/people — this issue auto-closes once none are pending."
+            echo
+            echo "_Last checked: $(date -u '+%Y-%m-%d %H:%M UTC')_"
+          } > body.md
+          cat body.md
+
+      - name: Open or update the rolling issue
+        if: steps.q.outputs.skip != 'true' && steps.q.outputs.pending != '0'
+        run: |
+          set -euo pipefail
+          gh label create "$LABEL" --color FBCA04 --description "Pending beta-interest requests" --force >/dev/null 2>&1 || true
+          existing=$(gh issue list --state open --label "$LABEL" --json number --jq '.[0].number // empty')
+          title="📥 ${{ steps.q.outputs.pending }} beta-interest request(s) pending"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$title" --body-file body.md
+            echo "Updated issue #${existing}."
+          else
+            gh issue create --title "$title" --body-file body.md \
+              --label "$LABEL" --assignee "$ASSIGNEE"
+            echo "Opened a new issue."
+          fi
+
+      - name: Close the rolling issue when nothing is pending
+        if: steps.q.outputs.skip != 'true' && steps.q.outputs.pending == '0'
+        run: |
+          set -euo pipefail
+          existing=$(gh issue list --state open --label "$LABEL" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "All beta-interest requests have been invited. ✅"
+            echo "Closed issue #${existing}."
+          else
+            echo "Nothing pending and no open issue — nothing to do."
+          fi

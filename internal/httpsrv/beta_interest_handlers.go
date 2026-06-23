@@ -106,6 +106,45 @@ func (s *Server) handleBetaInterestList(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleOpsPendingBetaInterest is token-guarded (no Google session) so a cron
+// job can poll how many beta-interest rows are still un-invited. Returns a
+// count plus the pending rows themselves, oldest first, so the alert can name
+// who's been waiting longest.
+func (s *Server) handleOpsPendingBetaInterest(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.Pool.Query(r.Context(), `
+		SELECT email, note, source, created_at
+		FROM beta_interest
+		WHERE invited_at IS NULL
+		ORDER BY created_at ASC`)
+	if err != nil {
+		s.Logger.Error("ops pending beta_interest", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	defer rows.Close()
+	pending := []betaInterestDTO{}
+	for rows.Next() {
+		var d betaInterestDTO
+		var note, source *string
+		if err := rows.Scan(&d.Email, &note, &source, &d.CreatedAt); err != nil {
+			s.Logger.Error("ops pending beta_interest scan", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+		if note != nil {
+			d.Note = *note
+		}
+		if source != nil {
+			d.Source = *source
+		}
+		pending = append(pending, d)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"count":   len(pending),
+		"pending": pending,
+	})
+}
+
 // handleBetaInterestPromote moves an interest row into invited_emails so the
 // person can sign in, and stamps invited_at on the interest row so it stops
 // showing up in the pending list. Wrapped in a tx so we never end up with

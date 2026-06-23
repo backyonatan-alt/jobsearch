@@ -2,7 +2,9 @@ package httpsrv
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/backyonatan-alt/jobsearch/internal/auth"
@@ -72,4 +74,22 @@ func (s *Server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	})
+}
+
+// requireOpsToken guards machine-to-machine /api/ops/* routes with a static
+// bearer token (no Google session, so a cron/CI runner can call them). When
+// OPS_TOKEN is unset the routes 404 so they can't be hit by accident in dev.
+func (s *Server) requireOpsToken(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.Cfg.OpsToken == "" {
+			http.NotFound(w, r)
+			return
+		}
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.Cfg.OpsToken)) != 1 {
+			writeJSONError(w, http.StatusUnauthorized, "bad ops token")
+			return
+		}
+		h(w, r)
+	}
 }

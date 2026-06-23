@@ -23,6 +23,8 @@ type Config struct {
 	AllowedEmails   map[string]struct{} // bootstrap fallback only; invites live in DB
 	AdminEmails     map[string]struct{} // emails granted is_admin on sign-in
 
+	OpsToken string // bearer token for /api/ops/* (cron jobs); empty = ops routes disabled
+
 	GA4MeasurementID string // empty = no analytics (dev/local); set in prod env
 }
 
@@ -36,6 +38,7 @@ func FromEnv() (*Config, error) {
 		GoogleClientID:     getenv("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret: getenv("GOOGLE_CLIENT_SECRET", ""),
 		AnthropicAPIKey:    getenv("ANTHROPIC_API_KEY", ""),
+		OpsToken:           strings.TrimSpace(getenv("OPS_TOKEN", "")),
 		GA4MeasurementID:   strings.TrimSpace(getenv("GA4_MEASUREMENT_ID", "")),
 	}
 
