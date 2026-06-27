@@ -18,12 +18,58 @@ import (
 // questions); we mix in meeting + generated_at + interviewer_name on top.
 type dossierDTO struct {
 	ApplicationID   int64           `json:"application_id"`
+	InterviewID     *int64          `json:"interview_id,omitempty"`
 	InterviewerName string          `json:"interviewer_name,omitempty"`
 	GeneratedAt     time.Time       `json:"generated_at"`
 	GeneratedAgo    string          `json:"generatedAgo"`
 	ModelUsed       string          `json:"model_used"`
 	Content         json.RawMessage `json:"content"`
 	Meeting         meetingDTO      `json:"meeting"`
+}
+
+// dossierRow is one persisted dossier (round-specific when InterviewID is set,
+// application-level "General" prep when nil).
+type dossierRow struct {
+	InterviewerName *string
+	Content         json.RawMessage
+	ModelUsed       string
+	GeneratedAt     time.Time
+	InterviewID     *int64
+}
+
+// fetchDossier loads the dossier for a round. When interviewID is set it looks
+// for that round's prep; if none and allowFallback is true it falls back to the
+// application-level (General) prep. Returns (nil, nil) when nothing matches.
+func (s *Server) fetchDossier(ctx context.Context, appID int64, interviewID *int64, allowFallback bool) (*dossierRow, error) {
+	const cols = `interviewer_name, content, model_used, generated_at, interview_id`
+	if interviewID != nil {
+		var d dossierRow
+		err := s.Pool.QueryRow(ctx,
+			`SELECT `+cols+` FROM dossiers WHERE application_id = $1 AND interview_id = $2`,
+			appID, *interviewID,
+		).Scan(&d.InterviewerName, &d.Content, &d.ModelUsed, &d.GeneratedAt, &d.InterviewID)
+		if err == nil {
+			return &d, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		if !allowFallback {
+			return nil, nil
+		}
+	}
+	var d dossierRow
+	err := s.Pool.QueryRow(ctx,
+		`SELECT `+cols+` FROM dossiers WHERE application_id = $1 AND interview_id IS NULL`,
+		appID,
+	).Scan(&d.InterviewerName, &d.Content, &d.ModelUsed, &d.GeneratedAt, &d.InterviewID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
 }
 
 type meetingDTO struct {
@@ -55,39 +101,51 @@ func (s *Server) handleDossierGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		interviewerName *string
-		content         json.RawMessage
-		modelUsed       string
-		generatedAt     time.Time
-	)
-	err = s.Pool.QueryRow(r.Context(), `
-		SELECT interviewer_name, content, model_used, generated_at
-		FROM dossiers WHERE application_id = $1`, appID,
-	).Scan(&interviewerName, &content, &modelUsed, &generatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSONError(w, http.StatusNotFound, "no dossier yet")
-		return
+	// Which round's prep? An explicit ?interview_id pins one round (no fallback —
+	// "show me this round, empty if none"). Without it we resolve to the next
+	// upcoming round and fall back to the General prep.
+	var interviewID *int64
+	allowFallback := false
+	if q := r.URL.Query().Get("interview_id"); q != "" {
+		v, perr := strconv.ParseInt(q, 10, 64)
+		if perr != nil {
+			writeJSONError(w, http.StatusBadRequest, "bad interview_id")
+			return
+		}
+		interviewID = &v
+	} else {
+		if iv, e := s.nextInterview(r.Context(), appID); e == nil && iv != nil {
+			interviewID = &iv.ID
+		}
+		allowFallback = true
 	}
+
+	d, err := s.fetchDossier(r.Context(), appID, interviewID, allowFallback)
 	if err != nil {
 		s.Logger.Error("dossier get", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal")
 		return
 	}
+	if d == nil {
+		writeJSONError(w, http.StatusNotFound, "no dossier yet")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, dossierDTO{
 		ApplicationID:   appID,
-		InterviewerName: deref(interviewerName),
-		GeneratedAt:     generatedAt,
-		GeneratedAgo:    humanAgo(generatedAt),
-		ModelUsed:       modelUsed,
-		Content:         content,
-		Meeting:         s.meetingForApp(r.Context(), app, deref(interviewerName)),
+		InterviewID:     d.InterviewID,
+		InterviewerName: deref(d.InterviewerName),
+		GeneratedAt:     d.GeneratedAt,
+		GeneratedAgo:    humanAgo(d.GeneratedAt),
+		ModelUsed:       d.ModelUsed,
+		Content:         d.Content,
+		Meeting:         s.meetingForDossier(r.Context(), app, d.InterviewID, deref(d.InterviewerName)),
 	})
 }
 
 type refreshRequest struct {
 	InterviewerName string `json:"interviewer_name"`
+	InterviewID     *int64 `json:"interview_id"`
 }
 
 // POST /api/applications/:id/dossier/refresh — generate fresh, upsert, return.
@@ -117,6 +175,20 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	req.InterviewerName = strings.TrimSpace(req.InterviewerName)
+
+	// If a round was named, it must belong to this application.
+	if req.InterviewID != nil {
+		iv, ierr := s.interviewByID(r.Context(), appID, *req.InterviewID)
+		if ierr != nil {
+			s.Logger.Error("interview lookup", "err", ierr)
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+		if iv == nil {
+			writeJSONError(w, http.StatusNotFound, "interview not found")
+			return
+		}
+	}
 
 	// Per-user cap on AI generations (beta cost control). Admin can grant more.
 	var prepUsed, prepLimit int
@@ -158,15 +230,27 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	if req.InterviewerName != "" {
 		nullableName = &req.InterviewerName
 	}
-	_, err = s.Pool.Exec(r.Context(), `
-		INSERT INTO dossiers (application_id, interviewer_name, content, model_used, generated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (application_id) DO UPDATE SET
-		    interviewer_name = EXCLUDED.interviewer_name,
-		    content          = EXCLUDED.content,
-		    model_used       = EXCLUDED.model_used,
-		    generated_at     = EXCLUDED.generated_at`,
-		appID, nullableName, content, modelUsed, now)
+	if req.InterviewID != nil {
+		_, err = s.Pool.Exec(r.Context(), `
+			INSERT INTO dossiers (application_id, interview_id, interviewer_name, content, model_used, generated_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (interview_id) WHERE interview_id IS NOT NULL DO UPDATE SET
+			    interviewer_name = EXCLUDED.interviewer_name,
+			    content          = EXCLUDED.content,
+			    model_used       = EXCLUDED.model_used,
+			    generated_at     = EXCLUDED.generated_at`,
+			appID, *req.InterviewID, nullableName, content, modelUsed, now)
+	} else {
+		_, err = s.Pool.Exec(r.Context(), `
+			INSERT INTO dossiers (application_id, interview_id, interviewer_name, content, model_used, generated_at)
+			VALUES ($1, NULL, $2, $3, $4, $5)
+			ON CONFLICT (application_id) WHERE interview_id IS NULL DO UPDATE SET
+			    interviewer_name = EXCLUDED.interviewer_name,
+			    content          = EXCLUDED.content,
+			    model_used       = EXCLUDED.model_used,
+			    generated_at     = EXCLUDED.generated_at`,
+			appID, nullableName, content, modelUsed, now)
+	}
 	if err != nil {
 		s.Logger.Error("dossier upsert", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal")
@@ -186,12 +270,13 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, dossierDTO{
 		ApplicationID:   appID,
+		InterviewID:     req.InterviewID,
 		InterviewerName: req.InterviewerName,
 		GeneratedAt:     now,
 		GeneratedAgo:    "just now",
 		ModelUsed:       modelUsed,
 		Content:         content,
-		Meeting:         s.meetingForApp(r.Context(), app, req.InterviewerName),
+		Meeting:         s.meetingForDossier(r.Context(), app, req.InterviewID, req.InterviewerName),
 	})
 }
 
@@ -245,7 +330,26 @@ func (s *Server) meetingForApp(ctx context.Context, app *applicationRow, intervi
 	if iv == nil {
 		return meetingPlaceholder(app, interviewer)
 	}
+	return meetingFromInterview(iv, interviewer)
+}
 
+// meetingForDossier renders the meeting block for the round this dossier is
+// pinned to. General (no interview_id) prep falls back to the next upcoming
+// interview, preserving the pre-per-round behaviour.
+func (s *Server) meetingForDossier(ctx context.Context, app *applicationRow, interviewID *int64, interviewer string) meetingDTO {
+	if interviewID != nil {
+		iv, err := s.interviewByID(ctx, app.ID, *interviewID)
+		if err != nil {
+			s.Logger.Error("interview lookup", "err", err, "app_id", app.ID)
+		}
+		if iv != nil {
+			return meetingFromInterview(iv, interviewer)
+		}
+	}
+	return s.meetingForApp(ctx, app, interviewer)
+}
+
+func meetingFromInterview(iv *interviewDTO, interviewer string) meetingDTO {
 	panel := interviewer
 	if panel == "" {
 		panel = "(hiring team)"

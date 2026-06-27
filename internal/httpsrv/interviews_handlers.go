@@ -497,3 +497,24 @@ func (s *Server) nextInterview(ctx context.Context, appID int64) (*interviewDTO,
 	}
 	return &iv, nil
 }
+
+// interviewByID fetches one interview scoped to its application. Returns
+// (nil, nil) when it doesn't exist or belongs to another application.
+func (s *Server) interviewByID(ctx context.Context, appID, iid int64) (*interviewDTO, error) {
+	var iv interviewDTO
+	err := s.Pool.QueryRow(ctx, `
+		SELECT id, application_id, source, uid, summary, location, description,
+		       starts_at, ends_at, all_day, organizer, attendees, created_at
+		FROM interviews
+		WHERE id = $1 AND application_id = $2`, iid, appID,
+	).Scan(&iv.ID, &iv.ApplicationID, &iv.Source, &iv.UID, &iv.Summary,
+		&iv.Location, &iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay,
+		&iv.Organizer, &iv.Attendees, &iv.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &iv, nil
+}

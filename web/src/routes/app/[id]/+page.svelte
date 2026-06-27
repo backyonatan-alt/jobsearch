@@ -26,6 +26,9 @@
   let prepStage = $state('');
   let genError = $state('');
   let interviewerInput = $state('');
+  // Which round's prep is showing. An interview id, or null for "General"
+  // (application-level prep that isn't tied to a specific round).
+  let selectedRoundId = $state(null);
 
   // Interviews
   let interviews = $state([]);
@@ -77,14 +80,57 @@
   $effect(() => {
     void id;
     loadApp();
-    loadInterviews();
     loadFollowUps();
-    loadDossier();
+    initPrep();
     if (id && id !== lastDossierOpenId) {
       lastDossierOpenId = id;
       logEvent('dossier_open', { app_id: Number(id) });
     }
   });
+
+  // Load interviews first so we can default the prep to the next upcoming round.
+  async function initPrep() {
+    await loadInterviews();
+    selectedRoundId = nextRoundId;
+    await loadDossier(selectedRoundId);
+  }
+
+  const selectedRound = $derived((interviews || []).find(iv => iv.id === selectedRoundId) || null);
+
+  // The soonest upcoming interview — the round we prep for by default.
+  const nextRoundId = $derived.by(() => {
+    const now = Date.now();
+    const future = (interviews || [])
+      .filter(iv => iv?.starts_at && new Date(iv.starts_at).getTime() >= now)
+      .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+    return future[0]?.id ?? null;
+  });
+
+  function roundLabel(iv) {
+    const d = iv?.starts_at ? fmtRelativeDate(iv.starts_at) : '';
+    const s = (iv?.summary || '').trim();
+    return s ? (d ? `${d} · ${s}` : s) : (d || 'Interview');
+  }
+
+  function attendeeName(iv) {
+    const a = iv?.attendees;
+    const arr = Array.isArray(a) ? a : (a ? [a] : []);
+    const named = arr.find(x => x && typeof x === 'object' && x.name && !/recruit/i.test(x.name || ''));
+    return named?.name || '';
+  }
+
+  // Switch which round's prep is shown. Pre-fills the interviewer name from the
+  // round's attendees so the generate state is one click away.
+  async function selectRound(roundId) {
+    if (selectedRoundId === roundId) return;
+    selectedRoundId = roundId;
+    const iv = (interviews || []).find(x => x.id === roundId);
+    interviewerInput = '';
+    await loadDossier(roundId);
+    if (!dossier) {
+      interviewerInput = (iv ? attendeeName(iv) : '') || app?.raw?.hiring_manager_name || '';
+    }
+  }
 
   async function loadApp() {
     loading = true;
@@ -145,15 +191,16 @@
     pipelineEditing = false;
   }
 
-  async function loadDossier() {
+  async function loadDossier(roundId) {
     dossierLoading = true;
     genError = '';
     try {
-      const d = await call(`/api/applications/${id}/dossier`);
+      const q = (roundId != null) ? `?interview_id=${roundId}` : '';
+      const d = await call(`/api/applications/${id}/dossier${q}`);
       dossier = d || null;
       if (dossier?.interviewer_name) interviewerInput = dossier.interviewer_name;
     } catch (e) {
-      // 404 / empty / "no dossier" → not generated yet
+      // 404 / empty / "no dossier" → not generated for this round yet
       dossier = null;
     } finally {
       dossierLoading = false;
@@ -180,7 +227,10 @@
     try {
       const d = await call(`/api/applications/${id}/dossier/refresh`, {
         method: 'POST',
-        body: JSON.stringify({ interviewer_name: interviewerInput.trim() || undefined })
+        body: JSON.stringify({
+          interviewer_name: interviewerInput.trim() || undefined,
+          interview_id: selectedRoundId ?? undefined
+        })
       });
       dossier = d;
       interviewerInput = d.interviewer_name ?? interviewerInput;
@@ -306,6 +356,10 @@
       icsPreview = [];
       showEventModal = false;
       await loadInterviews();
+      // A new round shifts the default prep — point at it and load its (empty)
+      // prep so the user lands on "generate for this round". Tell Today to refetch.
+      await selectRound(nextRoundId);
+      try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
     } catch (e) {
       icsParseError = e.message || 'Could not save events.';
     } finally {
@@ -338,6 +392,8 @@
       action: async () => {
         await call(`/api/applications/${id}/interviews/${iv.id}`, { method: 'DELETE' });
         await loadInterviews();
+        if (selectedRoundId === iv.id) { selectedRoundId = nextRoundId; await loadDossier(selectedRoundId); }
+        try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
       }
     });
   }
@@ -784,6 +840,29 @@
             {/if}
           </div>
 
+          {#if interviews.length}
+            <div class="round-tabs" role="tablist" aria-label="Interview round">
+              {#each interviews as iv}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={selectedRoundId === iv.id}
+                  class="round-tab"
+                  class:active={selectedRoundId === iv.id}
+                  onclick={() => selectRound(iv.id)}
+                >{roundLabel(iv)}</button>
+              {/each}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={selectedRoundId === null}
+                class="round-tab"
+                class:active={selectedRoundId === null}
+                onclick={() => selectRound(null)}
+              >General</button>
+            </div>
+          {/if}
+
           {#if dossierLoading}
             <p style="color:var(--mute); font-size:13px;">Loading…</p>
 
@@ -801,7 +880,7 @@
                 <div class="big-spinner"></div>
                 <p class="gen-eta">This usually takes 1–2 minutes — you can keep working, it'll be here when it's done.</p>
               {:else}
-                <h3>Generate interview prep</h3>
+                <h3>Generate interview prep{selectedRound ? ` for ${roundLabel(selectedRound)}` : ''}</h3>
                 <p class="gen-sub">
                   We'll build an AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask — pulled from public posts, talks, papers, and company news. Add a name below to make it about a specific interviewer.
                 </p>
@@ -1419,6 +1498,11 @@
   .prep-lead h2 { font-size: 26px; font-weight: 600; letter-spacing: -0.028em; margin: 12px 0 6px; }
   .prep-gen { font-family: inherit; font-size: 13px; color: var(--mute); display: inline-flex; align-items: center; gap: 7px; margin: 0; }
   .prep-gen .sp { color: var(--accent); display: inline-flex; align-items: center; }
+
+  .round-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 18px; }
+  .round-tab { font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--mute); background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 6px 13px; cursor: pointer; white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
+  .round-tab:hover { color: var(--ink); border-color: var(--accent-tint-2); }
+  .round-tab.active { color: var(--accent-text); background: var(--accent-tint); border-color: var(--accent-tint-2); font-weight: 600; }
 
   /* CARD */
   .card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 20px 22px; box-shadow: var(--sh-1); }
