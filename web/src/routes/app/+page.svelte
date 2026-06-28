@@ -198,9 +198,9 @@
       if (dossierByApp[a.id]) continue;
       out.push({
         spark: true,
-        title: `Prep for your ${a.co} ${STATUS_LABEL[a.status].toLowerCase()}`,
-        sub: a.role,
-        cta: 'Generate prep',
+        title: `Build your ${a.co} playbook`,
+        sub: `${a.role} · ${STATUS_LABEL[a.status].toLowerCase()}`,
+        cta: 'Build playbook',
         go: () => goto(`/app/${a.id}#interview-prep`)
       });
     }
@@ -231,7 +231,7 @@
       if (a.raw.hiring_manager_name) continue;
       out.push({
         title: `Add the hiring manager for ${a.co}`,
-        sub: 'We can build a prep brief once we know who',
+        sub: 'We can build your playbook once we know who',
         cta: 'Add',
         go: () => goto(`/app/${a.id}`)
       });
@@ -427,7 +427,7 @@
           </div>
         {/if}
 
-        <button class="cta" onclick={() => openPlaybook(nextInterview.app.id)}>Open interview prep {@render Arrow()}</button>
+        <button class="cta" onclick={() => openPlaybook(nextInterview.app.id)}>Open playbook {@render Arrow()}</button>
       {:else}
         <p class="lede">Nothing on the calendar today — here's what's worth doing.</p>
 

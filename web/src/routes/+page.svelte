@@ -81,7 +81,8 @@
   <div class="auth-card">
     <div class="mark"></div>
     <h1>Pursuit</h1>
-    <p class="tagline">Track your job search. Beat the funnel.</p>
+    <p class="tagline">Walk into every interview with a playbook.</p>
+    <p class="subtagline">Pursuit researches your interviewer and the company, then builds you an AI prep playbook — plus tracks every application.</p>
 
     {#if inApp}
       <div class="webview-note" role="note">
@@ -125,7 +126,7 @@
       {:else}
         <form class="interest-form" onsubmit={submitInterest}>
           <h3>Request access</h3>
-          <p class="interest-help">Pursuit is in closed beta. Drop your email + one line on what you're job-searching for; the admin reviews and invites manually.</p>
+          <p class="interest-help">Pursuit is in closed beta — AI interview playbooks + a tracker for your whole search. Drop your email and one line on what you're job-searching for; the admin reviews and invites manually.</p>
           <label>
             <span class="lbl">Your Gmail</span>
             <input type="email" bind:value={email} placeholder="you@gmail.com" required />
@@ -172,7 +173,8 @@
     margin: 0 auto 16px;
   }
   h1 { font-size: 28px; font-weight: 500; letter-spacing: -0.025em; margin: 0 0 6px; }
-  .tagline { color: var(--mute); margin: 0 0 22px; font-size: 14px; }
+  .tagline { color: var(--ink); margin: 0 0 8px; font-size: 16px; font-weight: 500; letter-spacing: -0.01em; }
+  .subtagline { color: var(--mute); margin: 0 0 22px; font-size: 13px; line-height: 1.5; }
 
   .google {
     display: flex; align-items: center; justify-content: center;

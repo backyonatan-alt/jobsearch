@@ -201,7 +201,7 @@
       return 'Web search timed out — try again.';
     if (m.includes('http 5') || m.includes('not configured'))
       return 'Something went wrong — try again in a moment.';
-    return m || 'Could not generate the interview prep.';
+    return m || 'Could not build the playbook.';
   }
 
   async function loadInterviews() {
@@ -771,7 +771,7 @@
           <!-- ── INTERVIEW PREP (inline dossier) ── -->
           <div id="interview-prep" class="prep-lead">
             <span class="ai-pill"><span class="spark">✦</span> AI</span>
-            <h2>Interview prep</h2>
+            <h2>Interview playbook</h2>
             {#if dosGeneratedAgo && dossier}
               <p class="prep-gen">
                 <span class="sp" aria-hidden="true">
@@ -801,9 +801,9 @@
                 <div class="big-spinner"></div>
                 <p class="gen-eta">This usually takes 1–2 minutes — you can keep working, it'll be here when it's done.</p>
               {:else}
-                <h3>Generate interview prep</h3>
+                <h3>Build your playbook</h3>
                 <p class="gen-sub">
-                  We'll build an AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask — pulled from public posts, talks, papers, and company news. Add a name below to make it about a specific interviewer.
+                  We'll build an AI playbook on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask — pulled from public posts, talks, papers, and company news. Add a name below to make it about a specific interviewer.
                 </p>
                 <div class="gen-row">
                   <input
@@ -815,7 +815,7 @@
                     onkeydown={(e) => e.key === 'Enter' && generateDossier()}
                   />
                   <button class="btn-generate" onclick={generateDossier} disabled={generating}>
-                    Generate interview prep
+                    Build playbook
                   </button>
                 </div>
                 {#if genError}
@@ -998,7 +998,7 @@
               Synthesised from public posts, talks, and papers · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'} · always verify before you walk in
               <button class="prep-refresh" type="button" onclick={generateDossier} disabled={generating}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
-                {generating ? 'Refreshing…' : 'Refresh prep'}
+                {generating ? 'Refreshing…' : 'Refresh playbook'}
               </button>
             </div>
 
