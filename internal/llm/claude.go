@@ -467,15 +467,52 @@ func stripHTML(s string) string {
 // Dossier generation (Claude Sonnet + web search)
 // ─────────────────────────────────────────────────────────────────────────
 
-const dossierSystemPrompt = `You are an interview-prep researcher with web search. Given a company, role, and (optionally) an interviewer's name, produce a structured briefing the candidate can read in 60 seconds before the interview.
+// Company brief — shared across every interview round for an application.
+// Researched once; the round briefs reference it for grounding but don't repeat
+// the company block.
+const companyBriefSystemPrompt = `You are an interview-prep researcher with web search. Given a company and a role, produce a COMPANY briefing the candidate can read in 60 seconds — true for every round of their interview loop, independent of who interviews them.
 
-You MUST use web search to ground every claim. Search for things like:
-- The interviewer's recent essays, talks, podcasts, papers (last 12 months)
-- The company's recent news, product launches, leadership statements
-- The team's public engineering or design culture
-- The role's likely scope given company stage and recent direction
+You MUST use web search to ground every claim (recent news, raises, launches, leadership, the team's public engineering/design culture, Glassdoor/Blind/levels.fyi on the loop). Do NOT invent numbers, valuations, or interview steps you can't source — omit what you can't verify (empty string/array is fine).
 
-Do NOT invent quotes, papers, or events. If you can't find something concrete, omit that field — empty arrays and empty strings are fine.
+Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
+
+{
+  "company": {
+    "blurb":     "One sentence on what the company does. Plain English, no marketing.",
+    "direction": "Two sentences on where they're going right now. Recent news, last raise, product launches, leadership shifts. Last 12 months only.",
+    "hq":        "City",
+    "employees": "~N,NNN (range or approximate is fine)",
+    "stage":     "Late stage · $X valuation  /  Series B  /  Public  /  Bootstrapped — pick what fits",
+    "founded":   "YYYY",
+    "process": [
+      {"kind": "Recruiter screen",   "detail": "30 min · culture + role fit"},
+      {"kind": "Hiring-manager call","detail": "45 min · architecture, prior wins"},
+      {"kind": "Technical screen",   "detail": "60 min · live coding (language)"},
+      {"kind": "Onsite loop",        "detail": "4 panels · sys design, IC code, behavioral, bar-raiser"},
+      {"kind": "Team match",         "detail": "Two 30-min chats with prospective teams"}
+    ],
+    "watch_fors": [
+      "Five short sentences specific to THIS company's loop.",
+      "Drawn from Glassdoor / Blind / levels.fyi / engineering blog content.",
+      "Not generic advice — name what THIS team grades for.",
+      "Mention rollout / observability / failure modes if relevant.",
+      "Mention the company's current strategic bet if it matters."
+    ]
+  }
+}
+
+If after searching you genuinely can't find enough information, return: {"error": "could not find enough public information about this company"}.
+
+Output JSON only.`
+
+// Interviewer brief — specific to one round / one interviewer. The company is
+// passed only for grounding; do NOT emit a company block here (it lives in the
+// shared company brief).
+const interviewerBriefSystemPrompt = `You are an interview-prep researcher with web search. Given a company, role, and an interviewer's name, produce a briefing about THAT PERSON the candidate can read in 60 seconds before the round.
+
+You MUST use web search to ground every claim. Search for the interviewer's recent essays, talks, podcasts, papers (last 12 months), their professional arc, and how they're known to interview. Do NOT invent quotes, papers, or events — omit what you can't find (empty string/array is fine).
+
+Do NOT include a company overview — that's covered separately. Stay focused on the person.
 
 Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
 
@@ -507,50 +544,50 @@ Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
   "avoid":     ["4 short, specific things that don't."],
   "questions": [
     {"q": "Question for the candidate to ask back.", "why": "Why it lands."}
-  ],
-  "company": {
-    "blurb":     "One sentence on what the company does. Plain English, no marketing.",
-    "direction": "Two sentences on where they're going right now. Recent news, last raise, product launches, leadership shifts. Last 12 months only.",
-    "hq":        "City",
-    "employees": "~N,NNN (range or approximate is fine)",
-    "stage":     "Late stage · $X valuation  /  Series B  /  Public  /  Bootstrapped — pick what fits",
-    "founded":   "YYYY",
-    "process": [
-      {"kind": "Recruiter screen",   "detail": "30 min · culture + role fit"},
-      {"kind": "Hiring-manager call","detail": "45 min · architecture, prior wins"},
-      {"kind": "Technical screen",   "detail": "60 min · live coding (language)"},
-      {"kind": "Onsite loop",        "detail": "4 panels · sys design, IC code, behavioral, bar-raiser"},
-      {"kind": "Team match",         "detail": "Two 30-min chats with prospective teams"}
-    ],
-    "watch_fors": [
-      "Five short sentences specific to THIS company's loop.",
-      "Drawn from Glassdoor / Blind / levels.fyi / engineering blog content.",
-      "Not generic advice — name what THIS team grades for.",
-      "Mention rollout / observability / failure modes if relevant.",
-      "Mention the company's current strategic bet if it matters."
-    ]
-  }
+  ]
 }
 
-The "company" block is REQUIRED — populate it for every dossier regardless of whether an interviewer is named. Use web search to ground every claim. Omit fields you can't verify (empty string is fine, but DON'T invent numbers, valuations, or interview steps you can't source).
+If the interviewer is a generic name you can't find online, still return a useful briefing scoped to their likely role at the company (snapshot/style/lands/avoid/questions), with prior/signals/links empty.
 
-If the interviewer name is empty, ALSO write a COMPANY-LEVEL interviewer-section:
-- interviewer.name = "Hiring team"
-- interviewer.role = the company name
-- interviewer.initials = the first letter of the company
-- interviewer.prior = company highlights or recent moves
-- snapshot/background/signals scoped to the company itself
-- style/lands/avoid/questions reflect the company's interview culture
-
-If after searching you genuinely can't find enough information, return: {"error": "could not find enough public information about this person/company"}.
+If after searching you genuinely can't find enough information, return: {"error": "could not find enough public information about this person"}.
 
 Output JSON only.`
 
-// GenerateDossier asks Claude Sonnet (with web search) to research the
-// interviewer/company and produce a structured briefing. Returns the JSON
-// bytes verbatim so the frontend can render exactly what the model decided
-// to ship — no field-level translation in Go.
-func (c *Client) GenerateDossier(ctx context.Context, company, role, interviewerName string) (json.RawMessage, error) {
+// GenerateCompanyBrief researches the company once for the whole application.
+func (c *Client) GenerateCompanyBrief(ctx context.Context, company, role string) (json.RawMessage, error) {
+	cctx, cancel := context.WithTimeout(ctx, 150*time.Second)
+	defer cancel()
+
+	user := fmt.Sprintf("Company: %s\nRole: %s\n", company, role)
+	resp, err := c.CreateMessage(cctx, ModelSonnet, companyBriefSystemPrompt, []Message{
+		{Role: "user", Content: user},
+	}, 4000, WebSearchTool(5))
+	if err != nil {
+		return nil, err
+	}
+	raw, err := extractFirstJSONObject(resp)
+	if err != nil {
+		return nil, fmt.Errorf("model didn't return JSON (raw: %.300s)", resp)
+	}
+	if msg := jsonErrorField(raw); msg != "" {
+		return nil, errors.New(msg)
+	}
+	var shape struct {
+		Company struct {
+			Blurb string `json:"blurb"`
+		} `json:"company"`
+	}
+	if err := json.Unmarshal(raw, &shape); err != nil {
+		return nil, fmt.Errorf("company brief JSON missing expected fields: %w", err)
+	}
+	if shape.Company.Blurb == "" {
+		return nil, errors.New("company brief came back empty")
+	}
+	return raw, nil
+}
+
+// GenerateInterviewerBrief researches one interviewer for a single round.
+func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, interviewerName string) (json.RawMessage, error) {
 	cctx, cancel := context.WithTimeout(ctx, 150*time.Second)
 	defer cancel()
 
@@ -559,29 +596,22 @@ func (c *Client) GenerateDossier(ctx context.Context, company, role, interviewer
 	if strings.TrimSpace(interviewerName) != "" {
 		fmt.Fprintf(&user, "Interviewer: %s\n", strings.TrimSpace(interviewerName))
 	} else {
-		user.WriteString("Interviewer: (not specified — produce a company-level briefing)\n")
+		user.WriteString("Interviewer: (not specified — infer the likely interviewer for this round from the role)\n")
 	}
 
-	resp, err := c.CreateMessage(cctx, ModelSonnet, dossierSystemPrompt, []Message{
+	resp, err := c.CreateMessage(cctx, ModelSonnet, interviewerBriefSystemPrompt, []Message{
 		{Role: "user", Content: user.String()},
 	}, 4000, WebSearchTool(5))
 	if err != nil {
 		return nil, err
 	}
-
 	raw, err := extractFirstJSONObject(resp)
 	if err != nil {
 		return nil, fmt.Errorf("model didn't return JSON (raw: %.300s)", resp)
 	}
-
-	var errProbe struct {
-		Error string `json:"error"`
+	if msg := jsonErrorField(raw); msg != "" {
+		return nil, errors.New(msg)
 	}
-	if json.Unmarshal(raw, &errProbe) == nil && errProbe.Error != "" {
-		return nil, errors.New(errProbe.Error)
-	}
-
-	// Light sanity check — confirm we got the shape we expect.
 	var shape struct {
 		Interviewer struct {
 			Name string `json:"name"`
@@ -589,12 +619,22 @@ func (c *Client) GenerateDossier(ctx context.Context, company, role, interviewer
 		Snapshot string `json:"snapshot"`
 	}
 	if err := json.Unmarshal(raw, &shape); err != nil {
-		return nil, fmt.Errorf("dossier JSON missing expected fields: %w", err)
+		return nil, fmt.Errorf("interviewer brief JSON missing expected fields: %w", err)
 	}
 	if shape.Interviewer.Name == "" && shape.Snapshot == "" {
-		return nil, errors.New("dossier came back empty")
+		return nil, errors.New("interviewer brief came back empty")
 	}
 	return raw, nil
+}
+
+func jsonErrorField(raw json.RawMessage) string {
+	var errProbe struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(raw, &errProbe) == nil {
+		return errProbe.Error
+	}
+	return ""
 }
 
 // extractFirstJSONObject finds the first top-level JSON object in s and returns

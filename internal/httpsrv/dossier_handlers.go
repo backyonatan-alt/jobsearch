@@ -27,8 +27,8 @@ type dossierDTO struct {
 	Meeting         meetingDTO      `json:"meeting"`
 }
 
-// dossierRow is one persisted dossier (round-specific when InterviewID is set,
-// application-level "General" prep when nil).
+// dossierRow is one persisted brief — the shared company brief when InterviewID
+// is nil, an interviewer brief for a specific round when set.
 type dossierRow struct {
 	InterviewerName *string
 	Content         json.RawMessage
@@ -37,32 +37,11 @@ type dossierRow struct {
 	InterviewID     *int64
 }
 
-// fetchDossier loads the dossier for a round. When interviewID is set it looks
-// for that round's prep; if none and allowFallback is true it falls back to the
-// application-level (General) prep. Returns (nil, nil) when nothing matches.
-func (s *Server) fetchDossier(ctx context.Context, appID int64, interviewID *int64, allowFallback bool) (*dossierRow, error) {
-	const cols = `interviewer_name, content, model_used, generated_at, interview_id`
-	if interviewID != nil {
-		var d dossierRow
-		err := s.Pool.QueryRow(ctx,
-			`SELECT `+cols+` FROM dossiers WHERE application_id = $1 AND interview_id = $2`,
-			appID, *interviewID,
-		).Scan(&d.InterviewerName, &d.Content, &d.ModelUsed, &d.GeneratedAt, &d.InterviewID)
-		if err == nil {
-			return &d, nil
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return nil, err
-		}
-		if !allowFallback {
-			return nil, nil
-		}
-	}
+const dossierCols = `interviewer_name, content, model_used, generated_at, interview_id`
+
+func scanDossier(row interface{ Scan(...any) error }) (*dossierRow, error) {
 	var d dossierRow
-	err := s.Pool.QueryRow(ctx,
-		`SELECT `+cols+` FROM dossiers WHERE application_id = $1 AND interview_id IS NULL`,
-		appID,
-	).Scan(&d.InterviewerName, &d.Content, &d.ModelUsed, &d.GeneratedAt, &d.InterviewID)
+	err := row.Scan(&d.InterviewerName, &d.Content, &d.ModelUsed, &d.GeneratedAt, &d.InterviewID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -70,6 +49,43 @@ func (s *Server) fetchDossier(ctx context.Context, appID int64, interviewID *int
 		return nil, err
 	}
 	return &d, nil
+}
+
+// fetchCompanyBrief loads the application-level company brief (interview_id NULL).
+func (s *Server) fetchCompanyBrief(ctx context.Context, appID int64) (*dossierRow, error) {
+	return scanDossier(s.Pool.QueryRow(ctx,
+		`SELECT `+dossierCols+` FROM dossiers WHERE application_id = $1 AND interview_id IS NULL`, appID))
+}
+
+// fetchRoundBrief loads the interviewer brief for one round.
+func (s *Server) fetchRoundBrief(ctx context.Context, appID, interviewID int64) (*dossierRow, error) {
+	return scanDossier(s.Pool.QueryRow(ctx,
+		`SELECT `+dossierCols+` FROM dossiers WHERE application_id = $1 AND interview_id = $2`, appID, interviewID))
+}
+
+// composeContent merges the shared company block into an interviewer brief so
+// the Today dashboard can read snapshot/lands AND company.watch_fors from a
+// single content object. Either side may be nil.
+func composeContent(interviewer, company json.RawMessage) json.RawMessage {
+	if len(company) == 0 {
+		return interviewer
+	}
+	if len(interviewer) == 0 {
+		return company
+	}
+	var im map[string]json.RawMessage
+	var cm map[string]json.RawMessage
+	if json.Unmarshal(interviewer, &im) != nil || json.Unmarshal(company, &cm) != nil {
+		return interviewer
+	}
+	if cb, ok := cm["company"]; ok {
+		im["company"] = cb
+	}
+	merged, err := json.Marshal(im)
+	if err != nil {
+		return interviewer
+	}
+	return merged
 }
 
 type meetingDTO struct {
@@ -101,36 +117,98 @@ func (s *Server) handleDossierGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Which round's prep? An explicit ?interview_id pins one round (no fallback —
-	// "show me this round, empty if none"). Without it we resolve to the next
-	// upcoming round and fall back to the General prep.
-	var interviewID *int64
-	allowFallback := false
-	if q := r.URL.Query().Get("interview_id"); q != "" {
-		v, perr := strconv.ParseInt(q, 10, 64)
+	q := r.URL.Query()
+
+	// ?scope=company → the shared company brief tab (no fallback).
+	if q.Get("scope") == "company" {
+		d, err := s.fetchCompanyBrief(r.Context(), appID)
+		if err != nil {
+			s.Logger.Error("dossier get", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+		if d == nil {
+			writeJSONError(w, http.StatusNotFound, "no company brief yet")
+			return
+		}
+		writeDossier(w, appID, d, s.meetingForApp(r.Context(), app, ""))
+		return
+	}
+
+	// ?interview_id=N → one round's interviewer brief (no fallback — empty if none).
+	if qid := q.Get("interview_id"); qid != "" {
+		iid, perr := strconv.ParseInt(qid, 10, 64)
 		if perr != nil {
 			writeJSONError(w, http.StatusBadRequest, "bad interview_id")
 			return
 		}
-		interviewID = &v
-	} else {
-		if iv, e := s.nextInterview(r.Context(), appID); e == nil && iv != nil {
-			interviewID = &iv.ID
+		d, err := s.fetchRoundBrief(r.Context(), appID, iid)
+		if err != nil {
+			s.Logger.Error("dossier get", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
 		}
-		allowFallback = true
+		if d == nil {
+			writeJSONError(w, http.StatusNotFound, "no prep for this round yet")
+			return
+		}
+		writeDossier(w, appID, d, s.meetingForDossier(r.Context(), app, d.InterviewID, deref(d.InterviewerName)))
+		return
 	}
 
-	d, err := s.fetchDossier(r.Context(), appID, interviewID, allowFallback)
+	// No params (Today dashboard / initial load): compose the next round's
+	// interviewer brief with the shared company block so one content object has
+	// both snapshot/lands and company.watch_fors.
+	var nextID *int64
+	if iv, e := s.nextInterview(r.Context(), appID); e == nil && iv != nil {
+		nextID = &iv.ID
+	}
+	company, err := s.fetchCompanyBrief(r.Context(), appID)
 	if err != nil {
 		s.Logger.Error("dossier get", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal")
 		return
 	}
-	if d == nil {
+	var round *dossierRow
+	if nextID != nil {
+		if round, err = s.fetchRoundBrief(r.Context(), appID, *nextID); err != nil {
+			s.Logger.Error("dossier get", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+	}
+	if round == nil && company == nil {
 		writeJSONError(w, http.StatusNotFound, "no dossier yet")
 		return
 	}
+	base := round
+	if base == nil {
+		base = company
+	}
+	var companyContent json.RawMessage
+	if company != nil {
+		companyContent = company.Content
+	}
+	writeJSON(w, http.StatusOK, dossierDTO{
+		ApplicationID:   appID,
+		InterviewID:     base.InterviewID,
+		InterviewerName: deref(base.InterviewerName),
+		GeneratedAt:     base.GeneratedAt,
+		GeneratedAgo:    humanAgo(base.GeneratedAt),
+		ModelUsed:       base.ModelUsed,
+		Content:         composeContent(round.contentOrNil(), companyContent),
+		Meeting:         s.meetingForDossier(r.Context(), app, base.InterviewID, deref(base.InterviewerName)),
+	})
+}
 
+func (d *dossierRow) contentOrNil() json.RawMessage {
+	if d == nil {
+		return nil
+	}
+	return d.Content
+}
+
+func writeDossier(w http.ResponseWriter, appID int64, d *dossierRow, meeting meetingDTO) {
 	writeJSON(w, http.StatusOK, dossierDTO{
 		ApplicationID:   appID,
 		InterviewID:     d.InterviewID,
@@ -139,7 +217,7 @@ func (s *Server) handleDossierGet(w http.ResponseWriter, r *http.Request) {
 		GeneratedAgo:    humanAgo(d.GeneratedAt),
 		ModelUsed:       d.ModelUsed,
 		Content:         d.Content,
-		Meeting:         s.meetingForDossier(r.Context(), app, d.InterviewID, deref(d.InterviewerName)),
+		Meeting:         meeting,
 	})
 }
 
@@ -211,73 +289,118 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	s.Logger.Info("dossier generate start",
 		"user_id", u.ID, "app_id", appID,
 		"company", app.Company, "role", app.Role,
-		"interviewer", req.InterviewerName)
-
-	content, err := s.LLM.GenerateDossier(r.Context(), app.Company, app.Role, req.InterviewerName)
-	if err != nil {
-		s.Logger.Info("dossier generate failed", "err", err)
-		s.logEvent(r.Context(), u.ID, "dossier_refresh", map[string]any{
-			"outcome": "error", "error_reason": "generate_failed",
-			"duration_ms": time.Since(start).Milliseconds(),
-		})
-		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
+		"interviewer", req.InterviewerName, "round", req.InterviewID)
 
 	now := time.Now()
 	const modelUsed = "claude-sonnet-4-6+web_search"
+
+	// No round → (re)generate the shared company brief.
+	if req.InterviewID == nil {
+		content, gerr := s.LLM.GenerateCompanyBrief(r.Context(), app.Company, app.Role)
+		if gerr != nil {
+			s.failGenerate(w, r.Context(), u.ID, start, gerr)
+			return
+		}
+		if err := s.upsertCompanyBrief(r.Context(), appID, content, modelUsed, now); err != nil {
+			s.Logger.Error("company brief upsert", "err", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal")
+			return
+		}
+		s.finishGenerate(r.Context(), u.ID, start, len(content))
+		writeDossier(w, appID, &dossierRow{Content: content, ModelUsed: modelUsed, GeneratedAt: now},
+			s.meetingForApp(r.Context(), app, ""))
+		return
+	}
+
+	// A round → research this interviewer. If the application has no company
+	// brief yet, generate it alongside (in parallel) — bundled, no extra credit.
+	var companyCh chan json.RawMessage
+	if existing, _ := s.fetchCompanyBrief(r.Context(), appID); existing == nil {
+		companyCh = make(chan json.RawMessage, 1)
+		go func() {
+			cc, cerr := s.LLM.GenerateCompanyBrief(r.Context(), app.Company, app.Role)
+			if cerr != nil {
+				s.Logger.Info("bundled company brief failed (non-fatal)", "err", cerr)
+				companyCh <- nil
+				return
+			}
+			companyCh <- cc
+		}()
+	}
+
+	content, gerr := s.LLM.GenerateInterviewerBrief(r.Context(), app.Company, app.Role, req.InterviewerName)
+	if gerr != nil {
+		s.failGenerate(w, r.Context(), u.ID, start, gerr)
+		return
+	}
 	var nullableName *string
 	if req.InterviewerName != "" {
 		nullableName = &req.InterviewerName
 	}
-	if req.InterviewID != nil {
-		_, err = s.Pool.Exec(r.Context(), `
-			INSERT INTO dossiers (application_id, interview_id, interviewer_name, content, model_used, generated_at)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			ON CONFLICT (interview_id) WHERE interview_id IS NOT NULL DO UPDATE SET
-			    interviewer_name = EXCLUDED.interviewer_name,
-			    content          = EXCLUDED.content,
-			    model_used       = EXCLUDED.model_used,
-			    generated_at     = EXCLUDED.generated_at`,
-			appID, *req.InterviewID, nullableName, content, modelUsed, now)
-	} else {
-		_, err = s.Pool.Exec(r.Context(), `
-			INSERT INTO dossiers (application_id, interview_id, interviewer_name, content, model_used, generated_at)
-			VALUES ($1, NULL, $2, $3, $4, $5)
-			ON CONFLICT (application_id) WHERE interview_id IS NULL DO UPDATE SET
-			    interviewer_name = EXCLUDED.interviewer_name,
-			    content          = EXCLUDED.content,
-			    model_used       = EXCLUDED.model_used,
-			    generated_at     = EXCLUDED.generated_at`,
-			appID, nullableName, content, modelUsed, now)
-	}
-	if err != nil {
-		s.Logger.Error("dossier upsert", "err", err)
+	if err := s.upsertRoundBrief(r.Context(), appID, *req.InterviewID, nullableName, content, modelUsed, now); err != nil {
+		s.Logger.Error("round brief upsert", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal")
 		return
 	}
-	s.Logger.Info("dossier generate done", "app_id", appID, "bytes", len(content))
-	s.logEvent(r.Context(), u.ID, "dossier_refresh", map[string]any{
+	if companyCh != nil {
+		if cc := <-companyCh; len(cc) > 0 {
+			if uerr := s.upsertCompanyBrief(r.Context(), appID, cc, modelUsed, now); uerr != nil {
+				s.Logger.Error("bundled company brief upsert", "err", uerr)
+			}
+		}
+	}
+	s.finishGenerate(r.Context(), u.ID, start, len(content))
+	writeDossier(w, appID,
+		&dossierRow{InterviewerName: nullableName, Content: content, ModelUsed: modelUsed, GeneratedAt: now, InterviewID: req.InterviewID},
+		s.meetingForDossier(r.Context(), app, req.InterviewID, req.InterviewerName))
+}
+
+func (s *Server) upsertCompanyBrief(ctx context.Context, appID int64, content json.RawMessage, model string, now time.Time) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO dossiers (application_id, interview_id, interviewer_name, content, model_used, generated_at)
+		VALUES ($1, NULL, NULL, $2, $3, $4)
+		ON CONFLICT (application_id) WHERE interview_id IS NULL DO UPDATE SET
+		    content      = EXCLUDED.content,
+		    model_used   = EXCLUDED.model_used,
+		    generated_at = EXCLUDED.generated_at`,
+		appID, content, model, now)
+	return err
+}
+
+func (s *Server) upsertRoundBrief(ctx context.Context, appID, interviewID int64, name *string, content json.RawMessage, model string, now time.Time) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO dossiers (application_id, interview_id, interviewer_name, content, model_used, generated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (interview_id) WHERE interview_id IS NOT NULL DO UPDATE SET
+		    interviewer_name = EXCLUDED.interviewer_name,
+		    content          = EXCLUDED.content,
+		    model_used       = EXCLUDED.model_used,
+		    generated_at     = EXCLUDED.generated_at`,
+		appID, interviewID, name, content, model, now)
+	return err
+}
+
+func (s *Server) failGenerate(w http.ResponseWriter, ctx context.Context, userID int64, start time.Time, err error) {
+	s.Logger.Info("dossier generate failed", "err", err)
+	s.logEvent(ctx, userID, "dossier_refresh", map[string]any{
+		"outcome": "error", "error_reason": "generate_failed",
+		"duration_ms": time.Since(start).Milliseconds(),
+	})
+	writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
+}
+
+// finishGenerate logs success and counts one prep credit. A bundled company
+// brief rides along free — one user action, one credit.
+func (s *Server) finishGenerate(ctx context.Context, userID int64, start time.Time, contentBytes int) {
+	s.Logger.Info("dossier generate done", "bytes", contentBytes)
+	s.logEvent(ctx, userID, "dossier_refresh", map[string]any{
 		"outcome": "success", "duration_ms": time.Since(start).Milliseconds(),
 	})
-
-	// Count this generation against the user's beta cap.
-	if _, err := s.Pool.Exec(r.Context(),
-		`UPDATE users SET prep_credits_used = prep_credits_used + 1 WHERE id = $1`, u.ID,
+	if _, err := s.Pool.Exec(ctx,
+		`UPDATE users SET prep_credits_used = prep_credits_used + 1 WHERE id = $1`, userID,
 	); err != nil {
 		s.Logger.Error("prep credits increment", "err", err) // non-fatal
 	}
-
-	writeJSON(w, http.StatusOK, dossierDTO{
-		ApplicationID:   appID,
-		InterviewID:     req.InterviewID,
-		InterviewerName: req.InterviewerName,
-		GeneratedAt:     now,
-		GeneratedAgo:    "just now",
-		ModelUsed:       modelUsed,
-		Content:         content,
-		Meeting:         s.meetingForDossier(r.Context(), app, req.InterviewID, req.InterviewerName),
-	})
 }
 
 // applicationRow is the minimal application row the dossier endpoints need.
