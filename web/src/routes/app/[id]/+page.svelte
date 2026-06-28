@@ -26,6 +26,9 @@
   let prepStage = $state('');
   let genError = $state('');
   let interviewerInput = $state('');
+  // Which tab is showing: 'company' (shared brief) or an interview id (that
+  // round's interviewer brief).
+  let selectedTab = $state('company');
 
   // Interviews
   let interviews = $state([]);
@@ -77,14 +80,59 @@
   $effect(() => {
     void id;
     loadApp();
-    loadInterviews();
     loadFollowUps();
-    loadDossier();
+    initPrep();
     if (id && id !== lastDossierOpenId) {
       lastDossierOpenId = id;
       logEvent('dossier_open', { app_id: Number(id) });
     }
   });
+
+  // Load interviews first so we can default the prep to the next upcoming round
+  // (falling back to the shared Company tab when nothing's scheduled).
+  async function initPrep() {
+    await loadInterviews();
+    selectedTab = nextRoundId ?? 'company';
+    await loadDossier(selectedTab);
+  }
+
+  const onCompany = $derived(selectedTab === 'company');
+  const selectedRound = $derived(onCompany ? null : (interviews || []).find(iv => iv.id === selectedTab) || null);
+
+  // The soonest upcoming interview — the round we prep for by default.
+  const nextRoundId = $derived.by(() => {
+    const now = Date.now();
+    const future = (interviews || [])
+      .filter(iv => iv?.starts_at && new Date(iv.starts_at).getTime() >= now)
+      .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+    return future[0]?.id ?? null;
+  });
+
+  function roundLabel(iv) {
+    const d = iv?.starts_at ? fmtRelativeDate(iv.starts_at) : '';
+    const s = (iv?.summary || '').trim();
+    return s ? (d ? `${d} · ${s}` : s) : (d || 'Interview');
+  }
+
+  function attendeeName(iv) {
+    const a = iv?.attendees;
+    const arr = Array.isArray(a) ? a : (a ? [a] : []);
+    const named = arr.find(x => x && typeof x === 'object' && x.name && !/recruit/i.test(x.name || ''));
+    return named?.name || '';
+  }
+
+  // Switch tabs. On a round with no brief yet, pre-fill the interviewer name
+  // from that round's attendees so generating is one click away.
+  async function selectTab(tab) {
+    if (selectedTab === tab) return;
+    selectedTab = tab;
+    interviewerInput = '';
+    await loadDossier(tab);
+    if (!dossier && tab !== 'company') {
+      const iv = (interviews || []).find(x => x.id === tab);
+      interviewerInput = (iv ? attendeeName(iv) : '') || app?.raw?.hiring_manager_name || '';
+    }
+  }
 
   async function loadApp() {
     loading = true;
@@ -145,15 +193,16 @@
     pipelineEditing = false;
   }
 
-  async function loadDossier() {
+  async function loadDossier(tab) {
     dossierLoading = true;
     genError = '';
     try {
-      const d = await call(`/api/applications/${id}/dossier`);
+      const q = (tab === 'company') ? '?scope=company' : `?interview_id=${tab}`;
+      const d = await call(`/api/applications/${id}/dossier${q}`);
       dossier = d || null;
       if (dossier?.interviewer_name) interviewerInput = dossier.interviewer_name;
     } catch (e) {
-      // 404 / empty / "no dossier" → not generated yet
+      // 404 / empty → this tab hasn't been generated yet
       dossier = null;
     } finally {
       dossierLoading = false;
@@ -178,9 +227,12 @@
       setTimeout(() => { if (generating) prepStage = PREP_STAGES[3]; }, 50000)
     ];
     try {
+      const body = onCompany
+        ? {}
+        : { interview_id: selectedTab, interviewer_name: interviewerInput.trim() || undefined };
       const d = await call(`/api/applications/${id}/dossier/refresh`, {
         method: 'POST',
-        body: JSON.stringify({ interviewer_name: interviewerInput.trim() || undefined })
+        body: JSON.stringify(body)
       });
       dossier = d;
       interviewerInput = d.interviewer_name ?? interviewerInput;
@@ -306,6 +358,10 @@
       icsPreview = [];
       showEventModal = false;
       await loadInterviews();
+      // A new round shifts the default prep — point at it and load its (empty)
+      // prep so the user lands on "generate for this round". Tell Today to refetch.
+      if (nextRoundId) await selectTab(nextRoundId);
+      try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
     } catch (e) {
       icsParseError = e.message || 'Could not save events.';
     } finally {
@@ -338,6 +394,8 @@
       action: async () => {
         await call(`/api/applications/${id}/interviews/${iv.id}`, { method: 'DELETE' });
         await loadInterviews();
+        if (selectedTab === iv.id) { selectedTab = nextRoundId ?? 'company'; await loadDossier(selectedTab); }
+        try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
       }
     });
   }
@@ -784,6 +842,26 @@
             {/if}
           </div>
 
+          <div class="round-tabs" role="tablist" aria-label="Interview round">
+            <button
+              type="button" role="tab"
+              aria-selected={onCompany}
+              class="round-tab company" class:active={onCompany}
+              onclick={() => selectTab('company')}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="2" width="11" height="12" rx="1"/><path d="M5.5 5h2M5.5 8h2M5.5 11h2M9.5 5h1.5M9.5 8h1.5"/></svg>
+              Company
+            </button>
+            {#each interviews as iv}
+              <button
+                type="button" role="tab"
+                aria-selected={selectedTab === iv.id}
+                class="round-tab" class:active={selectedTab === iv.id}
+                onclick={() => selectTab(iv.id)}
+              >{roundLabel(iv)}</button>
+            {/each}
+          </div>
+
           {#if dossierLoading}
             <p style="color:var(--mute); font-size:13px;">Loading…</p>
 
@@ -796,14 +874,25 @@
                 </svg>
               </div>
               {#if generating}
-                <h3>Researching {app.co}{interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
+                <h3>Researching {app.co}{!onCompany && interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
                 <p class="gen-sub" aria-live="polite">{prepStage || PREP_STAGES[0]}</p>
                 <div class="big-spinner"></div>
                 <p class="gen-eta">This usually takes 1–2 minutes — you can keep working, it'll be here when it's done.</p>
-              {:else}
-                <h3>Generate interview prep</h3>
+              {:else if onCompany}
+                <h3>Generate company brief</h3>
                 <p class="gen-sub">
-                  We'll build an AI brief on the person interviewing you — their background, how they tend to interview, what lands well, and smart questions to ask — pulled from public posts, talks, papers, and company news. Add a name below to make it about a specific interviewer.
+                  A shared brief on {app.co} — what they do, where they're headed, the typical interview loop, and what this team grades for. Researched once and used across every round.
+                </p>
+                <div class="gen-row">
+                  <button class="btn-generate" onclick={generateDossier} disabled={generating}>
+                    Generate company brief
+                  </button>
+                </div>
+                {#if genError}<p class="gen-err">{genError}</p>{/if}
+              {:else}
+                <h3>Prep for {selectedRound ? roundLabel(selectedRound) : 'this round'}</h3>
+                <p class="gen-sub">
+                  We'll research the person interviewing you in this round — their background, how they tend to interview, what lands, and smart questions to ask. The shared {app.co} company brief is generated alongside it if you don't have one yet, so you only wait once.
                 </p>
                 <div class="gen-row">
                   <input
@@ -815,24 +904,23 @@
                     onkeydown={(e) => e.key === 'Enter' && generateDossier()}
                   />
                   <button class="btn-generate" onclick={generateDossier} disabled={generating}>
-                    Generate interview prep
+                    Generate prep
                   </button>
                 </div>
-                {#if genError}
-                  <p class="gen-err">{genError}</p>
-                {/if}
+                {#if genError}<p class="gen-err">{genError}</p>{/if}
               {/if}
             </div>
 
           {:else}
             <!-- Full brief -->
 
-            <!-- AI tips box (baby blue) -->
+            {#if onCompany}
+            <!-- What this team grades for (company watch-fors) -->
             {#if tips.length}
               <section class="tips">
                 <div class="tips-hd">
                   <span class="tips-spark">✦</span>
-                  <h3>Tips for this one</h3>
+                  <h3>What this team grades for</h3>
                   <span class="tips-ai">AI</span>
                 </div>
                 <ul class="tips-list">
@@ -883,6 +971,8 @@
                 {/if}
               </section>
             {/if}
+
+            {:else}
 
             <!-- Hiring manager / interviewer -->
             {#if dosInterviewer || dosContent?.snapshot || app.raw.hiring_manager_name}
@@ -993,12 +1083,17 @@
                 </div>
               </section>
             {/if}
+            {/if}
 
             <div class="prep-disclaimer">
-              Synthesised from public posts, talks, and papers · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'} · always verify before you walk in
+              {#if onCompany}
+                Shared across every round · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'}
+              {:else}
+                Synthesised from public posts, talks, and papers · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'} · always verify before you walk in
+              {/if}
               <button class="prep-refresh" type="button" onclick={generateDossier} disabled={generating}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
-                {generating ? 'Refreshing…' : 'Refresh prep'}
+                {generating ? 'Refreshing…' : (onCompany ? 'Refresh company brief' : 'Refresh')}
               </button>
             </div>
 
@@ -1419,6 +1514,13 @@
   .prep-lead h2 { font-size: 26px; font-weight: 600; letter-spacing: -0.028em; margin: 12px 0 6px; }
   .prep-gen { font-family: inherit; font-size: 13px; color: var(--mute); display: inline-flex; align-items: center; gap: 7px; margin: 0; }
   .prep-gen .sp { color: var(--accent); display: inline-flex; align-items: center; }
+
+  .round-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 18px; }
+  .round-tab { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--mute); background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 6px 13px; cursor: pointer; white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
+  .round-tab:hover { color: var(--ink); border-color: var(--accent-tint-2); }
+  .round-tab.active { color: var(--accent-text); background: var(--accent-tint); border-color: var(--accent-tint-2); font-weight: 600; }
+  .round-tab.company { border-style: dashed; }
+  .round-tab.company.active { border-style: solid; }
 
   /* CARD */
   .card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 20px 22px; box-shadow: var(--sh-1); }
