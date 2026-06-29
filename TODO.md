@@ -2,46 +2,42 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
-## ⏳ ~Jun 25 2026 — activation data re-read (do this first when back)
+## ✅ Jun 29 2026 — activation re-read done → reframe shipped
 
-Context: PR #22 shipped `interview_save` instrumentation + locked the Jun-22
-decisions (see CLAUDE.md "Data re-read (Jun 22 2026)"). We held the invite gate
-2–3 days to let the new events accrue on the current cohort. Now re-read.
+Re-read the data (adoption/invite-funnel/users console pull). Funnel:
+**48 invited → 26 signed in → 15 activated → 6 active.** vs Jun 22 (36→25→16→6):
++12 invites brought ~0 signins/activations, active flat at 6. Manual nudges moved
+no one. Answers to the four pre-committed questions:
 
-**Pull the data** — paste in the DevTools console at `https://178.105.213.124.nip.io/admin`
-(signed in as admin):
+1. **Interview fix:** not broken, barely used. `interview_save` now fires (2 users/3
+   saves) and `addevent_open`→save converts ~75% — but only 2 users touch it. Demote
+   confirmed.
+2. **Dossier still the wedge:** yes, by a wide margin — `dossier_open` 12 users / 79
+   total / 16 in 7d (next surface is 10). Thesis holds on a 2nd week.
+3. **Open→complete:** interview side now measurable; **application side still blind** —
+   `addmodal_open` (3 users) << `application_create` (8) << `first_application` (13).
+   The Jun-22 instrumentation task was only half-done (interview_save shipped,
+   addmodal_open under-firing never root-caused). **Still open.**
+4. **Nudges:** no measurable movement (signed-in/activated flat).
 
-```js
-(async () => {
-  const get = u => fetch(u, {credentials:'include'}).then(r => r.json());
-  const [ad, fn, users] = await Promise.all([
-    get('/api/admin/adoption'), get('/api/admin/invite-funnel'), get('/api/admin/users')]);
-  const stages = {}; for (const i of fn.invitees) stages[i.stage]=(stages[i.stage]||0)+1;
-  const ev = {}; for (const e of ad.events) ev[e.name]=e;
-  console.log('milestones:', ad.milestones.map(m=>`${m.label}: ${m.users}`).join(' | '));
-  console.log('stages:', JSON.stringify(stages), 'pending:', fn.pending_count);
-  console.table(ad.events.map(e=>({name:e.name,users:e.users,total:e.total,recent7d:e.recent})));
-  window.__pursuit={ad,fn,users};
-})();
-```
+**Decision:** dossier-thesis branch fired → Pursuit is "AI interview prep + tracker
+spine." New data added a louder leak the tree didn't predict: **invite→sign-in (22/48
+cold)**, so the reframe (lead the funnel entry points with the wedge) outranks
+deepening the dossier.
 
-**Pre-committed questions (answer these, don't re-debate):**
-1. Did the interview fix work? `addevent_open` → `interview_save:ok`. If saves ≈0
-   AND `interview_save:error` ≈0 → nobody tries → feature is **dead, not broken**.
-2. Is the dossier still the wedge? `dossier_open`/`dossier_refresh` 7-day trend.
-3. Real open→complete drop: `addmodal_open`→`application_create`,
-   `addevent_open`→`interview_save` as conversion rates.
-4. Did the manual nudges move anyone signed-in → activated? (compare stages vs Jun 22)
+**Shipped Jun 29 (this session):** the reframe + renamed the feature **"dossier" →
+"Playbook"** (UI only; `dossier_open`/`dossier_refresh` event names kept for time-series
+continuity). Surfaces: landing tagline + request-access copy, onboarding tour (playbook
+promoted to lead step 1/6), in-app prep section + Today CTAs.
 
-**Decision tree (the strategic fork):**
-- Dossier thesis holds → Pursuit is **"AI interview prep + a tracker spine"**, not a
-  tracker with AI. Reframe activation metric / Today page / onboarding / invite copy
-  around it; next build = deepen the dossier (company + JD summary, hiring-manager
-  link, logo — see FREE_RUN_NOTES). **Then open the gate** (promote pending beta-interest).
-- Activation actually leaks → build the **nudge-email system** → forces the parked
-  **mail decision** (deferred since OAuth replaced magic-link).
-- Activates but feels thin → UX-polish backlog (rename "dossier"/"loop", proactive
-  "what can you do today" section).
+**Still open after this ship (next candidates):**
+- [ ] Root-cause `addmodal_open` under-firing — application open→complete is still
+      unmeasurable (the half-done Jun-22 task).
+- [ ] Invite→sign-in leak: 22/48 invited never signed in (gate already open, pending=0).
+- [ ] Deepen the Playbook (company + JD summary, hiring-manager link, logo) — for the
+      already-hooked cohort, lower priority than the top-of-funnel leak.
+- [ ] Watch whether the reframe lifts invite→sign-in on the next cohort before
+      pouring more invites in.
 
 ## This week (v0.1 — spine)
 
