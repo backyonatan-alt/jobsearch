@@ -29,7 +29,7 @@
 ### v0.2 — Ingest + Dossier
 6. ~~LinkedIn job paste → parse title/company/location/JD → prefill new application~~ **DONE** (May 24 2026): text path via Haiku + URL fetch, and **screenshot path via Haiku vision** (paste/drop image → base64 → vision content block). LinkedIn URL fetching is rejected with an error guiding users to the screenshot path.
 7. Calendar `.ics` upload or paste → create interview event linked to application
-8. ~~AI interviewer dossier: name + company (or LinkedIn URL) → Claude brief on background, recent posts/talks, likely style, watch-fors~~ **DONE**: Sonnet + web_search, refreshable per-application.
+8. ~~AI interviewer dossier: name + company (or LinkedIn URL) → Claude brief on background, recent posts/talks, likely style, watch-fors~~ **DONE**: Sonnet + web_search, refreshable. **Evolved Jun 28 2026 → per-round prep:** a brief is now split into a **shared company brief** (researched once per application — what they do, direction, the loop, what the team grades for) plus **per-round interviewer briefs** (one per interview, each with its own interviewer). Was `UNIQUE` per application, so a 2nd interview kept showing the 1st round's prep — see Shipped "Per-round prep" (Jun 28).
 
 ### Adjacent infra shipped (not on original roadmap)
 - **Demo data seed/clear** (`/api/admin/demo-seed`) — admin button on /admin/people that populates the calling admin's account with 15 realistic apps spanning every status. Tagged `[demo]` for clean teardown.
@@ -127,6 +127,31 @@ What the events actually say:
 
 > Next concrete sprint = the instrumentation fix (#2) — it unblocks every later
 > decision. Build it before nudges or polish.
+
+#### Per-round prep shipped (Jun 28 2026)
+
+Triggered by the user hitting it live: a 2nd interview at the same company
+(new round, new interviewer) kept showing the **1st** round's prep, and the
+Today page didn't refresh — because the dossier was `UNIQUE` per application.
+Since the dossier is the locked activation metric, deepening it was on-strategy.
+
+Shipped (PR #24, merged to prod, full Claude-for-Chrome QA passed):
+
+- **Model split.** A brief is now a **shared company brief** (interview_id NULL,
+  one per app — what they do, direction, the loop, what the team grades for) +
+  **per-round interviewer briefs** (one per interview row). Interviewer name is
+  per round. `migration 0018`: `dossiers.interview_id` + two partial uniques;
+  **non-destructive** — pre-existing dossiers become the company-tab content.
+- **Company researched once.** Generating a round's prep when no company brief
+  exists builds both **in parallel** (one user action, **one prep credit**).
+  Verified live: first round took ~50s, company brief appeared alongside.
+- **UI.** `/app/[id]` prep is now tabbed: **Company** first (dashed chip) + one
+  per round; opens on the next round; a round with no prep shows its own generate
+  state (never another round's brief). Today composes next-round + company so it
+  needed no change, and now refetches on tab focus.
+- **Decision carried forward:** this is the prep model now — interviewer-per-round,
+  company-once. Build future prep work (debrief feed-forward — the parked "how did
+  the last round go?" loop) on top of this shape, not the old single-dossier one.
 
 ---
 

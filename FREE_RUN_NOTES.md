@@ -173,6 +173,34 @@ the moment you notice something; triage later.
 
 ## Shipped (move items here once fixed)
 
+### Per-round prep — shared company brief + per-interviewer briefs (Jun 28 2026)
+
+> Triggered live by the user: a 2nd interview at the same company (new round,
+> new interviewer) kept showing the **1st** round's prep, and the Today page
+> didn't refresh after adding it. Root cause: the dossier was `UNIQUE` per
+> application — structurally only one brief could exist. PR #24, merged to prod,
+> full Claude-for-Chrome QA passed (10/10), test row cleaned up.
+
+- `[bug]` **Second round inherited the first round's prep.** Now each interview
+  row holds its own interviewer brief; the soonest round is the default tab and
+  a round with no prep shows its own generate state — never another round's.
+- `[bug]` **Today didn't refresh after adding an interview.** Detail page now
+  fires `pursuit:refresh` on add/delete and Today refetches on tab focus.
+- `[ux→model]` **"What's true for all rounds vs this interviewer?"** (user's
+  call). Split into a **shared company brief** (researched once — what they do,
+  direction, the loop, what the team grades for) shown on a **Company** tab
+  first, + **per-round interviewer briefs**. Company is generated **once**;
+  generating the first round builds it alongside in parallel (one prep credit).
+- **How.** `migration 0018` adds `dossiers.interview_id` + two partial uniques
+  (one brief per interview, one app-level company slot); non-destructive — old
+  dossiers become company-tab content. LLM split into `GenerateCompanyBrief` +
+  `GenerateInterviewerBrief`. Dossier GET serves `?scope=company`,
+  `?interview_id=N`, and a no-param composed view (next round + company block)
+  so Today needed no change. Verified against live Postgres + on prod.
+- `[gap]` **Still parked:** the debrief feed-forward ("how did the last round
+  go?" → feed into the next round's prep) the user originally described. The
+  schema now supports it cleanly; build on this shape when picked up.
+
 ### Interview flow — three bugs found via adoption data + QA (Jun 17 2026)
 
 > Triggered by the new admin Adoption view: **0 / 22** signed-in users had

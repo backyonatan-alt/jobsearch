@@ -25,9 +25,18 @@
   onMount(() => {
     refresh();
     // The guided tour seeds/clears demo data and fires this so the view refetches.
+    // The detail page fires it too after adding/removing an interview, and we
+    // refetch on tab focus so coming back to Today never shows a stale brief.
     const h = () => refresh();
+    const onVis = () => { if (document.visibilityState === 'visible') refresh(); };
     window.addEventListener('pursuit:refresh', h);
-    return () => window.removeEventListener('pursuit:refresh', h);
+    window.addEventListener('focus', h);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pursuit:refresh', h);
+      window.removeEventListener('focus', h);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   });
 
   async function refresh() {
