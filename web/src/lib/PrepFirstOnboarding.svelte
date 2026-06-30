@@ -11,16 +11,20 @@
   let company = $state('');
   let role = $state('');
   let createdId = $state(null); // set once the application exists, so error/skip can route there
+  let errMsg = $state('');
+  const ready = $derived(!!company.trim() && !!role.trim());
 
   onMount(() => logEvent('prepfirst_prompt_view'));
 
   async function build() {
-    if (phase === 'generating' || !company.trim()) return;
+    if (phase === 'generating' || !ready) return;
     logEvent('prepfirst_submit', { has_role: !!role.trim() });
     phase = 'generating';
+    errMsg = '';
     try {
       // The prep question creates the first tracked application as a byproduct —
-      // the tracker spine stays intact; we just lead with the wedge.
+      // the tracker spine stays intact; we just lead with the wedge. Company AND
+      // role are both required by POST /applications (prep is role-specific).
       const a = await api('/api/applications', {
         method: 'POST',
         body: JSON.stringify({ company: company.trim(), role: role.trim(), status: 'screen' })
@@ -35,10 +39,13 @@
       goto(`/app/${a.id}?welcome=1`);
     } catch (e) {
       console.error(e);
+      errMsg = e?.message || '';
       logEvent('prepfirst_generate_error');
       phase = 'error';
     }
   }
+
+  function backToPrompt() { phase = 'prompt'; }
 
   async function skip() {
     logEvent('prepfirst_skip');
@@ -65,10 +72,10 @@
           <input class="pf-input" bind:value={company} placeholder="e.g. Stripe" autofocus />
         </label>
         <label class="pf-field">
-          <span>Role <em>— optional</em></span>
+          <span>Role you're interviewing for</span>
           <input class="pf-input" bind:value={role} placeholder="e.g. Staff Software Engineer" />
         </label>
-        <button class="pf-cta" type="submit" disabled={!company.trim()}>Build my playbook</button>
+        <button class="pf-cta" type="submit" disabled={!ready}>Build my playbook</button>
       </form>
       <button class="pf-skip" type="button" onclick={skip}>I'm just exploring — skip →</button>
 
@@ -81,8 +88,12 @@
     {:else}
       <div class="pf-badge err">Couldn't build it</div>
       <h1>That didn't go through</h1>
-      <p class="pf-sub">We hit a snag building your playbook. Your {company} application was saved — you can try again from its page.</p>
-      <button class="pf-cta" type="button" onclick={retry}>Go to {company}</button>
+      <p class="pf-sub">{errMsg || 'We hit a snag building your playbook.'}{#if createdId} Your {company} application was saved — you can try again from its page.{/if}</p>
+      {#if createdId}
+        <button class="pf-cta" type="button" onclick={retry}>Go to {company}</button>
+      {:else}
+        <button class="pf-cta" type="button" onclick={backToPrompt}>Try again</button>
+      {/if}
       <button class="pf-skip" type="button" onclick={skip}>Skip to my dashboard →</button>
     {/if}
   </div>
