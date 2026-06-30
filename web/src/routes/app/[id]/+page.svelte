@@ -30,6 +30,10 @@
   let prepStage = $state('');
   let genError = $state('');
   let interviewerInput = $state('');
+  // "Not them? →" re-ground: user-confirmed company website that overrides
+  // same-named-company drift on regeneration.
+  let showReground = $state(false);
+  let companyUrlInput = $state('');
   // Which tab is showing: 'company' (shared brief) or an interview id (that
   // round's interviewer brief).
   let selectedTab = $state('company');
@@ -231,15 +235,17 @@
       setTimeout(() => { if (generating) prepStage = PREP_STAGES[3]; }, 50000)
     ];
     try {
+      const companyUrl = companyUrlInput.trim() || undefined;
       const body = onCompany
-        ? {}
-        : { interview_id: selectedTab, interviewer_name: interviewerInput.trim() || undefined };
+        ? { company_url: companyUrl }
+        : { interview_id: selectedTab, interviewer_name: interviewerInput.trim() || undefined, company_url: companyUrl };
       const d = await call(`/api/applications/${id}/dossier/refresh`, {
         method: 'POST',
         body: JSON.stringify(body)
       });
       dossier = d;
       interviewerInput = d.interviewer_name ?? interviewerInput;
+      showReground = false;
     } catch (e) {
       genError = friendlyGenErr(e.message);
     } finally {
@@ -588,6 +594,10 @@
     return p.map(s => s?.kind || s?.detail || '').filter(Boolean);
   });
 
+  // Company identity (disambiguation) + sources (citations) — from the brief.
+  const dosIdentity = $derived(dosContent?.identity ?? null);
+  const dosSources = $derived(Array.isArray(dosContent?.sources) ? dosContent.sources.filter(s => s?.href) : []);
+
   // AI tips box — up to 3 company watch-fors.
   const tips = $derived((dosCompany?.watch_fors ?? []).slice(0, 3));
   function dosSigDomain(src) {
@@ -926,6 +936,35 @@
           {:else}
             <!-- Full brief -->
 
+            <!-- Researched-the-right-company assurance + re-ground (disambiguation) -->
+            {#if dosIdentity}
+              <div class="researched">
+                <div class="rs-main">
+                  <span class="rs-lbl">Researched</span>
+                  <strong class="rs-name">{dosIdentity.name || app.co}</strong>
+                  {#if dosIdentity.domain}
+                    <a class="rs-dom" href={`https://${String(dosIdentity.domain).replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer">{dosIdentity.domain}</a>
+                  {/if}
+                  {#if dosIdentity.summary}<span class="rs-sum">— {dosIdentity.summary}</span>{/if}
+                </div>
+                <button class="rs-not" type="button" onclick={() => { showReground = !showReground; companyUrlInput = ''; }}>
+                  {showReground ? 'Cancel' : 'Not them?'}
+                </button>
+              </div>
+              {#if showReground}
+                <div class="reground">
+                  <p>Paste the company's website so we research the right one — this regenerates the playbook.</p>
+                  <div class="rg-row">
+                    <input class="gen-input" type="url" placeholder="https://company.com" bind:value={companyUrlInput}
+                      onkeydown={(e) => e.key === 'Enter' && companyUrlInput.trim() && generateDossier()} disabled={generating} />
+                    <button class="btn-generate" onclick={generateDossier} disabled={generating || !companyUrlInput.trim()}>
+                      {generating ? 'Re-grounding…' : 'Re-ground'}
+                    </button>
+                  </div>
+                </div>
+              {/if}
+            {/if}
+
             {#if onCompany}
             <!-- What this team grades for (company watch-fors) -->
             {#if tips.length}
@@ -979,6 +1018,19 @@
                         <span class="chip">{step}</span>{#if i < companyProcess.length - 1}<span class="proc-arrow">→</span>{/if}
                       {/each}
                     </div>
+                  </div>
+                {/if}
+                {#if dosSources.length}
+                  <div class="b1-sources">
+                    <div class="proc-lbl">Sources</div>
+                    <ul>
+                      {#each dosSources as s}
+                        <li><a href={s.href} target="_blank" rel="noreferrer">
+                          <img class="src-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.href)}`} alt="" width="12" height="12" />
+                          {s.label || dosSigDomain(s.href)}
+                        </a></li>
+                      {/each}
+                    </ul>
                   </div>
                 {/if}
               </section>
@@ -1059,12 +1111,21 @@
                       <span class="s-date">{s.date ?? ''}</span>
                       <span class="s-body">
                         {#if s.kind}<span class="s-kind">{s.kind}</span>{/if}{s.body}
-                        {#if s.source}<span class="s-source">
-                          {#if dosSigDomain(s.source)}
-                            <img class="sig-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.source)}`} alt="" width="12" height="12" />
+                        {#if s.source || s.source_url}
+                          {#if s.source_url}
+                            <a class="s-source" href={s.source_url} target="_blank" rel="noreferrer">
+                              <img class="sig-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.source_url || s.source)}`} alt="" width="12" height="12" />
+                              {s.source || dosSigDomain(s.source_url)}
+                            </a>
+                          {:else}
+                            <span class="s-source">
+                              {#if dosSigDomain(s.source)}
+                                <img class="sig-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.source)}`} alt="" width="12" height="12" />
+                              {/if}
+                              {s.source}
+                            </span>
                           {/if}
-                          {s.source}
-                        </span>{/if}
+                        {/if}
                       </span>
                     </li>
                   {/each}
@@ -1579,6 +1640,31 @@
   .b1-process .proc-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
   .chip { font-size: 12px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--rule); border-radius: 7px; padding: 4px 10px; }
   .proc-arrow { color: var(--mute-2); font-size: 12px; }
+
+  /* Researched-the-right-company assurance + re-ground */
+  .researched { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 13px; margin-bottom: 14px;
+    background: var(--surface-2); border: 1px solid var(--rule); border-radius: 10px; }
+  .researched .rs-main { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; min-width: 0; font-size: 12.5px; color: var(--ink-2); }
+  .researched .rs-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); }
+  .researched .rs-name { color: var(--ink); font-weight: 600; }
+  .researched .rs-dom { color: var(--accent-text); text-decoration: none; }
+  .researched .rs-dom:hover { text-decoration: underline; }
+  .researched .rs-sum { color: var(--mute); }
+  .researched .rs-not { margin-left: auto; flex-shrink: 0; background: none; border: 1px solid var(--rule); color: var(--ink-2);
+    font: 500 12px/1 var(--sans); padding: 6px 11px; border-radius: 7px; cursor: pointer; }
+  .researched .rs-not:hover { border-color: var(--rule-strong); background: var(--card); }
+  .reground { margin: -6px 0 16px; padding: 12px 13px; background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 10px; }
+  .reground p { margin: 0 0 9px; font-size: 12.5px; color: var(--ink-2); }
+  .reground .rg-row { display: flex; gap: 8px; align-items: stretch; }
+  .reground .rg-row .gen-input { flex: 1 1 auto; min-width: 0; }
+  .reground .rg-row .btn-generate { flex: 0 0 auto; width: auto; white-space: nowrap; }
+
+  /* Company sources (citations) */
+  .b1-sources { margin-top: 16px; }
+  .b1-sources ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .b1-sources a { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--accent-text); text-decoration: none; }
+  .b1-sources a:hover { text-decoration: underline; }
+  .src-favicon { border-radius: 3px; flex-shrink: 0; }
 
   /* PERSON (hiring manager / interviewer) */
   .person { display: grid; grid-template-columns: 52px 1fr; gap: 14px; align-items: center; margin-bottom: 12px; }

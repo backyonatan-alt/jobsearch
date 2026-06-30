@@ -472,11 +472,18 @@ func stripHTML(s string) string {
 // the company block.
 const companyBriefSystemPrompt = `You are an interview-prep researcher with web search. Given a company and a role, produce a COMPANY briefing the candidate can read in 60 seconds — true for every round of their interview loop, independent of who interviews them.
 
-You MUST use web search to ground every claim (recent news, raises, launches, leadership, the team's public engineering/design culture, Glassdoor/Blind/levels.fyi on the loop). Do NOT invent numbers, valuations, or interview steps you can't source — omit what you can't verify (empty string/array is fine).
+CRITICAL — identify the RIGHT company first. Company names are often shared by several unrelated organizations. The user message may include a LOCATION, a JOB-POSTING URL, and/or an AUTHORITATIVE company website — when present, treat these as the GROUND TRUTH for which company to research, even if a more famous company shares the name. If you can't tell which is meant, research the one that best matches the provided location / website / job posting — never default to a better-known same-named company. The "identity" block of your answer MUST state exactly which company (canonical name + primary website domain) you researched, so the candidate can verify you got the right one.
+
+You MUST use web search to ground every claim (recent news, raises, launches, leadership, the team's public engineering/design culture, Glassdoor/Blind/levels.fyi on the loop). Do NOT invent numbers, valuations, or interview steps you can't source — omit what you can't verify (empty string/array is fine). For each non-obvious claim, capture the SPECIFIC source page URL (a deep link to the article/review/page — never just the site homepage) in "sources".
 
 Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
 
 {
+  "identity": {
+    "name":    "Canonical company name you researched",
+    "domain":  "primary website domain, e.g. 365scores.com",
+    "summary": "One short line — what they are and where they're based — so the candidate can confirm it's the right company."
+  },
   "company": {
     "blurb":     "One sentence on what the company does. Plain English, no marketing.",
     "direction": "Two sentences on where they're going right now. Recent news, last raise, product launches, leadership shifts. Last 12 months only.",
@@ -498,8 +505,14 @@ Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
       "Mention rollout / observability / failure modes if relevant.",
       "Mention the company's current strategic bet if it matters."
     ]
-  }
+  },
+  "sources": [
+    {"label": "TechCrunch — $40M Series C (Mar 2026)", "href": "https://techcrunch.com/2026/03/.../"},
+    {"label": "Glassdoor — interview reviews", "href": "https://www.glassdoor.com/Interview/..."}
+  ]
 }
+
+Every "href" in "sources" must be a real, specific page you actually used — a deep link, not a homepage. Omit "sources" entirely rather than inventing or linking to homepages.
 
 If after searching you genuinely can't find enough information, return: {"error": "could not find enough public information about this company"}.
 
@@ -510,9 +523,9 @@ Output JSON only.`
 // shared company brief).
 const interviewerBriefSystemPrompt = `You are an interview-prep researcher with web search. Given a company, role, and an interviewer's name, produce a briefing about THAT PERSON the candidate can read in 60 seconds before the round.
 
-You MUST use web search to ground every claim. Search for the interviewer's recent essays, talks, podcasts, papers (last 12 months), their professional arc, and how they're known to interview. Do NOT invent quotes, papers, or events — omit what you can't find (empty string/array is fine).
+You MUST use web search to ground every claim. Search for the interviewer's recent essays, talks, podcasts, papers (last 12 months), their professional arc, and how they're known to interview. Do NOT invent quotes, papers, or events — omit what you can't find (empty string/array is fine). For every signal, "source_url" must be the SPECIFIC page the claim came from (a deep link to that essay/talk/post — never the site homepage); "source" is just the short display domain. Omit a signal rather than linking to a homepage.
 
-Do NOT include a company overview — that's covered separately. Stay focused on the person.
+Do NOT include a company overview — that's covered separately. Stay focused on the person. The user message may include a company location or authoritative website to disambiguate same-named companies — use it to make sure you're researching this person at the RIGHT company.
 
 Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
 
@@ -530,7 +543,7 @@ Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
   "snapshot": "A 2-sentence read of who this person is and how they interview. Use <em>...</em> tags around 2-3 key phrases for emphasis.",
   "background": "60–80 words. Their professional arc, framed so the candidate can engage thoughtfully.",
   "signals": [
-    {"date": "Apr 2026", "kind": "Essay", "body": "What it was about and why it matters for this interview.", "source": "domain.com"}
+    {"date": "Apr 2026", "kind": "Essay", "body": "What it was about and why it matters for this interview.", "source": "domain.com", "source_url": "https://domain.com/the-specific-post"}
   ],
   "style": {
     "lead": "1–2 sentences on how they interview. What are they testing for?",
@@ -553,12 +566,32 @@ If after searching you genuinely can't find enough information, return: {"error"
 
 Output JSON only.`
 
+// companyGroundingPrompt assembles the user message with whatever disambiguation
+// signals we have. A linkedin.com job URL is dropped — it identifies the posting,
+// not the company, and is the exact source of the "wrong same-named company" bug.
+func companyGroundingPrompt(company, role, location, jdURL, companyURL string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Company: %s\nRole: %s\n", company, role)
+	if s := strings.TrimSpace(location); s != "" {
+		fmt.Fprintf(&b, "Location: %s\n", s)
+	}
+	if s := strings.TrimSpace(jdURL); s != "" && !isLinkedInURL(s) {
+		fmt.Fprintf(&b, "Job-posting URL: %s\n", s)
+	}
+	if s := strings.TrimSpace(companyURL); s != "" {
+		fmt.Fprintf(&b, "Authoritative company website: %s (the candidate confirmed THIS is the company — trust it over any better-known company that shares the name)\n", s)
+	}
+	return b.String()
+}
+
 // GenerateCompanyBrief researches the company once for the whole application.
-func (c *Client) GenerateCompanyBrief(ctx context.Context, company, role string) (json.RawMessage, error) {
+// location, jdURL, and companyURL are grounding signals that disambiguate
+// same-named companies — any may be empty.
+func (c *Client) GenerateCompanyBrief(ctx context.Context, company, role, location, jdURL, companyURL string) (json.RawMessage, error) {
 	cctx, cancel := context.WithTimeout(ctx, 150*time.Second)
 	defer cancel()
 
-	user := fmt.Sprintf("Company: %s\nRole: %s\n", company, role)
+	user := companyGroundingPrompt(company, role, location, jdURL, companyURL)
 	resp, err := c.CreateMessage(cctx, ModelSonnet, companyBriefSystemPrompt, []Message{
 		{Role: "user", Content: user},
 	}, 4000, WebSearchTool(5))
@@ -587,12 +620,19 @@ func (c *Client) GenerateCompanyBrief(ctx context.Context, company, role string)
 }
 
 // GenerateInterviewerBrief researches one interviewer for a single round.
-func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, interviewerName string) (json.RawMessage, error) {
+// location and companyURL ground the research to the right (same-named) company.
+func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, interviewerName, location, companyURL string) (json.RawMessage, error) {
 	cctx, cancel := context.WithTimeout(ctx, 150*time.Second)
 	defer cancel()
 
 	var user strings.Builder
 	fmt.Fprintf(&user, "Company: %s\nRole: %s\n", company, role)
+	if s := strings.TrimSpace(location); s != "" {
+		fmt.Fprintf(&user, "Company location: %s\n", s)
+	}
+	if s := strings.TrimSpace(companyURL); s != "" {
+		fmt.Fprintf(&user, "Authoritative company website: %s\n", s)
+	}
 	if strings.TrimSpace(interviewerName) != "" {
 		fmt.Fprintf(&user, "Interviewer: %s\n", strings.TrimSpace(interviewerName))
 	} else {

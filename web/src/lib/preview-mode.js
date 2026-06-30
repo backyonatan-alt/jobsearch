@@ -109,6 +109,15 @@ dossiersByApp[102] = {
     panel: '1:1 with Sarah Chen'
   },
   content: {
+    identity: {
+      name: 'Stripe',
+      domain: 'stripe.com',
+      summary: 'Payments & financial infrastructure · San Francisco'
+    },
+    sources: [
+      { label: 'TechCrunch — Stripe ships agentic-commerce APIs (May 2026)', href: 'https://techcrunch.com/2026/05/stripe-agentic-commerce/' },
+      { label: 'Glassdoor — Stripe interview reviews', href: 'https://www.glassdoor.com/Interview/Stripe-Interview-Questions-E671954.htm' }
+    ],
     interviewer: {
       name: 'Sarah Chen',
       role: 'Staff Engineer · Payments Routing',
@@ -118,9 +127,9 @@ dossiersByApp[102] = {
     snapshot: '2 years at Stripe on payments-routing. Known for her QCon SF 2024 talk on regional failover — likely to drill on failure modes more than happy paths.',
     background: 'Started on the data infrastructure team before moving to payments. Tends to ask deep questions about consistency tradeoffs and rollout strategy. Active on tech Twitter about idempotency-key collisions.',
     signals: [
-      { date: 'Apr 26', kind: 'Talk', body: '"Regional failover at p99.99"',           source: 'qconsf.com'  },
-      { date: 'Mar 04', kind: 'Post', body: 'Thread on idempotency-key collisions',     source: 'twitter.com' },
-      { date: 'Jan 12', kind: 'Doc',  body: 'Cited in Stripe multi-region writes',      source: 'stripe.com'  }
+      { date: 'Apr 26', kind: 'Talk', body: '"Regional failover at p99.99"',           source: 'qconsf.com',  source_url: 'https://qconsf.com/talk/regional-failover-p9999' },
+      { date: 'Mar 04', kind: 'Post', body: 'Thread on idempotency-key collisions',     source: 'twitter.com', source_url: 'https://twitter.com/example/status/1764000000000000000' },
+      { date: 'Jan 12', kind: 'Doc',  body: 'Cited in Stripe multi-region writes',      source: 'stripe.com',  source_url: 'https://stripe.com/blog/multi-region-writes' }
     ],
     lands: [
       'Concrete failure-mode reasoning',

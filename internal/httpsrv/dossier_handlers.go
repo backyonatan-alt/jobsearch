@@ -224,6 +224,9 @@ func writeDossier(w http.ResponseWriter, appID int64, d *dossierRow, meeting mee
 type refreshRequest struct {
 	InterviewerName string `json:"interviewer_name"`
 	InterviewID     *int64 `json:"interview_id"`
+	// CompanyURL is an optional user-confirmed company website ("Not them? →"),
+	// the authoritative grounding signal that overrides same-named-company drift.
+	CompanyURL string `json:"company_url"`
 }
 
 // POST /api/applications/:id/dossier/refresh — generate fresh, upsert, return.
@@ -294,9 +297,12 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	const modelUsed = "claude-sonnet-4-6+web_search"
 
+	// Grounding signals so research pins the RIGHT same-named company.
+	loc, jd := deref(app.Location), deref(app.JDURL)
+
 	// No round → (re)generate the shared company brief.
 	if req.InterviewID == nil {
-		content, gerr := s.LLM.GenerateCompanyBrief(r.Context(), app.Company, app.Role)
+		content, gerr := s.LLM.GenerateCompanyBrief(r.Context(), app.Company, app.Role, loc, jd, req.CompanyURL)
 		if gerr != nil {
 			s.failGenerate(w, r.Context(), u.ID, start, gerr)
 			return
@@ -318,7 +324,7 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	if existing, _ := s.fetchCompanyBrief(r.Context(), appID); existing == nil {
 		companyCh = make(chan json.RawMessage, 1)
 		go func() {
-			cc, cerr := s.LLM.GenerateCompanyBrief(r.Context(), app.Company, app.Role)
+			cc, cerr := s.LLM.GenerateCompanyBrief(r.Context(), app.Company, app.Role, loc, jd, req.CompanyURL)
 			if cerr != nil {
 				s.Logger.Info("bundled company brief failed (non-fatal)", "err", cerr)
 				companyCh <- nil
@@ -328,7 +334,7 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
-	content, gerr := s.LLM.GenerateInterviewerBrief(r.Context(), app.Company, app.Role, req.InterviewerName)
+	content, gerr := s.LLM.GenerateInterviewerBrief(r.Context(), app.Company, app.Role, req.InterviewerName, loc, req.CompanyURL)
 	if gerr != nil {
 		s.failGenerate(w, r.Context(), u.ID, start, gerr)
 		return
@@ -405,18 +411,20 @@ func (s *Server) finishGenerate(ctx context.Context, userID int64, start time.Ti
 
 // applicationRow is the minimal application row the dossier endpoints need.
 type applicationRow struct {
-	ID      int64
-	Company string
-	Role    string
-	Status  string
+	ID       int64
+	Company  string
+	Role     string
+	Status   string
+	Location *string
+	JDURL    *string
 }
 
 func (s *Server) fetchApplication(ctx context.Context, userID, appID int64) (*applicationRow, error) {
 	var a applicationRow
 	err := s.Pool.QueryRow(ctx, `
-		SELECT id, company, role, status
+		SELECT id, company, role, status, location, jd_url
 		FROM applications WHERE id = $1 AND user_id = $2`, appID, userID,
-	).Scan(&a.ID, &a.Company, &a.Role, &a.Status)
+	).Scan(&a.ID, &a.Company, &a.Role, &a.Status, &a.Location, &a.JDURL)
 	if err != nil {
 		return nil, err
 	}
