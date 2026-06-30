@@ -21,6 +21,53 @@ the moment you notice something; triage later.
 
 ---
 
+## Jun 30 2026 — first external beta tester (Ayelet) — live feedback
+
+> Real beta user, testing on **mobile first then desktop**. Has a real interview
+> tomorrow, said she'll put real details in and see how much it helps. Offered
+> her phone number for direct contact — high-signal, engaged tester. (More
+> screenshots may follow.)
+
+**[wow] The playbook is the wedge — confirmed by a stranger.** "This is excellent.
+Maybe the most important value this tool gives, in my eyes." Validates the
+dossier→Playbook pivot externally, unprompted.
+
+**[bug][CRITICAL] Wrong-company research.** Gave it a LinkedIn job link; the brief
+researched a *different company with the same name* → the whole playbook was
+irrelevant. The company brief keys off the bare company name with web_search and
+has nothing to disambiguate. Must ground generation in JD URL / company domain /
+location. Kills the core value when it misfires. (Case: "365scores" name collision.)
+→ also: confirm the entry path — how did a LinkedIn URL reach generation given the
+LinkedIn-fetch rejection? (paste prefill → name only?)
+
+**[bug][high] Citations link to the homepage, not the source.** "I'd add the source
+the data is based on, not just the general site (the interviewer may ask where you
+know this from). Clicking the link opens the site's main page, not the
+company-specific source." Same for the "Recent signals" sources — great, "but it
+must have the context." Credibility of the wedge depends on this.
+
+**[bug] Counts don't refresh after a mutation.** Added a 2nd application; the
+left-side count stayed "1". Same stale-count class as the delete-confirm two-click
+bug (now seen twice) → real fix: invalidate/refetch counts after create + delete.
+
+**[bug][mobile] Source dropdown won't open** ("clicking doesn't open List") — the
+Source select in the add/edit form.
+**[bug][mobile] Save button disappears while editing** job/contact details — every
+tap on a field hides the bottom Save button (keyboard / sticky footer).
+**[bug][mobile] Pipeline/stage section cut off**, can't scroll to read or Save.
+**[ux] "Only fits Mac 😅"** — the app is desktop-sized; mobile is rough across the
+board. → needs a scope decision: do a real mobile pass now, or tell testers
+desktop-only for the beta?
+
+**[ux][desktop] Right rail too wide / sparse.** "Where things stand" takes a big
+chunk of screen with little info; let sections resize or rebalance the columns.
+
+**[gap] Need a "position closed / not relevant" status.** Twice, a process she was
+doing well in got the req cancelled — that's not a rejection or a withdrawal. Add a
+distinct status.
+
+**[idea] Pipeline stages: drag-to-reorder**, not just up/down arrows.
+
 ## Jun 30 2026 — prep-first cold start live QA (Claude-for-Chrome)
 
 > Prep-first cold start shipped + QA'd green end-to-end on prod (all 8 steps).
