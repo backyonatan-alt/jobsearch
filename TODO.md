@@ -2,6 +2,25 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## ✅ Jun 30 2026 — prep-first cold start shipped (first A/B test)
+
+Strategic call (user, Jun 30): don't gut the tracker, but pivot the *story* to
+interview prep and test how prep-first the cold start should be. Shipped to prod
+(deploy #74, green; migration 0019). See `AB_TESTS.md` "prep-first cold start".
+
+- New signups (`users.onboarding_variant='prepfirst'`, 100%) land on "Who are you
+  interviewing with?" → instant **company Playbook**, instead of the guided tour.
+  The prep question creates the first tracked application as a byproduct — spine
+  intact. Control = the old tour (NULL/`tour` variant).
+- Funnel instrumented: `onboard_variant_assigned`, `prepfirst_prompt_view`,
+  `prepfirst_submit`, `prepfirst_generate_ok|error`, `prepfirst_skip`.
+- **Measure (give it a cohort):** signup → first playbook (activation) for the
+  new prepfirst cohort vs the historical tracker-first baseline (16/25 activated).
+  Guardrail: do prepfirst users add a 2nd+ application (the spine/retention)?
+- [ ] Live-QA the flow on prod (throwaway company via `?onboard=prepfirst`).
+- [ ] After ~1 cohort, read the prepfirst funnel + decide: deepen the Playbook
+      (debrief feed-forward loop) vs. iterate the cold start.
+
 ## ✅ Jun 29 2026 — activation re-read done → reframe shipped
 
 Re-read the data (adoption/invite-funnel/users console pull). Funnel:
