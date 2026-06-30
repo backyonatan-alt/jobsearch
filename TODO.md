@@ -2,6 +2,43 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## ⏳ Jun 30 2026 — Ayelet feedback → "trustworthy interview-ready prep" plan
+
+First external tester (Ayelet) validated the wedge ("maybe the most important
+value") but exposed that its real risk is **trust**, not features. North star
+sharpened to: *prep you can walk in with and cite* (see CLAUDE.md roadmap "v0.4").
+Full feedback in FREE_RUN_NOTES (Jun 30). Sequenced fixes:
+
+**Phase 0 — Trust the wedge (priority):**
+- [ ] **Company disambiguation/grounding** (critical). Generate off JD URL→domain +
+      location + role, not bare name. Add a visible "Is this them? [logo · domain ·
+      location]" confirm. Trace the LinkedIn-link entry path so the domain carries
+      through. (Bug: 365scores → wrong same-named company → brief useless.)
+- [ ] **Real citations.** Per-claim/"Recent signals" deep-links to the specific
+      source page (not homepage) + shown context. Prompt+schema returns per-claim
+      source URLs; render inline.
+
+**Phase 1 — Spine reliability:**
+- [ ] **Stale counts** after create/delete — refetch sidebar/board/Today on
+      `pursuit:refresh`. Fixes the add 1→2 bug AND yesterday's delete-confirm flake
+      (same root cause).
+- [ ] Declare **desktop-only** for the beta; harden add/edit/pipeline on desktop.
+
+**Phase 2 — UX & gaps:**
+- [ ] "Position closed / not relevant" status (req cancelled mid-process ≠
+      rejection; keep funnel conversion honest).
+- [ ] Rebalance the too-wide/sparse right rail on desktop.
+- [ ] Drag-to-reorder pipeline stages.
+
+**Phase 3 — Strategic deepening:**
+- [ ] **Debrief feed-forward loop** — post-interview "how did it go / was the prep
+      right?" → feeds next-round prep + the trust signal. Built on the per-round model.
+- [ ] Deferred mobile/PWA responsive pass.
+
+**Measurement:** add trust signals (playbook refresh/keep rate; post-interview
+"was it accurate?"). **Ayelet:** desktop-only for now; after her real interview
+tomorrow ask "did it help / was it right?" — gold-standard trust data point.
+
 ## ✅ Jun 30 2026 — prep-first cold start shipped (first A/B test)
 
 Strategic call (user, Jun 30): don't gut the tracker, but pivot the *story* to

@@ -153,6 +153,35 @@ Shipped (PR #24, merged to prod, full Claude-for-Chrome QA passed):
   company-once. Build future prep work (debrief feed-forward — the parked "how did
   the last round go?" loop) on top of this shape, not the old single-dossier one.
 
+#### North star sharpened → "trustworthy interview-ready prep" (Jun 30 2026)
+
+First external beta tester (Ayelet) validated the wedge on first use — *"maybe
+the most important value this tool gives"* — but the two things that nearly killed
+it were both **trust**, not features: it researched a **wrong same-named company**
+(off a LinkedIn link → brief useless), and citations **didn't back the claims**
+("the interviewer may ask where you know this from"). Plus prep-first cold start
+shipped + QA'd green (see below), and prepfirst onboarding is live.
+
+**Direction (locked Jun 30):** Pursuit is **trustworthy, interview-ready
+intelligence — prep you can walk in with and *cite*.** The competitor is
+ChatGPT + manual googling, not Teal/Huntr; our only durable edge is prep that's
+**grounded, sourced, company-correct, interview-specific.** Consequences:
+
+1. **Prep *trustworthiness* is the #1 investment** (right company, real citations,
+   defensible sources) — above breadth or new features.
+2. **The tracker spine stays lightweight + reliable, not feature-rich.** Her spine
+   complaints (counts not refreshing, vanishing Save button, dropdowns) → the
+   spine's job is to be frictionless and correct.
+3. **Activation matures** from "generated a playbook" → "playbook good enough to use
+   in a real interview." Track trust signals: refresh/keep rate + post-interview
+   "was it right?".
+4. **The debrief feed-forward loop graduates** from nice-to-have to the core
+   mechanic: retention engine + trust-closing loop + the data that improves grounding.
+
+Sequenced execution plan + all of Ayelet's items live in `TODO.md` (Jun 30) and
+`FREE_RUN_NOTES.md` (Jun 30). Phase 0 = grounding/disambiguation + real citations.
+**Mobile:** desktop-only for the beta; real responsive/PWA pass deferred to Phase 3.
+
 ---
 
 ## Project vision (initial sketch from the user, May 21 2026)
