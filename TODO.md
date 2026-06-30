@@ -21,11 +21,16 @@ Full feedback in FREE_RUN_NOTES (Jun 30). Sequenced fixes:
 - [ ] Watch live: does grounding actually fix the 365scores-class collision? Ask
       Ayelet to retry her real interview prep on prod.
 
-**Phase 1 — Spine reliability:**
-- [ ] **Stale counts** after create/delete — refetch sidebar/board/Today on
-      `pursuit:refresh`. Fixes the add 1→2 bug AND yesterday's delete-confirm flake
-      (same root cause).
-- [ ] Declare **desktop-only** for the beta; harden add/edit/pipeline on desktop.
+**Phase 1 — Spine reliability — ✅ SHIPPED Jun 30 (deploy #76):**
+- [x] **Stale counts** fixed at the root: the sidebar count was fetched once on
+      mount and never refreshed. Layout now refetches on `pursuit:refresh` + focus +
+      visibility; every mutation (create/delete/status/edit/import) dispatches it.
+      Verified live: Board count 15→16 on create, no reload. Should also resolve the
+      delete "two clicks" (count now updates instantly → no "did it work?" re-click).
+- [x] **Desktop-only** beta notice ("Best on desktop") on narrow viewports (≤820px),
+      dismissal sticks. Full mobile pass stays Phase 3.
+- [ ] Confirm live the delete-confirm no longer needs two clicks; if it does, repro
+      + fix ConfirmDialog separately.
 
 **Phase 2 — UX & gaps:**
 - [ ] "Position closed / not relevant" status (req cancelled mid-process ≠
