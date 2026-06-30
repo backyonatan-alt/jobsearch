@@ -166,6 +166,9 @@
       });
       resetModal();
       onCreated?.();
+      // Tell every open view (sidebar count, board, funnel) to refetch so counts
+      // stay correct without a reload.
+      try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
     } finally {
       saving = false;
     }

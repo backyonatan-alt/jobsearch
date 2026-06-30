@@ -101,6 +101,7 @@
       result = r;
       logEvent('bulk_import', { created: r.created ?? 0, skipped: r.skipped ?? 0 });
       onImported?.();
+      try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
     } catch (e) {
       error = e.message || 'Import failed.';
     } finally {

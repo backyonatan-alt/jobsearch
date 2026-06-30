@@ -21,9 +21,24 @@
   let onboardMode = $state(null); // 'tour' | 'prep' | null
   let onboardDismissed = $state(false);
   let variantTracked = false;
+  // Desktop-only notice for the beta (CSS hides it ≥820px). Dismissal sticks.
+  let narrowDismissed = $state(true);
+  function dismissNarrow() {
+    narrowDismissed = true;
+    try { localStorage.setItem('pursuit_narrow_dismissed', '1'); } catch {}
+  }
   $effect(() => { previewMode = isPreview(); });
 
-  onMount(async () => {
+  // Keep the sidebar count (applications.length) fresh: any mutation anywhere
+  // dispatches `pursuit:refresh`, and we also refetch on tab focus. Without this
+  // the count was fetched once on mount and went stale after add/delete.
+  async function refreshApplications() {
+    try { applications = await api('/api/applications'); } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+    }
+  }
+
+  async function init() {
     try {
       me = await api('/api/me');
       applications = await api('/api/applications');
@@ -41,6 +56,22 @@
     } finally {
       loading = false;
     }
+  }
+
+  // onMount stays synchronous so the returned cleanup actually runs.
+  onMount(() => {
+    init();
+    try { narrowDismissed = localStorage.getItem('pursuit_narrow_dismissed') === '1'; } catch { narrowDismissed = false; }
+    const onRefresh = () => refreshApplications();
+    const onVis = () => { if (document.visibilityState === 'visible') refreshApplications(); };
+    window.addEventListener('pursuit:refresh', onRefresh);
+    window.addEventListener('focus', onRefresh);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pursuit:refresh', onRefresh);
+      window.removeEventListener('focus', onRefresh);
+      document.removeEventListener('visibilitychange', onVis);
+    };
   });
 
   // First-run onboarding. The variant (prep-first cold start vs guided tour) comes
@@ -156,6 +187,12 @@
   </aside>
 
   <section class="main">
+    {#if !narrowDismissed}
+      <div class="narrow-note" role="note">
+        <span><strong>Best on desktop.</strong> Pursuit is built for a larger screen during the beta — some controls aren't mobile-ready yet.</span>
+        <button class="nn-x" onclick={dismissNarrow} aria-label="Dismiss">✕</button>
+      </div>
+    {/if}
     {#if previewMode}
       <div class="preview-banner">
         <span class="pb-dot"></span>
@@ -175,6 +212,20 @@
 {/if}
 
 <style>
+  /* Desktop-only beta notice — only shown on narrow viewports. */
+  .narrow-note { display: none; }
+  @media (max-width: 820px) {
+    .narrow-note {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--warm-tint); color: var(--warm-text);
+      border-bottom: 1px solid var(--rule);
+      padding: 9px 14px; font-size: 12.5px; line-height: 1.4;
+    }
+    .narrow-note strong { font-weight: 600; }
+    .narrow-note .nn-x { margin-left: auto; flex-shrink: 0; background: none; border: none;
+      color: var(--warm-text); font-size: 13px; cursor: pointer; padding: 2px 6px; border-radius: 5px; }
+  }
+
   .preview-banner {
     background: var(--warm-tint);
     color: var(--warm-text);

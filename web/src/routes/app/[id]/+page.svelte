@@ -437,6 +437,7 @@
     await call(`/api/applications/${id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
     logEvent('status_change', { from: fromStatus, to: newStatus, surface: 'detail' });
     await loadApp();
+    try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
   }
   function openEdit() {
     if (!app) return;
@@ -466,6 +467,7 @@
       await call(`/api/applications/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
       showEditModal = false;
       await loadApp();
+      try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
     } finally {
       saving = false;
     }
@@ -478,6 +480,7 @@
       confirmLabel: 'Delete application',
       action: async () => {
         await call(`/api/applications/${id}`, { method: 'DELETE' });
+        try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
         goto('/app', { replaceState: true });
       }
     });
