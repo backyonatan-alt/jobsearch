@@ -9,14 +9,17 @@ value") but exposed that its real risk is **trust**, not features. North star
 sharpened to: *prep you can walk in with and cite* (see CLAUDE.md roadmap "v0.4").
 Full feedback in FREE_RUN_NOTES (Jun 30). Sequenced fixes:
 
-**Phase 0 — Trust the wedge (priority):**
-- [ ] **Company disambiguation/grounding** (critical). Generate off JD URL→domain +
-      location + role, not bare name. Add a visible "Is this them? [logo · domain ·
-      location]" confirm. Trace the LinkedIn-link entry path so the domain carries
-      through. (Bug: 365scores → wrong same-named company → brief useless.)
-- [ ] **Real citations.** Per-claim/"Recent signals" deep-links to the specific
-      source page (not homepage) + shown context. Prompt+schema returns per-claim
-      source URLs; render inline.
+**Phase 0 — Trust the wedge (priority) — ✅ SHIPPED Jun 30 (deploy #75):**
+- [x] **Company disambiguation/grounding.** Generation now takes location + JD-URL
+      (linkedin.com dropped) + optional confirmed company website; prompts treat
+      them as authoritative, never default to a famous same-named company. Brief
+      returns an `identity` block → UI shows "Researched: <name> · <domain>" with a
+      "Not them? →" re-ground control (regenerates against a corrected website).
+- [x] **Real citations.** Interviewer signals carry `source_url` deep links (render
+      as links, not homepages); company brief returns a `sources` deep-link list,
+      rendered as a Sources section.
+- [ ] Watch live: does grounding actually fix the 365scores-class collision? Ask
+      Ayelet to retry her real interview prep on prod.
 
 **Phase 1 — Spine reliability:**
 - [ ] **Stale counts** after create/delete — refetch sidebar/board/Today on
