@@ -12,6 +12,10 @@
 
   const call = isPreview() ? mockApi : api;
 
+  // First playbook from the prep-first cold start lands here with ?welcome=1.
+  let welcomeDismissed = $state(false);
+  const showWelcome = $derived(!welcomeDismissed && page.url.searchParams.get('welcome') === '1');
+
   // Fire-once guard for dossier_open (one event per app viewed, not per render).
   let lastDossierOpenId = null;
 
@@ -802,6 +806,14 @@
       </div>
     {:else}
 
+      {#if showWelcome}
+        <div class="welcome-banner">
+          <span class="wb-spark">✦</span>
+          <span class="wb-tx">Here's your first playbook. Add who's interviewing you for round-by-round prep, or <a href="/app">track another application</a>.</span>
+          <button class="wb-x" onclick={() => (welcomeDismissed = true)} aria-label="Dismiss">✕</button>
+        </div>
+      {/if}
+
       <!-- HEADER -->
       <div class="det-hd">
         {#if app.logoSrc}
@@ -1478,6 +1490,15 @@
 <style>
   .body { padding: 28px; }
   .det { max-width: 1080px; margin: 0 auto; }
+
+  .welcome-banner { display: flex; align-items: center; gap: 11px; margin-bottom: 22px;
+    padding: 12px 14px; border-radius: 12px; background: var(--accent-tint); border: 1px solid var(--accent-tint-2); }
+  .welcome-banner .wb-spark { color: var(--accent-text); font-size: 14px; flex-shrink: 0; }
+  .welcome-banner .wb-tx { font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .welcome-banner .wb-tx a { color: var(--accent-text); font-weight: 500; }
+  .welcome-banner .wb-x { margin-left: auto; flex-shrink: 0; background: none; border: none; color: var(--mute);
+    font-size: 13px; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+  .welcome-banner .wb-x:hover { background: var(--card); color: var(--ink-2); }
 
   /* HEADER */
   .det-hd { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 30px; }

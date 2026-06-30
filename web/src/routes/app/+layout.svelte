@@ -6,6 +6,7 @@
   import { isPreview } from '$lib/preview-mode.js';
   import { track, logEvent } from '$lib/analytics.js';
   import GuidedTour from '$lib/GuidedTour.svelte';
+  import PrepFirstOnboarding from '$lib/PrepFirstOnboarding.svelte';
 
   // Beta feedback channel — a pre-addressed email so first users have an
   // obvious way to send notes (Michal's first ask).
@@ -17,8 +18,9 @@
   let applications = $state([]);
   let loading = $state(true);
   let previewMode = $state(false);
-  let tourActive = $state(false);
-  let tourDismissed = $state(false);
+  let onboardMode = $state(null); // 'tour' | 'prep' | null
+  let onboardDismissed = $state(false);
+  let variantTracked = false;
   $effect(() => { previewMode = isPreview(); });
 
   onMount(async () => {
@@ -41,19 +43,28 @@
     }
   });
 
-  // First-run guided tour: force via ?tour=1, otherwise first run (no onboarded_at).
+  // First-run onboarding. The variant (prep-first cold start vs guided tour) comes
+  // from me.onboarding_variant; ?tour=1 / ?onboard=prepfirst force one for QA.
   const forceTour = $derived(page.url.searchParams.get('tour') === '1');
+  const forcePrep = $derived(page.url.searchParams.get('onboard') === 'prepfirst');
   $effect(() => {
-    if (tourDismissed) { tourActive = false; return; }
-    // Latch on: once the tour starts it stays mounted until finished/skipped,
+    if (onboardDismissed) { onboardMode = null; return; }
+    // Latch on: once onboarding starts it stays mounted until finished/skipped,
     // so it can't blink off if a navigation changes the trigger conditions.
-    if (tourActive) return;
-    tourActive = forceTour || (!loading && me != null && !me.onboarded_at);
+    if (onboardMode) return;
+    const needs = forceTour || forcePrep || (!loading && me != null && !me.onboarded_at);
+    if (!needs) return;
+    const variant = forcePrep ? 'prepfirst' : forceTour ? 'tour' : me?.onboarding_variant;
+    onboardMode = variant === 'prepfirst' ? 'prep' : 'tour';
+    if (!variantTracked && !isPreview()) {
+      variantTracked = true;
+      logEvent('onboard_variant_assigned', { variant: onboardMode === 'prep' ? 'prepfirst' : 'tour' });
+    }
   });
 
-  async function finishTour() {
-    tourDismissed = true;
-    tourActive = false;
+  async function finishOnboarding() {
+    onboardDismissed = true;
+    onboardMode = null;
     try { await api('/api/me/onboarded', { method: 'POST' }); } catch {}
   }
 
@@ -157,8 +168,10 @@
   </section>
 </div>
 
-{#if tourActive}
-  <GuidedTour onDone={finishTour} seedDemo={(me != null && !me.onboarded_at) || (page.url.searchParams.get('preview') === '1' && forceTour)} />
+{#if onboardMode === 'tour'}
+  <GuidedTour onDone={finishOnboarding} seedDemo={(me != null && !me.onboarded_at) || (page.url.searchParams.get('preview') === '1' && forceTour)} />
+{:else if onboardMode === 'prep'}
+  <PrepFirstOnboarding onDone={finishOnboarding} />
 {/if}
 
 <style>

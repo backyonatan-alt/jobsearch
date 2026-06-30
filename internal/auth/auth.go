@@ -23,11 +23,12 @@ func NewService(pool *pgxpool.Pool, sessionTTL time.Duration) *Service {
 }
 
 type User struct {
-	ID          int64
-	Email       string
-	IsAdmin     bool
-	OnboardedAt *time.Time
-	PictureURL  *string
+	ID                int64
+	Email             string
+	IsAdmin           bool
+	OnboardedAt       *time.Time
+	PictureURL        *string
+	OnboardingVariant *string
 }
 
 // UpsertUserAndSession creates (or updates) the user row for the given email
@@ -50,14 +51,19 @@ func (s *Service) UpsertUserAndSession(ctx context.Context, email, userAgent, ip
 	// NULLIF so a missing picture claim doesn't clobber a previously stored one.
 	// last_login_at is set on INSERT *and* in the conflict branch — otherwise a
 	// user's very first login never records it and they show "Last seen never".
+	// New signups are assigned to the prep-first cold-start treatment (100% — see
+	// AB_TESTS.md "prep-first cold start"). Existing users keep their stored
+	// variant; NULL means pre-test / control. The DO UPDATE deliberately leaves
+	// onboarding_variant untouched so a returning user's bucket never changes.
 	err = tx.QueryRow(ctx, `
-		INSERT INTO users (email, is_admin, picture_url, last_login_at) VALUES ($1, $2, NULLIF($3, ''), now())
+		INSERT INTO users (email, is_admin, picture_url, last_login_at, onboarding_variant)
+		VALUES ($1, $2, NULLIF($3, ''), now(), 'prepfirst')
 		ON CONFLICT (email) DO UPDATE SET
 		    last_login_at = now(),
 		    is_admin = users.is_admin OR EXCLUDED.is_admin,
 		    picture_url = COALESCE(NULLIF($3, ''), users.picture_url)
-		RETURNING id, email, is_admin, onboarded_at, picture_url`,
-		email, makeAdmin, pictureURL).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt, &u.PictureURL)
+		RETURNING id, email, is_admin, onboarded_at, picture_url, onboarding_variant`,
+		email, makeAdmin, pictureURL).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt, &u.PictureURL, &u.OnboardingVariant)
 	if err != nil {
 		return "", User{}, fmt.Errorf("upsert user: %w", err)
 	}
@@ -87,10 +93,10 @@ func (s *Service) UserBySession(ctx context.Context, token string) (User, bool, 
 	}
 	var u User
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.email, u.is_admin, u.onboarded_at, u.picture_url
+		SELECT u.id, u.email, u.is_admin, u.onboarded_at, u.picture_url, u.onboarding_variant
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token = $1 AND s.expires_at > now()`,
-		token).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt, &u.PictureURL)
+		token).Scan(&u.ID, &u.Email, &u.IsAdmin, &u.OnboardedAt, &u.PictureURL, &u.OnboardingVariant)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, false, nil
 	}
