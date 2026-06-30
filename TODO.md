@@ -17,7 +17,10 @@ interview prep and test how prep-first the cold start should be. Shipped to prod
 - **Measure (give it a cohort):** signup → first playbook (activation) for the
   new prepfirst cohort vs the historical tracker-first baseline (16/25 activated).
   Guardrail: do prepfirst users add a 2nd+ application (the spine/retention)?
-- [ ] Live-QA the flow on prod (throwaway company via `?onboard=prepfirst`).
+- [x] Live-QA the flow on prod (Jun 30, Claude-for-Chrome, all 8 steps green —
+      real company-specific playbook in ~40s). Caught + fixed an empty-role 400
+      (POST /applications requires role → Role now required in the prompt).
+      Open `[bug]` to watch: delete-confirm needed two clicks once (see FREE_RUN_NOTES).
 - [ ] After ~1 cohort, read the prepfirst funnel + decide: deepen the Playbook
       (debrief feed-forward loop) vs. iterate the cold start.
 

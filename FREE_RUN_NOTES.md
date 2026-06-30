@@ -21,6 +21,23 @@ the moment you notice something; triage later.
 
 ---
 
+## Jun 30 2026 — prep-first cold start live QA (Claude-for-Chrome)
+
+> Prep-first cold start shipped + QA'd green end-to-end on prod (all 8 steps).
+> Real, company-specific playbook in ~40s. Two observations:
+
+- `[bug]` **Delete-confirm needed two clicks once.** Deleting a throwaway app from
+  /app/[id]: first "Delete application" confirm appeared not to take (row persisted,
+  Today count briefly read 11), second click worked. Most likely the delete *did*
+  succeed server-side and Today re-rendered a **stale count** for a beat before
+  settling (the dialog/runConfirm wiring looks correct). Not reproduced — watch for
+  it; if it recurs, repro then fix (likely a refetch/`goto` race on delete, not the
+  confirm button). Low priority.
+- `[gap]` Failed prep-first build (pre-fix, empty-role 400) left a throwaway
+  "Anthropic Test" row behind. Already handled in code: the error card no longer
+  claims "saved" when create itself failed. Noting in case orphaned rows show up
+  from other partial-failure paths.
+
 ## May 24 2026 — first free run (post screenshot-parse + demo seed)
 
 > Demo data is seeded (15 apps). Logged in as back.yonatan@gmail.com.
