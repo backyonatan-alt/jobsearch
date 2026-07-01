@@ -39,10 +39,35 @@ Full feedback in FREE_RUN_NOTES (Jun 30). Sequenced fixes:
 - [x] **Today rebalanced** — right rail 1.08/0.92 → 1.32/0.68 so the brief gets room.
 - [x] **Drag-to-reorder pipeline stages** (grip handle; up/down arrows kept as fallback).
 
-**Phase 3 — Strategic deepening:**
-- [ ] **Debrief feed-forward loop** — post-interview "how did it go / was the prep
-      right?" → feeds next-round prep + the trust signal. Built on the per-round model.
-- [ ] Deferred mobile/PWA responsive pass.
+**Phase 3 — Debrief feed-forward loop (planned Jun 30; decisions locked)** — the
+core mechanic: retention + trust-closing + grounding that compounds. Round N+1
+prep knowing what round N actually asked is something ChatGPT structurally can't
+do. Locked decisions: **~20-sec debrief** (2 taps + 1 optional line); **enrich if
+present, never block** generation; **build 3a first**.
+
+*3a — core loop (next build):*
+- [ ] migration `0020_debriefs`: `debriefs` (interview_id, application_id, user_id,
+      feel [strong|mixed|rough], prep_accuracy [spot_on|partly|off], topics, notes,
+      created_at). One per round.
+- [ ] endpoints `POST/GET /api/applications/{id}/interviews/{iid}/debrief`.
+- [ ] feed-forward: `GenerateInterviewerBrief` gains a `priorDebriefs` param; the
+      dossier handler assembles debriefs from earlier rounds (starts_at < this
+      round) and passes them; prompt tailors this round to what already happened.
+      Enrich-only — never blocks generation.
+- [ ] UI: a 20-sec debrief capture card on the round (detail page); playbook shows
+      an "informed by your last round" chip when prior debriefs fed it.
+- [ ] events: `debrief_prompt_view`, `debrief_save {feel, prep_accuracy}`.
+
+*3b — proactive + metrics (after 3a):*
+- [ ] proactive Today prompt: once an interview's `starts_at` has passed and it's
+      un-debriefed → "How did the {company} {round} go? → Debrief".
+- [ ] admin Adoption: **prep-accuracy stat** (% "spot-on") — first real trust metric.
+- [ ] give the old vague "Pursuit debrief" Today card real meaning ("what we learned").
+
+*3c — mobile/PWA pass (separate track, deferred):*
+- [ ] responsive fixes to the desktop-only surfaces Ayelet hit — vanishing Save
+      button, Source dropdown, pipeline editor, board horizontal scroll, playbook
+      readability — + a PWA manifest/install. Big + independent; after 3a/3b.
 
 **Measurement:** add trust signals (playbook refresh/keep rate; post-interview
 "was it accurate?"). **Ayelet:** desktop-only for now; after her real interview
