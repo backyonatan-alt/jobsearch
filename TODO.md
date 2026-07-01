@@ -32,11 +32,12 @@ Full feedback in FREE_RUN_NOTES (Jun 30). Sequenced fixes:
 - [ ] Confirm live the delete-confirm no longer needs two clicks; if it does, repro
       + fix ConfirmDialog separately.
 
-**Phase 2 — UX & gaps:**
-- [ ] "Position closed / not relevant" status (req cancelled mid-process ≠
-      rejection; keep funnel conversion honest).
-- [ ] Rebalance the too-wide/sparse right rail on desktop.
-- [ ] Drag-to-reorder pipeline stages.
+**Phase 2 — UX & gaps — ✅ SHIPPED Jun 30 (deploy #77):**
+- [x] **"Closed" status** (req cancelled mid-process) — neutral terminal, threaded
+      through backend + dropdowns + muted pill + Board; in the funnel it's a neutral
+      outcome kept OUT of reach/reply-rate/active so it never drags conversion.
+- [x] **Today rebalanced** — right rail 1.08/0.92 → 1.32/0.68 so the brief gets room.
+- [x] **Drag-to-reorder pipeline stages** (grip handle; up/down arrows kept as fallback).
 
 **Phase 3 — Strategic deepening:**
 - [ ] **Debrief feed-forward loop** — post-interview "how did it go / was the prep
