@@ -621,7 +621,9 @@ func (c *Client) GenerateCompanyBrief(ctx context.Context, company, role, locati
 
 // GenerateInterviewerBrief researches one interviewer for a single round.
 // location and companyURL ground the research to the right (same-named) company.
-func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, interviewerName, location, companyURL string) (json.RawMessage, error) {
+// priorDebriefs (may be empty) summarises how earlier rounds went so this round's
+// prep can build on what already happened — the debrief feed-forward loop.
+func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, interviewerName, location, companyURL, priorDebriefs string) (json.RawMessage, error) {
 	cctx, cancel := context.WithTimeout(ctx, 150*time.Second)
 	defer cancel()
 
@@ -637,6 +639,9 @@ func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, in
 		fmt.Fprintf(&user, "Interviewer: %s\n", strings.TrimSpace(interviewerName))
 	} else {
 		user.WriteString("Interviewer: (not specified — infer the likely interviewer for this round from the role)\n")
+	}
+	if s := strings.TrimSpace(priorDebriefs); s != "" {
+		fmt.Fprintf(&user, "\nEarlier rounds in THIS process already happened — the candidate's own debriefs:\n%s\nUse these to tailor this round: build on what landed, shore up what felt shaky, anticipate follow-ups to what already came up, and don't re-tread ground already covered. Weave this into snapshot/lands/avoid/questions where it helps — do not invent a separate section.\n", s)
 	}
 
 	resp, err := c.CreateMessage(cctx, ModelSonnet, interviewerBriefSystemPrompt, []Message{

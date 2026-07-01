@@ -257,7 +257,9 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	req.InterviewerName = strings.TrimSpace(req.InterviewerName)
 
-	// If a round was named, it must belong to this application.
+	// If a round was named, it must belong to this application. Keep the row —
+	// we need its starts_at to pull earlier rounds' debriefs (feed-forward).
+	var round *interviewDTO
 	if req.InterviewID != nil {
 		iv, ierr := s.interviewByID(r.Context(), appID, *req.InterviewID)
 		if ierr != nil {
@@ -269,6 +271,7 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusNotFound, "interview not found")
 			return
 		}
+		round = iv
 	}
 
 	// Per-user cap on AI generations (beta cost control). Admin can grant more.
@@ -334,7 +337,13 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
-	content, gerr := s.LLM.GenerateInterviewerBrief(r.Context(), app.Company, app.Role, req.InterviewerName, loc, req.CompanyURL)
+	// Feed-forward: fold in debriefs from rounds that happened before this one.
+	var priorDebriefs string
+	if round != nil {
+		priorDebriefs = s.priorDebriefsContext(r.Context(), appID, round.StartsAt)
+	}
+
+	content, gerr := s.LLM.GenerateInterviewerBrief(r.Context(), app.Company, app.Role, req.InterviewerName, loc, req.CompanyURL, priorDebriefs)
 	if gerr != nil {
 		s.failGenerate(w, r.Context(), u.ID, start, gerr)
 		return

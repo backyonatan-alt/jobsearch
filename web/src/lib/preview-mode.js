@@ -77,6 +77,18 @@ const demoSet = () => INITIAL_APPS.map(a => ({
 }));
 let apps = demoSet();
 let interviewsByApp = {}; // appId -> []
+let debriefsByApp = {};   // appId -> [] of debriefs
+
+// Two past rounds on Stripe (102) to demo the debrief loop: round 1 debriefed,
+// round 2 past + un-debriefed (so it shows the prompt AND the "informed by your
+// last round" chip since an earlier round is debriefed).
+interviewsByApp[102] = [
+  { id: 9001, summary: 'Recruiter screen', starts_at: daysAgoIso(6).replace(/T.*/, 'T15:00:00Z'), ends_at: daysAgoIso(6).replace(/T.*/, 'T15:30:00Z'), location: 'Google Meet', attendees: [{ name: 'Priya Nadar' }] },
+  { id: 9002, summary: 'Hiring-manager call', starts_at: daysAgoIso(2).replace(/T.*/, 'T18:00:00Z'), ends_at: daysAgoIso(2).replace(/T.*/, 'T18:45:00Z'), location: 'Google Meet', attendees: [{ name: 'Sarah Chen' }] }
+];
+debriefsByApp[102] = [
+  { id: 1, interview_id: 9001, feel: 'mixed', prep_accuracy: 'partly', topics: 'Heavy on multi-region consistency; less on coding than expected.', notes: '', created_at: daysAgoIso(6), updated_at: daysAgoIso(6) }
+];
 let dossiersByApp = {};   // appId -> { content, meeting, generatedAgo, interviewer_name }
 let followUpsByApp = {};  // appId -> [] (newest first)
 
@@ -324,6 +336,25 @@ export async function mockApi(path, opts = {}) {
       const iid = Number(ivMatch[1]);
       interviewsByApp[id] = (interviewsByApp[id] || []).filter(x => x.id !== iid);
       return ok(null);
+    }
+
+    // GET /api/applications/:id/debriefs
+    if (method === 'GET' && sub === 'debriefs') {
+      return ok(debriefsByApp[id] || []);
+    }
+    // POST /api/applications/:id/interviews/:iid/debrief — upsert
+    const dbMatch = sub.match(/^interviews\/(\d+)\/debrief$/);
+    if (method === 'POST' && dbMatch) {
+      const iid = Number(dbMatch[1]);
+      const body = JSON.parse(opts.body || '{}');
+      const list = debriefsByApp[id] || [];
+      const existing = list.find(d => d.interview_id === iid);
+      const now = new Date().toISOString();
+      const saved = existing
+        ? Object.assign(existing, { feel: body.feel, prep_accuracy: body.prep_accuracy, topics: body.topics || '', notes: body.notes || '', updated_at: now })
+        : { id: Math.max(0, ...list.map(d => d.id)) + 1, interview_id: iid, feel: body.feel, prep_accuracy: body.prep_accuracy, topics: body.topics || '', notes: body.notes || '', created_at: now, updated_at: now };
+      debriefsByApp[id] = existing ? [...list] : [...list, saved];
+      return ok(saved);
     }
 
     // GET /api/applications/:id/follow-ups — newest first.
