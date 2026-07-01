@@ -45,18 +45,16 @@ prep knowing what round N actually asked is something ChatGPT structurally can't
 do. Locked decisions: **~20-sec debrief** (2 taps + 1 optional line); **enrich if
 present, never block** generation; **build 3a first**.
 
-*3a — core loop (next build):*
-- [ ] migration `0020_debriefs`: `debriefs` (interview_id, application_id, user_id,
-      feel [strong|mixed|rough], prep_accuracy [spot_on|partly|off], topics, notes,
-      created_at). One per round.
-- [ ] endpoints `POST/GET /api/applications/{id}/interviews/{iid}/debrief`.
-- [ ] feed-forward: `GenerateInterviewerBrief` gains a `priorDebriefs` param; the
-      dossier handler assembles debriefs from earlier rounds (starts_at < this
-      round) and passes them; prompt tailors this round to what already happened.
-      Enrich-only — never blocks generation.
-- [ ] UI: a 20-sec debrief capture card on the round (detail page); playbook shows
-      an "informed by your last round" chip when prior debriefs fed it.
-- [ ] events: `debrief_prompt_view`, `debrief_save {feel, prep_accuracy}`.
+*3a — core loop — ✅ SHIPPED Jun 30 (deploy #78, migration 0020):*
+- [x] migration `0020_debriefs` (one per round: feel, prep_accuracy, topics, notes).
+- [x] endpoints: GET `/applications/{id}/debriefs` + POST
+      `/applications/{id}/interviews/{iid}/debrief` (upsert).
+- [x] feed-forward: `GenerateInterviewerBrief(priorDebriefs)`; handler assembles
+      earlier rounds' debriefs (starts_at < this round). Enrich-only, never blocks.
+- [x] UI: 20-sec debrief card on a past round (prompt → 2-tap form → summary) +
+      "Informed by your last round" chip when an earlier debrief fed the playbook.
+- [x] events: `debrief_prompt_view`, `debrief_save {feel, prep_accuracy}`.
+- [ ] Watch live: does anyone debrief? does `prep_accuracy` trend spot-on? (→ 3b metric)
 
 *3b — proactive + metrics (after 3a):*
 - [ ] proactive Today prompt: once an interview's `starts_at` has passed and it's
