@@ -195,6 +195,19 @@
     [next[i], next[j]] = [next[j], next[i]];
     pipelineDraft = next;
   }
+  // Drag-to-reorder stages (arrows kept as a fallback). Reorders live on hover.
+  let pipeDragIdx = $state(null);
+  function onStageDragStart(i) { pipeDragIdx = i; }
+  function onStageDragEnd() { pipeDragIdx = null; }
+  function onStageDragOver(e, i) {
+    e.preventDefault();
+    if (pipeDragIdx === null || pipeDragIdx === i) return;
+    const next = [...pipelineDraft];
+    const [moved] = next.splice(pipeDragIdx, 1);
+    next.splice(i, 0, moved);
+    pipelineDraft = next;
+    pipeDragIdx = i;
+  }
   async function saveEditPipeline() {
     const cleaned = pipelineDraft.map(s => ({ name: s.name.trim(), done: !!s.done })).filter(s => s.name);
     await savePipeline(cleaned);
@@ -1253,7 +1266,8 @@
             {#if pipelineEditing}
               <div class="pipe-edit">
                 {#each pipelineDraft as st, i (i)}
-                  <div class="pe-row">
+                  <div class="pe-row" class:pe-dragging={pipeDragIdx === i} ondragover={(e) => onStageDragOver(e, i)}>
+                    <span class="pe-grip" draggable="true" ondragstart={() => onStageDragStart(i)} ondragend={onStageDragEnd} title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
                     <input class="pe-input" bind:value={st.name} placeholder="Stage name" />
                     <button class="pe-btn" onclick={() => moveDraft(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
                     <button class="pe-btn" onclick={() => moveDraft(i, 1)} disabled={i === pipelineDraft.length - 1} aria-label="Move down">↓</button>
@@ -1587,6 +1601,9 @@
   .pill.offer .pdot { background: var(--positive); }
   .pill.rejected, .pill.withdrawn { background: var(--danger-tint); color: var(--danger-text); }
   .pill.rejected .pdot, .pill.withdrawn .pdot { background: var(--danger); }
+  /* closed = neutral terminal (req cancelled), not a rejection — muted, not red. */
+  .pill.closed { background: var(--surface-2); color: var(--mute); }
+  .pill.closed .pdot { background: var(--mute-2); }
 
   /* GRID */
   .det-grid { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
@@ -1795,7 +1812,11 @@
 
   /* Pipeline edit mode */
   .pipe-edit { display: flex; flex-direction: column; gap: 8px; }
-  .pe-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 4px; align-items: center; }
+  .pe-row { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 4px; align-items: center; border-radius: 8px; }
+  .pe-row.pe-dragging { opacity: 0.5; background: var(--accent-tint); }
+  .pe-grip { display: grid; place-items: center; width: 20px; height: 30px; color: var(--mute-2); cursor: grab; font-size: 14px; user-select: none; }
+  .pe-grip:active { cursor: grabbing; }
+  .pe-grip:hover { color: var(--ink-2); }
   .pe-input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 6px 9px; outline: none; min-width: 0; }
   .pe-input:focus { border-color: var(--accent); }
   .pe-btn { width: 26px; height: 30px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 7px; color: var(--mute); font-size: 13px; cursor: pointer; font-family: inherit; }

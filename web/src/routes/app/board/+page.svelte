@@ -46,7 +46,7 @@
     return g;
   });
 
-  const inFlight = $derived(apps.filter(a => !['rejected', 'withdrawn'].includes(a.status)).length);
+  const inFlight = $derived(apps.filter(a => !['rejected', 'withdrawn', 'closed'].includes(a.status)).length);
 
   const dateLong = fmtLongDate(new Date());
 

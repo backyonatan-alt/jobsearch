@@ -49,20 +49,24 @@
   ]);
 
   const activeCount = $derived(
-    apps.filter(a => !['wishlist', 'rejected', 'withdrawn'].includes(a.status)).length
+    apps.filter(a => !['wishlist', 'rejected', 'withdrawn', 'closed'].includes(a.status)).length
   );
 
   // ── Outcomes: where applications end up ────────────────────
   // The funnel above is cumulative reach, so a "no" is invisible — it stays
   // folded into the Applied count. Make the exits explicit instead.
+  // `closed` (req cancelled by the company) is a NEUTRAL exit — shown here but
+  // deliberately kept out of funnelCounts/replyRate so it never drags conversion
+  // down like a rejection would.
   const outcomeCounts = $derived.by(() => {
-    let offer = 0, rejected = 0, withdrawn = 0;
+    let offer = 0, rejected = 0, withdrawn = 0, closed = 0;
     for (const a of apps) {
       if (a.status === 'offer') offer++;
       else if (a.status === 'rejected') rejected++;
       else if (a.status === 'withdrawn') withdrawn++;
+      else if (a.status === 'closed') closed++;
     }
-    return { offer, rejected, withdrawn };
+    return { offer, rejected, withdrawn, closed };
   });
 
   // ── KPI 1: Reply rate ──────────────────────────────────────
@@ -89,7 +93,7 @@
   });
 
   // ── KPI 3: Furthest stage reached ──────────────────────────
-  const stageRank = { offer: 4, interview: 3, screen: 2, applied: 1, wishlist: 0, rejected: 0, withdrawn: 0 };
+  const stageRank = { offer: 4, interview: 3, screen: 2, applied: 1, wishlist: 0, rejected: 0, withdrawn: 0, closed: 0 };
   const furthestStage = $derived.by(() => {
     const ORDER = ['offer', 'interview', 'screen', 'applied'];
     for (const s of ORDER) {
@@ -285,6 +289,13 @@
               <span class="oc-n">{outcomeCounts.withdrawn}</span>
               <span class="oc-l">Withdrawn</span>
             </div>
+            {#if outcomeCounts.closed > 0}
+              <div class="oc oc-cl" title="Req cancelled by the company — not counted against your conversion">
+                <span class="oc-dot"></span>
+                <span class="oc-n">{outcomeCounts.closed}</span>
+                <span class="oc-l">Closed</span>
+              </div>
+            {/if}
           </div>
           <p class="oc-note">
             {#if outcomeCounts.rejected > 0}
@@ -405,6 +416,7 @@
   .oc-offer .oc-dot { background: oklch(0.65 0.14 152); }
   .oc-rej .oc-dot { background: var(--danger, oklch(0.62 0.2 25)); }
   .oc-wd .oc-dot { background: var(--mute-2); }
+  .oc-cl .oc-dot { background: var(--mute-2); }
   .oc-note { font-size: 12px; color: var(--mute); margin: 10px 0 0; line-height: 1.5; }
 
   /* Divider between funnel and activity */

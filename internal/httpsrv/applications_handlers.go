@@ -38,6 +38,9 @@ type application struct {
 var validStatus = map[string]bool{
 	"wishlist": true, "applied": true, "screen": true,
 	"interview": true, "offer": true, "rejected": true, "withdrawn": true,
+	// "closed" = the company cancelled the req mid-process (neutral terminal —
+	// not a rejection, not a candidate withdrawal).
+	"closed": true,
 }
 
 func (s *Server) handleApplicationsList(w http.ResponseWriter, r *http.Request) {

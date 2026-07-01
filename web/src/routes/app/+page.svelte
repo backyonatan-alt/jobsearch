@@ -573,7 +573,7 @@
     display: grid; grid-template-columns: 0.92fr 1.08fr;
     font-family: var(--sans); color: var(--ink);
   }
-  .ob.ob-swap { grid-template-columns: 1.08fr 0.92fr; }
+  .ob.ob-swap { grid-template-columns: 1.32fr 0.68fr; }
   .ob.ob-swap .brief { border-right: 1px solid var(--rule); }
 
   /* ── Topbar (matches shell convention) ── */

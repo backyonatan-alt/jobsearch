@@ -3,7 +3,7 @@
 // formatted date, etc.). Keeps presentation logic out of the components.
 
 export const STATUSES = [
-  'wishlist', 'applied', 'screen', 'interview', 'offer', 'rejected', 'withdrawn'
+  'wishlist', 'applied', 'screen', 'interview', 'offer', 'rejected', 'withdrawn', 'closed'
 ];
 
 // Common application sources, offered as a dropdown (via <datalist>) while
@@ -25,7 +25,8 @@ export const STATUS_LABEL = {
   interview: 'Interview',
   offer:     'Offer',
   rejected:  'Rejected',
-  withdrawn: 'Withdrawn'
+  withdrawn: 'Withdrawn',
+  closed:    'Closed'
 };
 
 // Logo CSS class lookup. The design system defines .lg-A, .lg-S, .lg-V, etc.

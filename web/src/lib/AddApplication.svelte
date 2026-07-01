@@ -276,6 +276,7 @@
               <option value="offer">Offer</option>
               <option value="rejected">Rejected</option>
               <option value="withdrawn">Withdrawn</option>
+              <option value="closed">Position closed</option>
             </select>
             <svg class="chev" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
@@ -413,6 +414,7 @@
   .status-select.offer     .sdot { background: var(--warm); }
   .status-select.rejected  .sdot { background: var(--mute-2); }
   .status-select.withdrawn .sdot { background: var(--mute-2); }
+  .status-select.closed    .sdot { background: var(--mute-2); }
   .status-select select { flex: 1; appearance: none; -webkit-appearance: none; background: transparent; border: 0; outline: 0; font: inherit; font-size: 13.5px; color: var(--ink); padding: 0 18px 0 0; cursor: pointer; }
   .status-select .chev { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--mute); pointer-events: none; }
   .m-foot { display: flex; align-items: center; justify-content: space-between; padding: 12px 22px; background: var(--surface); border-top: 1px solid var(--rule); }

@@ -27,5 +27,6 @@ export const STATUSES = [
   'interview',
   'offer',
   'rejected',
-  'withdrawn'
+  'withdrawn',
+  'closed'
 ];
