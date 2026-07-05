@@ -76,7 +76,15 @@ present, never block** generation; **build 3a first**.
 - [x] UI: 20-sec debrief card on a past round (prompt → 2-tap form → summary) +
       "Informed by your last round" chip when an earlier debrief fed the playbook.
 - [x] events: `debrief_prompt_view`, `debrief_save {feel, prep_accuracy}`.
-- [ ] Watch live: does anyone debrief? does `prep_accuracy` trend spot-on? (→ 3b metric)
+- [x] Watch live (Jul re-read): debrief=0 — because it required a calendar interview
+      almost nobody creates. **Fixed:** one-tap rounds (deploy #79, migration 0021).
+
+*Unblock — one-tap rounds — ✅ SHIPPED Jul (deploy #79, migration 0021):*
+- [x] `interviews.scheduled` flag — a round no longer needs a date.
+- [x] "+ Add round" chip picker + stage-done hook ("Just did the {stage} round?
+      Debrief it →") so rounds get created from behavior users already do.
+- [ ] Watch: rounds created per activated user, and `debrief_save` finally > 0.
+      If debriefs now happen → build 3b (proactive Today prompt + admin prep-accuracy).
 
 *3b — proactive + metrics (after 3a):*
 - [ ] proactive Today prompt: once an interview's `starts_at` has passed and it's
