@@ -129,6 +129,7 @@
   const roundDebrief = $derived(onCompany ? null : (debriefsByIv[selectedTab] ?? null));
   const roundIsPast = $derived.by(() => {
     if (onCompany || !selectedRound) return false;
+    if (selectedRound.scheduled === false) return true; // one-tap round → always debrief-able
     if (!selectedRound.starts_at) return true;
     return new Date(selectedRound.starts_at).getTime() < Date.now();
   });
@@ -143,6 +144,40 @@
 
   function feelLabel(f) { return { strong: 'strong', mixed: 'mixed', rough: 'rough' }[f] || f; }
   function accLabel(a) { return { spot_on: 'spot on', partly: 'partly right', off: 'off' }[a] || a; }
+
+  // One-tap "Add round" (no date). Creates an unscheduled round and opens it.
+  const ROUND_PRESETS = ['Recruiter screen', 'Phone screen', 'Hiring manager', 'Technical screen', 'System design', 'Onsite', 'Team match', 'Behavioral'];
+  let showAddRound = $state(false);
+  let addRoundText = $state('');
+  async function createRound(summary) {
+    const label = (summary ?? '').trim();
+    if (!label) return null;
+    // Reuse an existing round with the same label rather than duplicating.
+    const existing = (interviews || []).find(x => (x.summary || '').trim().toLowerCase() === label.toLowerCase());
+    let iv = existing;
+    if (!iv) {
+      try {
+        iv = await call(`/api/applications/${id}/interviews`, { method: 'POST', body: JSON.stringify({ summary: label, source: 'manual' }) });
+      } catch (e) { if (e.message !== 'unauthorized') console.error(e); return null; }
+      await loadInterviews();
+      try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
+    }
+    showAddRound = false; addRoundText = '';
+    selectedTab = iv.id;
+    debriefEditing = false;
+    await loadDossier(iv.id);
+    return iv;
+  }
+
+  // Stage-done hook: marking a pipeline stage done offers to debrief that round.
+  let stageDebriefPrompt = $state(null); // { name }
+  async function debriefFromStage() {
+    const name = stageDebriefPrompt?.name;
+    stageDebriefPrompt = null;
+    if (!name) return;
+    const iv = await createRound(name);
+    if (iv) { startDebrief(); try { document.getElementById('interview-prep')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {} }
+  }
 
   function startDebrief() {
     const d = roundDebrief;
@@ -170,13 +205,14 @@
   const nextRoundId = $derived.by(() => {
     const now = Date.now();
     const future = (interviews || [])
-      .filter(iv => iv?.starts_at && new Date(iv.starts_at).getTime() >= now)
+      .filter(iv => iv?.scheduled !== false && iv?.starts_at && new Date(iv.starts_at).getTime() >= now)
       .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
     return future[0]?.id ?? null;
   });
 
   function roundLabel(iv) {
-    const d = iv?.starts_at ? fmtRelativeDate(iv.starts_at) : '';
+    // Only dated (scheduled) rounds show a relative date; one-tap rounds show the label alone.
+    const d = (iv?.scheduled !== false && iv?.starts_at) ? fmtRelativeDate(iv.starts_at) : '';
     const s = (iv?.summary || '').trim();
     return s ? (d ? `${d} · ${s}` : s) : (d || 'Interview');
   }
@@ -234,9 +270,15 @@
     }
   }
   function toggleStage(i) {
+    const wasDone = !!pipeline[i]?.done;
     const next = pipeline.map((s, idx) => idx === i ? { ...s, done: !s.done } : s);
     pipeline = next;
     savePipeline(next);
+    // Just completed a stage → offer to debrief that round (unless already debriefed).
+    if (!wasDone && next[i].done && next[i].name) {
+      const already = (interviews || []).find(x => (x.summary || '').trim().toLowerCase() === next[i].name.trim().toLowerCase());
+      if (!already || !debriefsByIv[already.id]) stageDebriefPrompt = { name: next[i].name };
+    }
   }
   function startEditPipeline() {
     pipelineDraft = pipeline.length ? pipeline.map(s => ({ ...s })) : [{ name: '', done: false }];
@@ -686,11 +728,11 @@
 
   const appliedLong = $derived(app ? fmtLongDate(app.raw.applied_at) : '');
 
-  // Next event = the soonest interview dated now-or-later.
+  // Next event = the soonest scheduled interview dated now-or-later.
   const upcoming = $derived.by(() => {
     const now = Date.now();
     const future = (interviews || [])
-      .filter(iv => iv?.starts_at && new Date(iv.starts_at).getTime() >= now)
+      .filter(iv => iv?.scheduled !== false && iv?.starts_at && new Date(iv.starts_at).getTime() >= now)
       .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
     return future[0] || null;
   });
@@ -963,7 +1005,24 @@
                 onclick={() => selectTab(iv.id)}
               >{roundLabel(iv)}</button>
             {/each}
+            <button type="button" class="round-tab add" onclick={() => (showAddRound = !showAddRound)} title="Add a round">+ Add round</button>
           </div>
+
+          {#if showAddRound}
+            <div class="add-round">
+              <span class="ar-lbl">Add a round you did or have coming up:</span>
+              <div class="ar-chips">
+                {#each ROUND_PRESETS as p}
+                  <button type="button" class="ar-chip" onclick={() => createRound(p)}>{p}</button>
+                {/each}
+              </div>
+              <div class="ar-custom">
+                <input class="ar-input" placeholder="Or type a round name…" bind:value={addRoundText}
+                  onkeydown={(e) => e.key === 'Enter' && addRoundText.trim() && createRound(addRoundText)} />
+                <button type="button" class="btn" onclick={() => createRound(addRoundText)} disabled={!addRoundText.trim()}>Add</button>
+              </div>
+            </div>
+          {/if}
 
           <!-- Debrief (Phase 3a): capture how a past round went → feeds next round. -->
           {#if roundIsPast}
@@ -1407,6 +1466,15 @@
                   </li>
                 {/each}
               </ol>
+              {#if stageDebriefPrompt}
+                <div class="stage-debrief">
+                  <span class="sd-tx">Just did the <b>{stageDebriefPrompt.name}</b> round?</span>
+                  <div class="sd-actions">
+                    <button type="button" class="sd-x" onclick={() => (stageDebriefPrompt = null)}>Not yet</button>
+                    <button type="button" class="sd-go" onclick={debriefFromStage}>Debrief it →</button>
+                  </div>
+                </div>
+              {/if}
             {:else}
               <p class="contact-empty">No stages yet — map the steps the recruiter described.</p>
               <button class="add-hm" onclick={seedTypicalLoop}>
@@ -1735,6 +1803,26 @@
   .round-tab.active { color: var(--accent-text); background: var(--accent-tint); border-color: var(--accent-tint-2); font-weight: 600; }
   .round-tab.company { border-style: dashed; }
   .round-tab.company.active { border-style: solid; }
+  .round-tab.add { border-style: dashed; color: var(--mute); }
+  .round-tab.add:hover { color: var(--accent-text); border-color: var(--accent-tint-2); }
+
+  /* One-tap "Add round" picker */
+  .add-round { margin: -6px 0 18px; padding: 13px 15px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 11px; }
+  .add-round .ar-lbl { font-size: 12.5px; color: var(--ink-2); font-weight: 500; }
+  .add-round .ar-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .add-round .ar-chip { font: inherit; font-size: 12.5px; color: var(--ink-2); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  .add-round .ar-chip:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-tint); }
+  .add-round .ar-custom { display: flex; gap: 8px; }
+  .add-round .ar-input { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 10px; outline: none; }
+  .add-round .ar-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+
+  /* Stage-done → debrief prompt (rides pipeline completion) */
+  .stage-debrief { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--accent-tint); border: 1px solid var(--accent-tint-2); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .stage-debrief .sd-tx { font-size: 12.5px; color: var(--ink-2); } .stage-debrief .sd-tx b { color: var(--ink); }
+  .stage-debrief .sd-actions { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+  .stage-debrief .sd-x { background: none; border: none; color: var(--mute); font: 500 12px/1 var(--sans); padding: 5px 8px; cursor: pointer; }
+  .stage-debrief .sd-go { background: var(--accent); color: #fff; border: none; border-radius: 7px; font: 600 12px/1 var(--sans); padding: 6px 11px; cursor: pointer; }
+  .stage-debrief .sd-go:hover { background: var(--accent-strong); }
 
   /* ── Debrief (Phase 3a) ── */
   .informed-chip { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11.5px; font-weight: 500;

@@ -302,7 +302,9 @@ export async function mockApi(path, opts = {}) {
       const body = JSON.parse(opts.body || '{}');
       const list = interviewsByApp[id] || [];
       const iid = Math.max(0, ...list.map(x => x.id)) + 1;
-      const ev = { id: iid, ...body };
+      // A one-tap round carries no date → unscheduled, starts_at defaults to now().
+      const scheduled = !!body.starts_at;
+      const ev = { ...body, id: iid, scheduled, starts_at: body.starts_at || new Date().toISOString() };
       interviewsByApp[id] = [...list, ev];
       return ok(ev);
     }
@@ -336,6 +338,12 @@ export async function mockApi(path, opts = {}) {
       const iid = Number(ivMatch[1]);
       interviewsByApp[id] = (interviewsByApp[id] || []).filter(x => x.id !== iid);
       return ok(null);
+    }
+
+    // PUT /api/applications/:id/pipeline
+    if (method === 'PUT' && sub === 'pipeline') {
+      const body = JSON.parse(opts.body || '{}');
+      return ok({ pipeline: body.stages || [] });
     }
 
     // GET /api/applications/:id/debriefs

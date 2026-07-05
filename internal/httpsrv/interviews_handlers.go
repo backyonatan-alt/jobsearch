@@ -30,6 +30,7 @@ type interviewDTO struct {
 	StartsAt      time.Time       `json:"starts_at"`
 	EndsAt        *time.Time      `json:"ends_at,omitempty"`
 	AllDay        bool            `json:"all_day"`
+	Scheduled     bool            `json:"scheduled"`
 	Organizer     json.RawMessage `json:"organizer,omitempty"`
 	Attendees     json.RawMessage `json:"attendees"`
 	CreatedAt     time.Time       `json:"created_at"`
@@ -323,10 +324,12 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 	if in.Summary == "" {
 		in.Summary = "Interview"
 	}
+	// A one-tap "round" carries no date: default starts_at to now() and mark it
+	// unscheduled so the UI won't show it a relative date or treat it as upcoming.
+	scheduled := true
 	if in.StartsAt.IsZero() {
-		s.logEvent(r.Context(), u.ID, "interview_save", map[string]any{"result": "error", "reason": "no_start", "source": in.Source})
-		writeJSONError(w, http.StatusBadRequest, "starts_at is required")
-		return
+		scheduled = false
+		in.StartsAt = time.Now()
 	}
 
 	var uidPtr *string
@@ -357,8 +360,8 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 		err = s.Pool.QueryRow(r.Context(), `
 			INSERT INTO interviews (
 			    application_id, user_id, source, uid, summary, location,
-			    description, starts_at, ends_at, all_day, organizer, attendees
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			    description, starts_at, ends_at, all_day, organizer, attendees, scheduled
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 			ON CONFLICT (application_id, uid) WHERE uid IS NOT NULL DO UPDATE SET
 			    source      = EXCLUDED.source,
 			    summary     = EXCLUDED.summary,
@@ -367,28 +370,29 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 			    starts_at   = EXCLUDED.starts_at,
 			    ends_at     = EXCLUDED.ends_at,
 			    all_day     = EXCLUDED.all_day,
+			    scheduled   = EXCLUDED.scheduled,
 			    organizer   = EXCLUDED.organizer,
 			    attendees   = EXCLUDED.attendees,
 			    updated_at  = now()
 			RETURNING id, application_id, source, uid, summary, location, description,
-			    starts_at, ends_at, all_day, organizer, attendees, created_at`,
+			    starts_at, ends_at, all_day, scheduled, organizer, attendees, created_at`,
 			appID, u.ID, in.Source, uidPtr, in.Summary, locPtr,
-			descPtr, in.StartsAt, in.EndsAt, in.AllDay, organizerJSON, attendeesJSON,
+			descPtr, in.StartsAt, in.EndsAt, in.AllDay, organizerJSON, attendeesJSON, scheduled,
 		).Scan(&iv.ID, &iv.ApplicationID, &iv.Source, &iv.UID, &iv.Summary, &iv.Location,
-			&iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay, &iv.Organizer, &iv.Attendees,
+			&iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay, &iv.Scheduled, &iv.Organizer, &iv.Attendees,
 			&iv.CreatedAt)
 	} else {
 		err = s.Pool.QueryRow(r.Context(), `
 			INSERT INTO interviews (
 			    application_id, user_id, source, uid, summary, location,
-			    description, starts_at, ends_at, all_day, organizer, attendees
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			    description, starts_at, ends_at, all_day, organizer, attendees, scheduled
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 			RETURNING id, application_id, source, uid, summary, location, description,
-			    starts_at, ends_at, all_day, organizer, attendees, created_at`,
+			    starts_at, ends_at, all_day, scheduled, organizer, attendees, created_at`,
 			appID, u.ID, in.Source, uidPtr, in.Summary, locPtr,
-			descPtr, in.StartsAt, in.EndsAt, in.AllDay, organizerJSON, attendeesJSON,
+			descPtr, in.StartsAt, in.EndsAt, in.AllDay, organizerJSON, attendeesJSON, scheduled,
 		).Scan(&iv.ID, &iv.ApplicationID, &iv.Source, &iv.UID, &iv.Summary, &iv.Location,
-			&iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay, &iv.Organizer, &iv.Attendees,
+			&iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay, &iv.Scheduled, &iv.Organizer, &iv.Attendees,
 			&iv.CreatedAt)
 	}
 	if err != nil {
@@ -420,7 +424,7 @@ func (s *Server) handleInterviewsList(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.Pool.Query(r.Context(), `
 		SELECT id, application_id, source, uid, summary, location, description,
-		       starts_at, ends_at, all_day, organizer, attendees, created_at
+		       starts_at, ends_at, all_day, scheduled, organizer, attendees, created_at
 		FROM interviews
 		WHERE application_id = $1 AND user_id = $2
 		ORDER BY starts_at ASC`, appID, u.ID)
@@ -436,7 +440,7 @@ func (s *Server) handleInterviewsList(w http.ResponseWriter, r *http.Request) {
 		var iv interviewDTO
 		if err := rows.Scan(&iv.ID, &iv.ApplicationID, &iv.Source, &iv.UID, &iv.Summary,
 			&iv.Location, &iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay,
-			&iv.Organizer, &iv.Attendees, &iv.CreatedAt); err != nil {
+			&iv.Scheduled, &iv.Organizer, &iv.Attendees, &iv.CreatedAt); err != nil {
 			s.Logger.Error("interview scan", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
@@ -504,12 +508,12 @@ func (s *Server) interviewByID(ctx context.Context, appID, iid int64) (*intervie
 	var iv interviewDTO
 	err := s.Pool.QueryRow(ctx, `
 		SELECT id, application_id, source, uid, summary, location, description,
-		       starts_at, ends_at, all_day, organizer, attendees, created_at
+		       starts_at, ends_at, all_day, scheduled, organizer, attendees, created_at
 		FROM interviews
 		WHERE id = $1 AND application_id = $2`, iid, appID,
 	).Scan(&iv.ID, &iv.ApplicationID, &iv.Source, &iv.UID, &iv.Summary,
 		&iv.Location, &iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay,
-		&iv.Organizer, &iv.Attendees, &iv.CreatedAt)
+		&iv.Scheduled, &iv.Organizer, &iv.Attendees, &iv.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
