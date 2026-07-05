@@ -2,6 +2,28 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## ⏳ ~Jul 7 2026 — read the re-engagement cohort (do this next)
+
+Context: after shipping P0 (grounding+citations), P1 (stale counts), P2 (closed
+status), P3a (debrief loop), the user sent a Hebrew re-engagement email to **all
+invited** users (~Jun 30/Jul 1) announcing the pivot to an interview-prep system.
+This is the "validate before scaling" gate — watch the cohort for ~a week, then
+read. Pull via the console snippet (adoption/invite-funnel/users) at `/admin`.
+
+**Pre-committed questions:**
+1. Did people come back? `last_login_at` spike since the email; signed-in count
+   vs the ~26 baseline.
+2. Did the reframe convert? prep-first activation vs the tracker-first baseline
+   (16/25 activated); `onboard_variant_assigned` prepfirst vs tour.
+3. Did grounding hold? any wrong-company complaints / `dossier_refresh` with a
+   company_url re-ground ("Not them?"); no repeat of the 365scores class.
+4. Did anyone debrief? `debrief_save` count + whether `prep_accuracy` trends
+   spot-on (our first real trust metric).
+
+**Then decide:** if it reads green → staged batch-promote of pending beta-interest
+(open wider). If bugs/leaks surface → fix those first. Don't open the gate wide
+until the wow-moment is proven to survive real use.
+
 ## ⏳ Jun 30 2026 — Ayelet feedback → "trustworthy interview-ready prep" plan
 
 First external tester (Ayelet) validated the wedge ("maybe the most important
