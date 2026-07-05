@@ -1581,7 +1581,12 @@
       <div class="fields">
         <label>Company <input bind:value={edit.company} required /></label>
         <label>Role <input bind:value={edit.role} required /></label>
-        <label>Source <input bind:value={edit.source} list="edit-source-suggestions" placeholder="LinkedIn / Referral / Cold email" /></label>
+        <label class="span-2">Source
+          <input bind:value={edit.source} list="edit-source-suggestions" placeholder="LinkedIn / Referral / Cold email" />
+          <div class="src-chips">
+            {#each SOURCE_SUGGESTIONS as s}<button type="button" class="src-chip" onclick={() => (edit.source = s)}>{s}</button>{/each}
+          </div>
+        </label>
         <datalist id="edit-source-suggestions">
           {#each SOURCE_SUGGESTIONS as s}<option value={s}></option>{/each}
         </datalist>
@@ -2172,7 +2177,11 @@
 
   /* EDIT MODAL */
   .modal-overlay { position: fixed; inset: 0; background: rgba(10,10,13,0.4); display: grid; place-items: center; z-index: 100; padding: 2rem; }
-  .modal { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 560px; max-height: calc(100vh - 4rem); overflow-y: auto; display: flex; flex-direction: column; gap: .75rem; box-shadow: var(--sh-pop); }
+  .modal { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 560px; max-height: calc(100dvh - 4rem); overflow-y: auto; display: flex; flex-direction: column; gap: .75rem; box-shadow: var(--sh-pop); }
+  /* Tappable source presets — mobile-reliable (datalist doesn't open on tap). */
+  .src-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+  .src-chip { font: inherit; font-size: 11.5px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 4px 9px; cursor: pointer; }
+  .src-chip:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-tint); }
   .modal h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.018em; margin: 0; }
   .modal-hint { font-size: 12px; color: var(--mute); margin: 0 0 .5rem; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; }
@@ -2184,7 +2193,9 @@
   .modal input:focus { border-color: var(--accent); }
   .modal .jd-area { font: inherit; font-family: var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: .45rem .6rem; font-size: 13.5px; line-height: 1.5; outline: none; resize: vertical; min-height: 72px; transition: border-color 100ms ease; }
   .modal .jd-area:focus { border-color: var(--accent); }
-  .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .75rem; }
+  /* Sticky footer so Cancel/Save stay reachable when the mobile keyboard is up. */
+  .modal-actions { display: flex; justify-content: flex-end; gap: .5rem;
+    position: sticky; bottom: 0; background: var(--card); padding-top: .7rem; margin-top: .5rem; }
   .privacy-note { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mute); margin: 12px 0 0; line-height: 1.4; }
   .privacy-note svg { color: var(--mute-2); flex-shrink: 0; }
 
@@ -2200,9 +2211,9 @@
     .logo-big { width: 48px; height: 48px; }
     .det-hd .co { font-size: 21px; }
     .modal-overlay { padding: 0; }
-    .modal { max-width: 100%; border-radius: 0; min-height: 100vh; padding: 1rem; }
+    .modal { max-width: 100%; border-radius: 0; min-height: 100dvh; padding: 1rem; }
     .ev-overlay { padding: 0; }
-    .ev-card { max-width: 100%; border-radius: 0; min-height: 100vh; margin: 0; padding: 20px 16px; }
+    .ev-card { max-width: 100%; border-radius: 0; min-height: 100dvh; margin: 0; padding: 20px 16px; }
     .fields { grid-template-columns: 1fr; }
     .fields .span-2 { grid-column: auto; }
     .fu-row { grid-template-columns: 1fr; }

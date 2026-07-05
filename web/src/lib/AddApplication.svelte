@@ -281,9 +281,12 @@
             <svg class="chev" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
         </label>
-        <label>
+        <label class="span-2">
           <span class="lbl">Source <span class="opt">— optional</span></span>
           <input bind:value={form.source} list="source-suggestions" placeholder="LinkedIn / Referral / Cold email" />
+          <div class="src-chips">
+            {#each SOURCE_SUGGESTIONS as s}<button type="button" class="src-chip" onclick={() => (form.source = s)}>{s}</button>{/each}
+          </div>
           <datalist id="source-suggestions">
             {#each SOURCE_SUGGESTIONS as s}<option value={s}></option>{/each}
           </datalist>
@@ -431,8 +434,15 @@
   .btn-primary:hover { background: var(--accent-strong); }
   .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
 
+  .src-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+  .src-chip { font: inherit; font-size: 11.5px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 4px 9px; cursor: pointer; }
+  .src-chip:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-tint); }
+
   @media (max-width: 720px) {
-    .modal { max-width: 100%; }
+    /* Full-screen, scrollable, with the footer pinned so Add/Cancel stay reachable
+       when the on-screen keyboard is up (dvh tracks the visible viewport). */
+    .modal { max-width: 100%; max-height: 100dvh; border-radius: 0; overflow-y: auto; }
     .fields { grid-template-columns: 1fr; }
+    .m-foot { position: sticky; bottom: 0; }
   }
 </style>
