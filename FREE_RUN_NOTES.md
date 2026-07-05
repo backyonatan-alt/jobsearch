@@ -60,10 +60,14 @@ left-side count stayed "1". Same stale-count class as the delete-confirm two-cli
 bug (now seen twice) → real fix: invalidate/refetch counts after create + delete.
 
 **[bug][mobile] Source dropdown won't open** ("clicking doesn't open List") — the
-Source select in the add/edit form.
+Source select in the add/edit form. → ✅ FIXED (deploy #80): tappable source
+preset chips under the input, Add + Edit.
 **[bug][mobile] Save button disappears while editing** job/contact details — every
-tap on a field hides the bottom Save button (keyboard / sticky footer).
+tap on a field hides the bottom Save button (keyboard / sticky footer). → ✅ FIXED
+(deploy #80): modals sized to 100dvh + scroll, action footer made sticky.
 **[bug][mobile] Pipeline/stage section cut off**, can't scroll to read or Save.
+→ ✅ FIXED (deploy #80): modals 100vh→100dvh; inline pipeline verified full +
+scrollable at 390px. (Full responsive/PWA pass = 3c, still deferred.)
 **[ux] "Only fits Mac 😅"** — the app is desktop-sized; mobile is rough across the
 board. → needs a scope decision: do a real mobile pass now, or tell testers
 desktop-only for the beta?
