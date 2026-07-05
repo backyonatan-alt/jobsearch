@@ -1,5 +1,14 @@
 # Free run notes — Pursuit
 
+> ⏳ **PENDING — re-read the re-engagement cohort (~Jul 7 2026).** After shipping
+> P0–P3a + one-tap rounds, the user sent a Hebrew re-engagement email to all
+> invited users (~Jul 1). Run the dated re-read in `TODO.md` (top entry): pull
+> adoption/invite-funnel/users/events via the admin console snippet and answer the
+> pre-committed questions — did people come back, did the reframe convert, did
+> anyone finally **debrief** (`debrief_save > 0`), does `prep_accuracy` trend
+> spot-on? Then decide: open the gate wider vs. fix what surfaces. **Do this before
+> starting new feature work.**
+
 A scratchpad for observations while actually using the app. Capture
 the moment you notice something; triage later.
 
