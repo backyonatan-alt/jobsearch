@@ -43,6 +43,15 @@
   let showInterest = $state(false);
   $effect(() => { if (err === 'not_invited') showInterest = true; });
 
+  // Acquisition attribution: ?src=li etc. survives the OAuth round-trip via
+  // localStorage and lands on the first-party `login` event.
+  $effect(() => {
+    const src = page.url.searchParams.get('src');
+    if (src && typeof localStorage !== 'undefined') {
+      try { localStorage.setItem('pursuit_src', src.slice(0, 40)); } catch {}
+    }
+  });
+
   let email = $state('');
   let note = $state('');
   let submitting = $state(false);
@@ -110,9 +119,8 @@
 
     <div class="interest-block">
       {#if !showInterest && interestState === ''}
-        <button type="button" class="link-btn" onclick={() => (showInterest = true)}>
-          Not invited yet? <span class="link">Request access →</span>
-        </button>
+        <!-- Open beta: Google sign-in is the door; the interest form stays only as
+             the fallback surface for the not_invited error (OPEN_SIGNUP kill switch). -->
       {:else if interestState === 'sent'}
         <div class="interest-done">
           <h3>Thanks — you're on the list.</h3>
@@ -146,7 +154,7 @@
       {/if}
     </div>
 
-    <p class="footnote">Closed beta. By invite only.</p>
+    <p class="footnote">Free while in beta. Sign in with Google — no waitlist.</p>
   </div>
 </main>
 

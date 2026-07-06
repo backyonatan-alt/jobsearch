@@ -24,6 +24,8 @@ type Config struct {
 	AdminEmails     map[string]struct{} // emails granted is_admin on sign-in
 
 	GA4MeasurementID string // empty = no analytics (dev/local); set in prod env
+
+	OpenSignup bool // OPEN_SIGNUP=true lets any Google account sign in (public beta); off = invite list
 }
 
 func FromEnv() (*Config, error) {
@@ -37,6 +39,7 @@ func FromEnv() (*Config, error) {
 		GoogleClientSecret: getenv("GOOGLE_CLIENT_SECRET", ""),
 		AnthropicAPIKey:    getenv("ANTHROPIC_API_KEY", ""),
 		GA4MeasurementID:   strings.TrimSpace(getenv("GA4_MEASUREMENT_ID", "")),
+		OpenSignup:         strings.EqualFold(strings.TrimSpace(getenv("OPEN_SIGNUP", "")), "true"),
 	}
 
 	if c.DatabaseURL == "" {
