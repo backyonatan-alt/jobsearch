@@ -65,16 +65,20 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	invited, err := s.Auth.EmailInvited(r.Context(), email, s.Cfg.AllowedEmails)
-	if err != nil {
-		s.Logger.Error("invite check", "err", err)
-		http.Redirect(w, r, "/?err=internal", http.StatusFound)
-		return
-	}
-	if !invited {
-		s.Logger.Info("oauth blocked (not on allow-list)", "email", email)
-		http.Redirect(w, r, "/?err=not_invited", http.StatusFound)
-		return
+	// OPEN_SIGNUP=true (public beta) skips the invite gate; the env flag is the
+	// kill switch if the open cohort needs to be shut off mid-wave.
+	if !s.Cfg.OpenSignup {
+		invited, err := s.Auth.EmailInvited(r.Context(), email, s.Cfg.AllowedEmails)
+		if err != nil {
+			s.Logger.Error("invite check", "err", err)
+			http.Redirect(w, r, "/?err=internal", http.StatusFound)
+			return
+		}
+		if !invited {
+			s.Logger.Info("oauth blocked (not on allow-list)", "email", email)
+			http.Redirect(w, r, "/?err=not_invited", http.StatusFound)
+			return
+		}
 	}
 
 	session, u, err := s.Auth.UpsertUserAndSession(r.Context(), email, r.UserAgent(), clientIP(r), picture, s.Cfg.IsAdminEmail(email))

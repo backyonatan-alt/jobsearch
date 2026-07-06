@@ -49,7 +49,10 @@
       if (!isPreview() && typeof sessionStorage !== 'undefined'
           && !sessionStorage.getItem('pursuit_login_tracked')) {
         sessionStorage.setItem('pursuit_login_tracked', '1');
-        track('login', { method: 'google' });
+        let src = '';
+        try { src = localStorage.getItem('pursuit_src') || ''; } catch {}
+        track('login', src ? { method: 'google', src } : { method: 'google' });
+        logEvent('login', src ? { src } : {});
       }
     } catch (e) {
       if (e.message !== 'unauthorized') console.error(e);
