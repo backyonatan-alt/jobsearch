@@ -1,11 +1,9 @@
 # Free run notes — Pursuit
 
-> ✅ **Gate passed, go wider (Jul 6 2026).** Re-read done (funnel 50→32→21→10),
-> debrief surfacing fixed + shipped, and the grounding gate passed live QA on
-> prod (right company + deep-link citations verified on a real generation).
-> Next: the wider outreach (LinkedIn/LayoffRadar push), then watch
-> `debrief_prompt_view → debrief_save` on `/admin/adoption`; first real
-> `debrief_save` unlocks Phase 3b. See `TODO.md` top entry.
+> 🚀 **PUBLIC LAUNCH — Jul 6 2026.** Open signup live, LinkedIn post out
+> (`/?src=li`). Watch `/admin/adoption` for `login {src:li}` signups, prepfirst
+> conversion, and the first real `debrief_save`. Wave re-read: **Jul 13**
+> (trigger set, fires into the session). See `TODO.md` top entry.
 
 A scratchpad for observations while actually using the app. Capture
 the moment you notice something; triage later.

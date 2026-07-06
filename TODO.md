@@ -2,6 +2,26 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 🚀 Jul 6 2026 — PUBLIC LAUNCH (LinkedIn post live)
+
+Open signup went live (`OPEN_SIGNUP=true` on the VM) and the user posted the
+public LinkedIn announcement with the tagged link (`/?src=li`). Same-day ships
+that made it possible: mobile pass on the funnel path, open-signup gate +
+open-beta homepage, `src` attribution on the `login` event, nightly encrypted
+backups, grounding gate passed live QA. Cost guardrails: 10 prep credits/user
+(~$3–6 worst case each), auto-reload enabled on the Anthropic account.
+
+**⏳ Jul 13 — wave re-read** (reminder trigger is set; fires into the session).
+Pre-committed questions: (1) wave signups — `login` events with `src:li` vs
+organic; (2) signup → first-playbook conversion for prepfirst at real n;
+(3) `debrief_prompt_view → debrief_save` conversion now that the prompt
+surfaces; (4) prep-credit burn / API spend sanity; (5) any
+`prepfirst_generate_error` reasons. Then: scale the wave / fix what surfaced /
+build Phase 3b if debriefs > 0.
+
+Still open (soft): privacy paragraph on the homepage (what's stored, who sees
+it) — ship early in the wave window.
+
 ## ✅ Jul 6 2026 — grounding gate PASSED → cleared to go wider
 
 Claude-for-Chrome QA on prod, all 8 steps green ("Lusha" test row, cleaned up):
