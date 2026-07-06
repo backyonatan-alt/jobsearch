@@ -109,11 +109,15 @@
 </div>
 
 <style>
-  .pf-back { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center;
-    background: var(--surface); padding: 24px; }
-  .pf-card { width: 440px; max-width: 100%; background: var(--card); border: 1px solid var(--rule);
+  .pf-back { position: fixed; inset: 0; z-index: 130; display: flex; align-items: center; justify-content: center;
+    background: var(--surface); padding: 24px; overflow-y: auto; }
+  .pf-card { width: 440px; max-width: calc(100vw - 32px); background: var(--card); border: 1px solid var(--rule);
     border-radius: 18px; padding: 34px 32px 26px; box-shadow: var(--sh-pop);
     text-align: center; animation: pf-rise .28s cubic-bezier(.2,.7,.3,1) both; }
+  @media (max-width: 480px) {
+    .pf-back { padding: 16px; }
+    .pf-card { padding: 26px 20px 22px; }
+  }
   @keyframes pf-rise { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
 
   .pf-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;

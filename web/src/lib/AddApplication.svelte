@@ -444,5 +444,7 @@
     .modal { max-width: 100%; max-height: 100dvh; border-radius: 0; overflow-y: auto; }
     .fields { grid-template-columns: 1fr; }
     .m-foot { position: sticky; bottom: 0; }
+    /* desktop keyboard hints are noise on touch screens */
+    .kb-hints, .esc-hint, .dark-kbd { display: none; }
   }
 </style>

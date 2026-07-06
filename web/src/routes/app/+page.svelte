@@ -759,5 +759,11 @@
     .search { display: none; }
     .brief-in { padding: 28px 22px 40px; }
     .pulse-stage { padding: 28px 22px 40px; }
+    /* stats were clipped off-screen: let the head wrap and give stats their own row */
+    .brief-head { flex-wrap: wrap; }
+    .brief-head h1 { white-space: normal; }
+    .brief-stats { width: 100%; justify-content: space-between; }
+    .brief-stats .bstat { padding: 0 8px; }
+    .brief-stats .bstat:first-child { padding-left: 0; }
   }
 </style>

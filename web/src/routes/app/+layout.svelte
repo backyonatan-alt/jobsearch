@@ -189,7 +189,7 @@
   <section class="main">
     {#if !narrowDismissed}
       <div class="narrow-note" role="note">
-        <span><strong>Best on desktop.</strong> Pursuit is built for a larger screen during the beta — some controls aren't mobile-ready yet.</span>
+        <span><strong>Tip:</strong> the full board and editing experience is roomier on a laptop — but prep works great right here.</span>
         <button class="nn-x" onclick={dismissNarrow} aria-label="Dismiss">✕</button>
       </div>
     {/if}
