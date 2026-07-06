@@ -37,6 +37,7 @@
   // Which tab is showing: 'company' (shared brief) or an interview id (that
   // round's interviewer brief).
   let selectedTab = $state('company');
+  let prepReady = $state(false); // interviews+debriefs loaded and the default tab chosen
 
   // Interviews
   let interviews = $state([]);
@@ -103,12 +104,15 @@
     }
   });
 
-  // Load interviews first so we can default the prep to the next upcoming round
-  // (falling back to the shared Company tab when nothing's scheduled).
+  // Load interviews first so we can default the prep to the next upcoming round.
+  // With no upcoming round, prefer a past round still waiting on its debrief
+  // (that's when the prompt matters) before falling back to the Company tab.
   async function initPrep() {
+    prepReady = false;
     await loadInterviews();
-    loadDebriefs();
-    selectedTab = nextRoundId ?? 'company';
+    await loadDebriefs();
+    selectedTab = nextRoundId ?? pendingDebriefRoundId ?? 'company';
+    prepReady = true;
     await loadDossier(selectedTab);
   }
 
@@ -133,6 +137,19 @@
     if (!selectedRound.starts_at) return true;
     return new Date(selectedRound.starts_at).getTime() < Date.now();
   });
+  // Most recent debrief-able round (past, or undated one-tap) with no debrief yet.
+  const pendingDebriefRoundId = $derived.by(() => {
+    const now = Date.now();
+    const due = (interviews || []).filter(iv => {
+      if (debriefsByIv[iv.id]) return false;
+      if (iv.scheduled === false || !iv.starts_at) return true;
+      return new Date(iv.starts_at).getTime() < now;
+    });
+    if (!due.length) return null;
+    due.sort((a, b) => new Date(b.starts_at || 0) - new Date(a.starts_at || 0));
+    return due[0].id;
+  });
+
   // Did an EARLIER round's debrief feed this round's playbook?
   const informedByDebrief = $derived.by(() => {
     if (onCompany || !selectedRound) return false;
@@ -185,7 +202,32 @@
       ? { feel: d.feel, prep_accuracy: d.prep_accuracy, topics: d.topics ?? '', notes: d.notes ?? '' }
       : { feel: '', prep_accuracy: '', topics: '', notes: '' };
     debriefEditing = true;
-    if (!d) logEvent('debrief_prompt_view', { app_id: Number(id) });
+  }
+
+  // Log the prompt being SEEN (rendered), not clicked — once per round per visit.
+  const debriefViewLogged = new Set();
+  function logDebriefView(key, surface) {
+    if (debriefViewLogged.has(key)) return;
+    debriefViewLogged.add(key);
+    logEvent('debrief_prompt_view', { app_id: Number(id), surface });
+  }
+  $effect(() => {
+    if (prepReady && !onCompany && roundIsPast && !roundDebrief && !debriefEditing) logDebriefView(`round:${selectedTab}`, 'round_tab');
+  });
+  $effect(() => {
+    if (prepReady && pendingDebriefRoundId && pendingDebriefRoundId !== selectedTab) logDebriefView(`banner:${pendingDebriefRoundId}`, 'banner');
+  });
+  $effect(() => {
+    if (stageDebriefPrompt) logDebriefView(`stage:${stageDebriefPrompt.name}`, 'stage_done');
+  });
+
+  // Jump from the banner to the pending round with the debrief form open.
+  async function debriefPendingRound() {
+    const iv = pendingDebriefRoundId;
+    if (!iv) return;
+    await selectTab(iv);
+    startDebrief();
+    try { document.getElementById('interview-prep')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
   }
   async function saveDebrief() {
     if (debriefSaving || !debriefDraft.feel || !debriefDraft.prep_accuracy) return;
@@ -1024,6 +1066,16 @@
             </div>
           {/if}
 
+          <!-- A past round on ANOTHER tab still needs its debrief → slim jump-in banner. -->
+          {#if prepReady && pendingDebriefRoundId && pendingDebriefRoundId !== selectedTab}
+            {@const pendingIv = (interviews || []).find(x => x.id === pendingDebriefRoundId)}
+            <button type="button" class="db-banner" onclick={debriefPendingRound}>
+              <span class="db-spark">✦</span>
+              <span class="db-banner-tx">How did the <b>{(pendingIv?.summary || 'last').trim() || 'last'}</b> round go? A 20-second debrief sharpens this round's prep.</span>
+              <span class="db-prompt-cta">Debrief →</span>
+            </button>
+          {/if}
+
           <!-- Debrief (Phase 3a): capture how a past round went → feeds next round. -->
           {#if roundIsPast}
             <section class="debrief">
@@ -1842,6 +1894,13 @@
   .db-prompt-tx { flex: 1; min-width: 0; } .db-prompt-tx b { display: block; font-size: 13.5px; color: var(--ink); }
   .db-prompt-tx small { display: block; font-size: 12px; color: var(--mute); margin-top: 1px; }
   .db-prompt-cta { flex-shrink: 0; font-size: 13px; font-weight: 600; color: var(--accent-text); }
+
+  .db-banner { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+    background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 10px; padding: 9px 13px; font-family: inherit; margin-bottom: 12px; }
+  .db-banner:hover { border-color: var(--accent); }
+  .db-banner .db-spark { width: 22px; height: 22px; border-radius: 6px; }
+  .db-banner-tx { flex: 1; min-width: 0; font-size: 12.5px; color: var(--ink-2); }
+  .db-banner-tx b { color: var(--ink); }
 
   .db-form { border: 1px solid var(--rule); border-radius: 12px; padding: 15px 16px; background: var(--card); display: flex; flex-direction: column; gap: 13px; }
   .db-hd { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }

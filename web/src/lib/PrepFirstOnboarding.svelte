@@ -11,6 +11,7 @@
   let company = $state('');
   let role = $state('');
   let createdId = $state(null); // set once the application exists, so error/skip can route there
+  let createdFor = ''; // company|role the created app belongs to (guards retry reuse)
   let errMsg = $state('');
   const ready = $derived(!!company.trim() && !!role.trim());
 
@@ -25,22 +26,30 @@
       // The prep question creates the first tracked application as a byproduct —
       // the tracker spine stays intact; we just lead with the wedge. Company AND
       // role are both required by POST /applications (prep is role-specific).
-      const a = await api('/api/applications', {
-        method: 'POST',
-        body: JSON.stringify({ company: company.trim(), role: role.trim(), status: 'screen' })
-      });
-      createdId = a.id;
-      logEvent('application_create', { source: 'prepfirst' });
+      // On retry after a generate failure, reuse the app we already created —
+      // unless they edited the company/role, then start fresh.
+      const key = `${company.trim()}|${role.trim()}`;
+      if (createdId && key !== createdFor) createdId = null;
+      if (!createdId) {
+        createdFor = key;
+        const a = await api('/api/applications', {
+          method: 'POST',
+          body: JSON.stringify({ company: company.trim(), role: role.trim(), status: 'screen' })
+        });
+        createdId = a.id;
+        logEvent('application_create', { source: 'prepfirst' });
+      }
       // No interview_id → the shared company brief (interviewer-optional). This is
       // the cold-start wow; round-by-round prep is added later on the detail page.
-      await api(`/api/applications/${a.id}/dossier/refresh`, { method: 'POST', body: '{}' });
+      await api(`/api/applications/${createdId}/dossier/refresh`, { method: 'POST', body: '{}' });
       logEvent('prepfirst_generate_ok');
       await onDone();
-      goto(`/app/${a.id}?welcome=1`);
+      goto(`/app/${createdId}?welcome=1`);
     } catch (e) {
       console.error(e);
       errMsg = e?.message || '';
-      logEvent('prepfirst_generate_error');
+      // step: did the create or the brief generation fail? reason: capped error string.
+      logEvent('prepfirst_generate_error', { step: createdId ? 'generate' : 'create', reason: (e?.message || 'unknown').slice(0, 120) });
       phase = 'error';
     }
   }
