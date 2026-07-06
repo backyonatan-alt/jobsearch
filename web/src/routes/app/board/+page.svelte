@@ -408,6 +408,7 @@
   /* Mobile: horizontal scroll, narrower cards */
   @media (max-width: 900px) {
     .body { padding: 18px 14px 40px; }
+    .board-hd { flex-wrap: wrap; }
     .board-hd h1 { font-size: 26px; }
     .bcols { grid-template-columns: repeat(5, minmax(200px, 200px)); }
     .bcol { padding: 6px 8px 10px; }
