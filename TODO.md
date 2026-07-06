@@ -2,27 +2,51 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
-## ⏳ ~Jul 7 2026 — read the re-engagement cohort (do this next)
+## ⏳ NOW — the one gate before going wider: prove grounding on a real prep
 
-Context: after shipping P0 (grounding+citations), P1 (stale counts), P2 (closed
-status), P3a (debrief loop), the user sent a Hebrew re-engagement email to **all
-invited** users (~Jun 30/Jul 1) announcing the pivot to an interview-prep system.
-This is the "validate before scaling" gate — watch the cohort for ~a week, then
-read. Pull via the console snippet (adoption/invite-funnel/users) at `/admin`.
+The Jul 6 re-read (below) cleared everything else. Before recruiting a new
+cohort (LinkedIn/LayoffRadar push — pending list is empty, wider = outreach):
 
-**Pre-committed questions:**
-1. Did people come back? `last_login_at` spike since the email; signed-in count
-   vs the ~26 baseline.
-2. Did the reframe convert? prep-first activation vs the tracker-first baseline
-   (16/25 activated); `onboard_variant_assigned` prepfirst vs tour.
-3. Did grounding hold? any wrong-company complaints / `dossier_refresh` with a
-   company_url re-ground ("Not them?"); no repeat of the 365scores class.
-4. Did anyone debrief? `debrief_save` count + whether `prep_accuracy` trends
-   spot-on (our first real trust metric).
+- [ ] **One real prep retry on prod** — the user or Ayelet, on a real company —
+      confirm "Researched: <name> · <domain>" is the right company and citations
+      deep-link. This is the only failure class that quietly poisons a new
+      cohort's first impression. ~10 minutes. Then open the gate.
+- [ ] After going wider: watch `debrief_prompt_view` (`surface` prop) →
+      `debrief_save` convert on the new surfacing (shipped Jul 6, see below).
+      When `debrief_save` > 0 for real users → build 3b (proactive Today prompt
+      + admin prep-accuracy stat).
 
-**Then decide:** if it reads green → staged batch-promote of pending beta-interest
-(open wider). If bugs/leaks surface → fix those first. Don't open the gate wide
-until the wow-moment is proven to survive real use.
+## ✅ Jul 6 2026 — re-engagement cohort re-read done → amber-green, one gate left
+
+Pulled adoption/invite-funnel/users via the admin console. Funnel:
+**50 invited → 32 signed in → 21 activated → 10 active** (Jun 29 baseline:
+48→26→15→6). +6 sign-ins, +6 activated, active up 6→10 — the email + reframe
+moved people (11 invitees logged in since it went out; clear Jul 5 cluster).
+
+The four pre-committed questions:
+1. **Came back?** Yes, modestly — 11 logins since the email, 6 brand-new sign-ins.
+2. **Reframe convert?** Inconclusive at n=6 prepfirst assignments (4 submit,
+   3 generate-ok, 3 skip). The two `prepfirst_generate_error`s were Jun 30 +
+   Jul 1 only (launch-day hiccups, empty props — no reason logged); Jul 5 cohort
+   generated clean. Not a live bug.
+3. **Grounding hold?** Unproven either way — no wrong-company signal, but no
+   positive confirmation. Hence the gate above.
+4. **Anyone debrief?** **Zero — and `debrief_prompt_view` was zero too**, i.e.
+   the prompt was never even SEEN. Root cause found (not a demand signal): the
+   debrief card only rendered on a past round's tab, but the page defaulted to
+   `nextRound ?? company` — exactly when all rounds are past (the debrief case),
+   it opened on Company and the prompt was structurally unreachable. Plus the
+   event fired on click, not render. **Fixed + shipped Jul 6:** default tab
+   prefers an un-debriefed past round when nothing's upcoming; slim cross-tab
+   banner ("How did the {round} go? Debrief →") when the pending round isn't the
+   selected tab; `debrief_prompt_view` now fires on render (once per round per
+   visit, `surface: round_tab|banner|stage_done`); prepfirst error event now
+   carries `step`+`reason`, and prepfirst retry no longer creates duplicate
+   applications. Verified rendered: Playwright against local stack — both
+   surfaces + banner→form jump + save → events land with right props.
+
+**Decision:** go wider once the grounding gate above passes. Debrief loop was a
+surfacing bug, not a retention verdict — re-judge it with the new data.
 
 ## ⏳ Jun 30 2026 — Ayelet feedback → "trustworthy interview-ready prep" plan
 
@@ -78,6 +102,8 @@ present, never block** generation; **build 3a first**.
 - [x] events: `debrief_prompt_view`, `debrief_save {feel, prep_accuracy}`.
 - [x] Watch live (Jul re-read): debrief=0 — because it required a calendar interview
       almost nobody creates. **Fixed:** one-tap rounds (deploy #79, migration 0021).
+- [x] Jul 6 re-read: still 0, and prompt-views were 0 — the prompt itself was
+      unreachable (default-tab logic). Fixed Jul 6, see the top entry.
 
 *Unblock — one-tap rounds — ✅ SHIPPED Jul (deploy #79, migration 0021):*
 - [x] `interviews.scheduled` flag — a round no longer needs a date.

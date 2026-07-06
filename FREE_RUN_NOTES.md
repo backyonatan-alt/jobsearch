@@ -1,13 +1,9 @@
 # Free run notes — Pursuit
 
-> ⏳ **PENDING — re-read the re-engagement cohort (~Jul 7 2026).** After shipping
-> P0–P3a + one-tap rounds, the user sent a Hebrew re-engagement email to all
-> invited users (~Jul 1). Run the dated re-read in `TODO.md` (top entry): pull
-> adoption/invite-funnel/users/events via the admin console snippet and answer the
-> pre-committed questions — did people come back, did the reframe convert, did
-> anyone finally **debrief** (`debrief_save > 0`), does `prep_accuracy` trend
-> spot-on? Then decide: open the gate wider vs. fix what surfaces. **Do this before
-> starting new feature work.**
+> ⏳ **PENDING — the grounding gate (see `TODO.md` top entry).** Jul 6 re-read
+> done: funnel up (50→32→21→10), reframe cohort real, debrief-zero root-caused
+> as a surfacing bug and fixed. One gate before recruiting wider: a real prep
+> retry on prod confirming right-company + deep-link citations. Then open up.
 
 A scratchpad for observations while actually using the app. Capture
 the moment you notice something; triage later.
@@ -245,6 +241,38 @@ distinct status.
 ---
 
 ## Shipped (move items here once fixed)
+
+### Debrief prompt was unreachable — surfacing fix (Jul 6 2026)
+
+> Jul 6 cohort re-read: `debrief_save` = 0 **and** `debrief_prompt_view` = 0
+> five days after one-tap rounds shipped. Not low demand — the prompt never
+> rendered for anyone.
+
+- `[bug]` **Default tab hid the debrief card.** The card only rendered on a past
+  round's selected tab, but `/app/[id]` defaulted to `nextRound ?? company` — so
+  when all rounds were past (the exact debrief moment), the page opened on
+  Company and the card was behind a tab click nobody made. Now: no upcoming
+  round → default to the most recent un-debriefed past round.
+- `[bug]` **`debrief_prompt_view` fired on click, not view** (inside
+  `startDebrief`) — a "view" event that couldn't fire before a click. Now fires
+  when the prompt actually renders, once per round per visit, with
+  `surface: round_tab | banner | stage_done` so view→save conversion is real.
+- `[gap]` **No cross-tab path to the debrief.** When prep opens on the next
+  round (the common multi-round case), the previous round's debrief was
+  invisible — precisely where feed-forward matters. Added a slim banner ("How
+  did the {round} go? Debrief →") that jumps to the pending round with the form
+  open.
+- Also: `prepfirst_generate_error` now logs `step` (create|generate) + `reason`
+  (the Jun 30/Jul 1 errors had empty props); prepfirst retry after a generate
+  failure reuses the created application instead of inserting a duplicate
+  (unless company/role was edited).
+- `[ux]` Watch: an undated one-tap round added for a *future* stage triggers the
+  banner nag ("How did the X round go?") — consistent with existing undated-
+  round semantics, but if users add future rounds this way it'll read wrong.
+- Verified rendered (Playwright vs local stack): past-round-only app opens on
+  the round with the card; past+future app opens on next round with the banner;
+  banner click → form → save; events land with the right surfaces; the init
+  race that double-logged a phantom banner view is gated out.
 
 ### Per-round prep — shared company brief + per-interviewer briefs (Jun 28 2026)
 
