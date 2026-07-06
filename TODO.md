@@ -2,19 +2,25 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
-## ⏳ NOW — the one gate before going wider: prove grounding on a real prep
+## ✅ Jul 6 2026 — grounding gate PASSED → cleared to go wider
 
-The Jul 6 re-read (below) cleared everything else. Before recruiting a new
-cohort (LinkedIn/LayoffRadar push — pending list is empty, wider = outreach):
+Claude-for-Chrome QA on prod, all 8 steps green ("Lusha" test row, cleaned up):
 
-- [ ] **One real prep retry on prod** — the user or Ayelet, on a real company —
-      confirm "Researched: <name> · <domain>" is the right company and citations
-      deep-link. This is the only failure class that quietly poisons a new
-      cohort's first impression. ~10 minutes. Then open the gate.
+- [x] **Right company:** "Researched: Lusha Systems · lusha.com" — correct
+      B2B sales-intelligence Lusha, not a lookalike. The 365scores failure
+      class is closed on a live generation.
+- [x] **Real citations:** Sources were specific deep links (TechCrunch,
+      Calcalist, Lusha blog, Glassdoor…); sampled TechCrunch link genuinely
+      substantiated the brief's $1.5B-valuation claim.
+- [x] **Debrief surfacing (shipped earlier today):** card on round tab, cross-tab
+      banner → form jump, save → "Debriefed" badge — all verified on prod.
+
+**→ The gate is open: start the wider outreach** (pending list is empty, so
+wider = LinkedIn/LayoffRadar push + new invites).
+
 - [ ] After going wider: watch `debrief_prompt_view` (`surface` prop) →
-      `debrief_save` convert on the new surfacing (shipped Jul 6, see below).
-      When `debrief_save` > 0 for real users → build 3b (proactive Today prompt
-      + admin prep-accuracy stat).
+      `debrief_save` convert on the new surfacing. When `debrief_save` > 0 for
+      real users → build 3b (proactive Today prompt + admin prep-accuracy stat).
 
 ## ✅ Jul 6 2026 — re-engagement cohort re-read done → amber-green, one gate left
 

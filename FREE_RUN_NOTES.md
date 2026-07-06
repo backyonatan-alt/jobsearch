@@ -1,9 +1,11 @@
 # Free run notes — Pursuit
 
-> ⏳ **PENDING — the grounding gate (see `TODO.md` top entry).** Jul 6 re-read
-> done: funnel up (50→32→21→10), reframe cohort real, debrief-zero root-caused
-> as a surfacing bug and fixed. One gate before recruiting wider: a real prep
-> retry on prod confirming right-company + deep-link citations. Then open up.
+> ✅ **Gate passed, go wider (Jul 6 2026).** Re-read done (funnel 50→32→21→10),
+> debrief surfacing fixed + shipped, and the grounding gate passed live QA on
+> prod (right company + deep-link citations verified on a real generation).
+> Next: the wider outreach (LinkedIn/LayoffRadar push), then watch
+> `debrief_prompt_view → debrief_save` on `/admin/adoption`; first real
+> `debrief_save` unlocks Phase 3b. See `TODO.md` top entry.
 
 A scratchpad for observations while actually using the app. Capture
 the moment you notice something; triage later.
