@@ -51,6 +51,47 @@ rsync -avz --delete bin/ migrations/ web/ user@host:/opt/jobsearch/
 ssh user@host 'sudo systemctl restart jobsearch && sleep 1 && curl -fsS http://localhost:8080/healthz'
 ```
 
+## Backups & restore
+
+Nightly at 02:23 UTC, `.github/workflows/backup.yml`:
+
+1. `pg_dump --format=custom jobsearch` on the VM → `/var/backups/pursuit/`
+   (last 7 kept — fastest restore path).
+2. The latest dump is pulled to the runner, verified with `pg_restore --list`
+   (core tables must be present), **encrypted** (AES-256-CBC, PBKDF2 200k), and
+   uploaded as a workflow artifact with 30-day retention. The repo is public,
+   so plaintext is never uploaded.
+
+**Passphrase:** the `BACKUP_PASSPHRASE` secret if set; otherwise derived from
+the `DEPLOY_SSH_KEY` secret: `sha256` of the secret's exact (base64) value.
+⚠️ If you rotate `DEPLOY_SSH_KEY` without setting `BACKUP_PASSPHRASE`, keep the
+old key around to decrypt older artifacts — or just set `BACKUP_PASSPHRASE`
+once and forget about it (Settings → Secrets → Actions).
+
+**Restore from the VM (usual case — bad deploy/migration, VM alive):**
+
+```bash
+ssh user@host
+sudo -u postgres ls -1t /var/backups/pursuit/    # pick a dump
+sudo systemctl stop jobsearch
+sudo -u postgres dropdb jobsearch && sudo -u postgres createdb -O jobsearch jobsearch
+sudo -u postgres pg_restore -d jobsearch /var/backups/pursuit/pursuit-<ts>.dump
+sudo systemctl start jobsearch
+```
+
+**Restore from an artifact (VM lost):** download `pursuit.dump.enc` from the
+latest green backup run (Actions → backup), then:
+
+```bash
+# passphrase: BACKUP_PASSPHRASE, or derive it from the SSH-key secret value:
+#   printf %s "<DEPLOY_SSH_KEY secret value>" | sha256sum | cut -d' ' -f1
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+  -in pursuit.dump.enc -out pursuit.dump -pass pass:<passphrase>
+pg_restore -d jobsearch pursuit.dump   # after bootstrap.sh on the new VM
+```
+
+Run an on-demand backup any time: Actions → backup → Run workflow.
+
 ## Verify after deploy
 
 ```bash

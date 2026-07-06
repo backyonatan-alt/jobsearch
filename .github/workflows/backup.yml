@@ -1,0 +1,78 @@
+name: backup
+
+# Nightly Postgres backup: pg_dump on the VM (last 7 kept locally for fast
+# restores) + an ENCRYPTED copy stored off-VM as a workflow artifact.
+#
+# The repo is PUBLIC, so artifacts are downloadable by anyone — the dump is
+# always encrypted before upload (AES-256, PBKDF2). The passphrase is
+# BACKUP_PASSPHRASE if that secret is set, otherwise it's derived from
+# DEPLOY_SSH_KEY (sha256 of the secret's base64 value). Restore instructions:
+# deploy/README.md "Backups & restore".
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    steps:
+      - name: Install SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" | base64 -d > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Dump on the VM + rotate last 7
+        run: |
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            set -e
+            sudo install -d -o postgres -g postgres -m 700 /var/backups/pursuit
+            ts=$(date -u +%Y%m%d-%H%M%S)
+            sudo -u postgres sh -c "pg_dump --format=custom jobsearch > /var/backups/pursuit/pursuit-$ts.dump"
+            sudo -u postgres sh -c "ls -1t /var/backups/pursuit/pursuit-*.dump | tail -n +8 | xargs -r rm --"
+            sudo -u postgres ls -lh /var/backups/pursuit/
+          '
+
+      - name: Fetch latest dump
+        run: |
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            'sudo -u postgres sh -c "cat \$(ls -1t /var/backups/pursuit/pursuit-*.dump | head -1)"' \
+            > pursuit.dump
+          ls -l pursuit.dump
+
+      - name: Verify the dump is restorable and complete
+        run: |
+          test "$(stat -c%s pursuit.dump)" -gt 10000 || { echo "dump suspiciously small"; exit 1; }
+          pg_restore --list pursuit.dump > toc.txt
+          for t in users applications interviews dossiers debriefs events invited_emails; do
+            grep -q "TABLE DATA public $t " toc.txt || { echo "missing table in dump: $t"; exit 1; }
+          done
+          echo "dump OK: $(grep -c 'TABLE DATA' toc.txt) tables with data entries"
+
+      - name: Encrypt (never upload plaintext — public repo)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -n "$BACKUP_PASSPHRASE" ]; then
+            PASS="$BACKUP_PASSPHRASE"
+          else
+            PASS=$(printf %s "$DEPLOY_SSH_KEY" | sha256sum | cut -d' ' -f1)
+          fi
+          export PASS
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in pursuit.dump -out pursuit.dump.enc -pass env:PASS
+          rm -f pursuit.dump
+          ls -l pursuit.dump.enc
+
+      - name: Upload encrypted artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: pursuit.dump.enc
+          retention-days: 30
+          if-no-files-found: error
