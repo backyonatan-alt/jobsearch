@@ -221,7 +221,11 @@ promoted to lead step 1/6), in-app prep section + Today CTAs.
 
 - [ ] Postmark account + `MAIL_DRIVER=postmark` wired in
 - [ ] Privacy note: closed beta, what we store, retention policy. Even one paragraph.
-- [ ] Backup story for Postgres: nightly `pg_dump` → off-VM (S3 or Hetzner Storage Box)
+- [x] Backup story for Postgres — nightly workflow (Jul 6 2026): `pg_dump` on the
+      VM (last 7 rotated locally) + encrypted off-VM copy as a GH Actions artifact
+      (30-day retention; repo is public so plaintext never leaves the VM). Restore
+      runbook in `deploy/README.md`. Optional hardening: set a `BACKUP_PASSPHRASE`
+      secret (else key derives from `DEPLOY_SSH_KEY`).
 - [ ] A single Plausible (or GA4) property wired into the frontend
 
 ## Product analytics (GA4 — funnel-first)
