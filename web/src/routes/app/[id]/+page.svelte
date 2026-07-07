@@ -1,7 +1,7 @@
 <script>
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { api } from '$lib/api.js';
+  import { api, isConnectionErr, pollForDossier } from '$lib/api.js';
   import { isPreview, mockApi } from '$lib/preview-mode.js';
   import { logEvent } from '$lib/analytics.js';
   import ConfirmDialog from '$lib/ConfirmDialog.svelte';
@@ -391,6 +391,7 @@
       setTimeout(() => { if (generating) prepStage = PREP_STAGES[2]; }, 25000),
       setTimeout(() => { if (generating) prepStage = PREP_STAGES[3]; }, 50000)
     ];
+    const prevGeneratedAt = dossier?.generated_at ?? null;
     try {
       const companyUrl = companyUrlInput.trim() || undefined;
       const body = onCompany
@@ -404,6 +405,22 @@
       interviewerInput = d.interviewer_name ?? interviewerInput;
       showReground = false;
     } catch (e) {
+      // A dropped connection doesn't kill the build — the server finishes and
+      // saves. Poll for the fresh brief before showing an error.
+      if (isConnectionErr(e)) {
+        timers.forEach(clearTimeout);
+        prepStage = 'Connection hiccup — still building on our side, watching for it…';
+        const q = onCompany ? '?scope=company' : `?interview_id=${selectedTab}`;
+        const d = await pollForDossier(`/api/applications/${id}/dossier${q}`, prevGeneratedAt);
+        if (d) {
+          dossier = d;
+          interviewerInput = d.interviewer_name ?? interviewerInput;
+          showReground = false;
+          generating = false;
+          prepStage = '';
+          return;
+        }
+      }
       genError = friendlyGenErr(e.message);
     } finally {
       timers.forEach(clearTimeout);
@@ -414,6 +431,8 @@
 
   function friendlyGenErr(msg) {
     const m = String(msg || '');
+    if (/failed to fetch|load failed|networkerror/i.test(m))
+      return 'The connection dropped mid-build. If it finished on our side it will appear when you reload — otherwise try again.';
     if (m.includes('rate_limit_error') || m.includes('429'))
       return 'AI usage limit hit — wait a minute and try again.';
     if (m.includes('http 504') || /\btimeout\b/i.test(m))

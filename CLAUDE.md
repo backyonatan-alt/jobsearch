@@ -182,6 +182,18 @@ Sequenced execution plan + all of Ayelet's items live in `TODO.md` (Jun 30) and
 `FREE_RUN_NOTES.md` (Jun 30). Phase 0 = grounding/disambiguation + real citations.
 **Mobile:** desktop-only for the beta; real responsive/PWA pass deferred to Phase 3.
 
+#### Strategy investigation → `STRATEGY.md` (Jul 7 2026)
+
+One-time deep research pass (6 lanes: competitors / market / monetization /
+distribution / internal evidence / scenarios, + adversarial red team + fresh prod
+data) answering *"can this become a bootstrap product/business?"*. **`STRATEGY.md`
+is the reference doc**: scenarios with kill criteria, the priced experiment
+(prep packs via Paddle), a trust-infrastructure workstream (eval harness +
+interviewer-privacy policy) gating wider distribution, distribution playbook,
+message bank, and the sequenced Phase A/B/C roadmap. Headline: *prep-as-wedge is
+earned; everything else is an experiment with a number attached.* Log verdicts in
+its §12 table.
+
 ---
 
 ## Project vision (initial sketch from the user, May 21 2026)

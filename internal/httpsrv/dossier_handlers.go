@@ -303,31 +303,37 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	// Grounding signals so research pins the RIGHT same-named company.
 	loc, jd := deref(app.Location), deref(app.JDURL)
 
+	// Generation runs on a context detached from the connection: a dropped
+	// client (phone locks, tab closes, network blip — the browser's "Failed to
+	// fetch") must not abort a 1–2 min LLM call that's already paid for. The
+	// brief is persisted regardless; the frontend recovers by polling GET.
+	gctx := context.WithoutCancel(r.Context())
+
 	// No round → (re)generate the shared company brief.
 	if req.InterviewID == nil {
-		content, gerr := s.LLM.GenerateCompanyBrief(r.Context(), app.Company, app.Role, loc, jd, req.CompanyURL)
+		content, gerr := s.LLM.GenerateCompanyBrief(gctx, app.Company, app.Role, loc, jd, req.CompanyURL)
 		if gerr != nil {
-			s.failGenerate(w, r.Context(), u.ID, start, gerr)
+			s.failGenerate(w, gctx, u.ID, start, gerr)
 			return
 		}
-		if err := s.upsertCompanyBrief(r.Context(), appID, content, modelUsed, now); err != nil {
+		if err := s.upsertCompanyBrief(gctx, appID, content, modelUsed, now); err != nil {
 			s.Logger.Error("company brief upsert", "err", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal")
 			return
 		}
-		s.finishGenerate(r.Context(), u.ID, start, len(content))
+		s.finishGenerate(gctx, u.ID, start, len(content))
 		writeDossier(w, appID, &dossierRow{Content: content, ModelUsed: modelUsed, GeneratedAt: now},
-			s.meetingForApp(r.Context(), app, ""))
+			s.meetingForApp(gctx, app, ""))
 		return
 	}
 
 	// A round → research this interviewer. If the application has no company
 	// brief yet, generate it alongside (in parallel) — bundled, no extra credit.
 	var companyCh chan json.RawMessage
-	if existing, _ := s.fetchCompanyBrief(r.Context(), appID); existing == nil {
+	if existing, _ := s.fetchCompanyBrief(gctx, appID); existing == nil {
 		companyCh = make(chan json.RawMessage, 1)
 		go func() {
-			cc, cerr := s.LLM.GenerateCompanyBrief(r.Context(), app.Company, app.Role, loc, jd, req.CompanyURL)
+			cc, cerr := s.LLM.GenerateCompanyBrief(gctx, app.Company, app.Role, loc, jd, req.CompanyURL)
 			if cerr != nil {
 				s.Logger.Info("bundled company brief failed (non-fatal)", "err", cerr)
 				companyCh <- nil
@@ -340,34 +346,34 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	// Feed-forward: fold in debriefs from rounds that happened before this one.
 	var priorDebriefs string
 	if round != nil {
-		priorDebriefs = s.priorDebriefsContext(r.Context(), appID, round.StartsAt)
+		priorDebriefs = s.priorDebriefsContext(gctx, appID, round.StartsAt)
 	}
 
-	content, gerr := s.LLM.GenerateInterviewerBrief(r.Context(), app.Company, app.Role, req.InterviewerName, loc, req.CompanyURL, priorDebriefs)
+	content, gerr := s.LLM.GenerateInterviewerBrief(gctx, app.Company, app.Role, req.InterviewerName, loc, req.CompanyURL, priorDebriefs)
 	if gerr != nil {
-		s.failGenerate(w, r.Context(), u.ID, start, gerr)
+		s.failGenerate(w, gctx, u.ID, start, gerr)
 		return
 	}
 	var nullableName *string
 	if req.InterviewerName != "" {
 		nullableName = &req.InterviewerName
 	}
-	if err := s.upsertRoundBrief(r.Context(), appID, *req.InterviewID, nullableName, content, modelUsed, now); err != nil {
+	if err := s.upsertRoundBrief(gctx, appID, *req.InterviewID, nullableName, content, modelUsed, now); err != nil {
 		s.Logger.Error("round brief upsert", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal")
 		return
 	}
 	if companyCh != nil {
 		if cc := <-companyCh; len(cc) > 0 {
-			if uerr := s.upsertCompanyBrief(r.Context(), appID, cc, modelUsed, now); uerr != nil {
+			if uerr := s.upsertCompanyBrief(gctx, appID, cc, modelUsed, now); uerr != nil {
 				s.Logger.Error("bundled company brief upsert", "err", uerr)
 			}
 		}
 	}
-	s.finishGenerate(r.Context(), u.ID, start, len(content))
+	s.finishGenerate(gctx, u.ID, start, len(content))
 	writeDossier(w, appID,
 		&dossierRow{InterviewerName: nullableName, Content: content, ModelUsed: modelUsed, GeneratedAt: now, InterviewID: req.InterviewID},
-		s.meetingForDossier(r.Context(), app, req.InterviewID, req.InterviewerName))
+		s.meetingForDossier(gctx, app, req.InterviewID, req.InterviewerName))
 }
 
 func (s *Server) upsertCompanyBrief(ctx context.Context, appID int64, content json.RawMessage, model string, now time.Time) error {
