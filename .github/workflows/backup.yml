@@ -1,21 +1,15 @@
 name: backup
 
-# Nightly Postgres backup: pg_dump on the VM (last 7 kept locally for fast
-# restores) + an ENCRYPTED copy stored off-VM as a workflow artifact.
-#
-# The repo is PUBLIC, so artifacts are downloadable by anyone — the dump is
-# always encrypted before upload (AES-256, PBKDF2). The passphrase is
-# BACKUP_PASSPHRASE if that secret is set, otherwise it's derived from
-# DEPLOY_SSH_KEY (sha256 of the secret's base64 value). Restore instructions:
-# deploy/README.md "Backups & restore".
+# BRANCH-ONLY OVERRIDE (claude/linkedin-post-data-impact-l70fd3): read-only
+# diagnostics for the Jul 7 generate-failure investigation. Aggregate counts
+# only — NO emails or per-user rows (public repo, public logs). Restored to
+# main's content once done.
 
 on:
-  schedule:
-    - cron: '23 2 * * *'
   workflow_dispatch:
 
 jobs:
-  backup:
+  snapshot:
     runs-on: ubuntu-latest
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     steps:
@@ -26,58 +20,50 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Dump on the VM + verify TOC + rotate last 7
-        # pg_restore runs on the VM (same Postgres version as pg_dump) — the
-        # runner's client can be older and unable to read the archive header.
+      - name: Write diagnostics SQL
         run: |
+          cat > /tmp/diag.sql <<'SQL'
+          \pset pager off
+          \echo === error users: did they end up with a dossier? ===
+          WITH errs AS (
+            SELECT DISTINCT user_id FROM events
+            WHERE name = 'prepfirst_generate_error' AND created_at >= '2026-07-06 21:00+00'
+          )
+          SELECT (SELECT count(*) FROM errs) AS err_users,
+                 count(*) FILTER (WHERE EXISTS (
+                   SELECT 1 FROM dossiers d JOIN applications a ON a.id = d.application_id
+                   WHERE a.user_id = e.user_id)) AS with_dossier
+          FROM errs e;
+
+          \echo === debrief_save: admin or real user ===
+          SELECT u.is_admin, count(*) AS saves
+          FROM events ev JOIN users u ON u.id = ev.user_id
+          WHERE ev.name = 'debrief_save' GROUP BY 1;
+
+          \echo === prep credit burn ===
+          SELECT sum(prep_credits_used) AS credits_used_total,
+                 count(*) FILTER (WHERE prep_credits_used > 0) AS users_spent
+          FROM users;
+
+          \echo === briefs generated per day since Jul 4 (Israel time) ===
+          SELECT (generated_at AT TIME ZONE 'Asia/Jerusalem')::date AS day, count(*) AS briefs
+          FROM dossiers WHERE generated_at >= '2026-07-03 21:00+00'
+          GROUP BY 1 ORDER BY 1;
+
+          \echo === dossier_refresh outcomes + duration since Jul 4 ===
+          SELECT COALESCE(props->>'outcome','?') AS outcome, count(*) AS n,
+                 round(percentile_cont(0.5) WITHIN GROUP (ORDER BY (props->>'duration_ms')::bigint)) AS p50_ms,
+                 round(percentile_cont(0.95) WITHIN GROUP (ORDER BY (props->>'duration_ms')::bigint)) AS p95_ms
+          FROM events
+          WHERE name = 'dossier_refresh' AND created_at >= '2026-07-03 21:00+00'
+          GROUP BY 1;
+          SQL
+
+      - name: Run diagnostics on the VM
+        run: |
+          scp /tmp/diag.sql "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/diag.sql"
           ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
-            set -e
-            sudo install -d -o postgres -g postgres -m 700 /var/backups/pursuit
-            ts=$(date -u +%Y%m%d-%H%M%S)
-            f=/var/backups/pursuit/pursuit-$ts.dump
-            sudo -u postgres sh -c "pg_dump --format=custom jobsearch > $f"
-            sudo -u postgres pg_restore --list "$f" > /tmp/backup-toc.txt
-            for t in users applications interviews dossiers debriefs events invited_emails; do
-              grep -q "TABLE DATA public $t " /tmp/backup-toc.txt || { echo "missing table in dump: $t"; exit 1; }
-            done
-            echo "dump OK: $(grep -c "TABLE DATA" /tmp/backup-toc.txt) TABLE DATA entries"
-            rm -f /tmp/backup-toc.txt
-            sudo -u postgres sh -c "ls -1t /var/backups/pursuit/pursuit-*.dump | tail -n +8 | xargs -r rm --"
-            sudo -u postgres ls -lh /var/backups/pursuit/
+            sudo -u postgres psql -d jobsearch -f /tmp/diag.sql; rm -f /tmp/diag.sql
+            echo "=== live nginx AI-endpoint timeouts ==="
+            sudo grep -E "location|proxy_read_timeout" /etc/nginx/sites-available/pursuit.conf
           '
-
-      - name: Fetch latest dump
-        run: |
-          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            'sudo -u postgres sh -c "cat \$(ls -1t /var/backups/pursuit/pursuit-*.dump | head -1)"' \
-            > pursuit.dump
-          ls -l pursuit.dump
-
-      - name: Sanity-check the fetched copy
-        run: |
-          test "$(stat -c%s pursuit.dump)" -gt 10000 || { echo "dump suspiciously small"; exit 1; }
-          head -c5 pursuit.dump | grep -q "PGDMP" || { echo "not a pg_dump custom archive"; exit 1; }
-
-      - name: Encrypt (never upload plaintext — public repo)
-        env:
-          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: |
-          if [ -n "$BACKUP_PASSPHRASE" ]; then
-            PASS="$BACKUP_PASSPHRASE"
-          else
-            PASS=$(printf %s "$DEPLOY_SSH_KEY" | sha256sum | cut -d' ' -f1)
-          fi
-          export PASS
-          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
-            -in pursuit.dump -out pursuit.dump.enc -pass env:PASS
-          rm -f pursuit.dump
-          ls -l pursuit.dump.enc
-
-      - name: Upload encrypted artifact (30-day retention)
-        uses: actions/upload-artifact@v4
-        with:
-          name: db-backup-${{ github.run_id }}
-          path: pursuit.dump.enc
-          retention-days: 30
-          if-no-files-found: error
