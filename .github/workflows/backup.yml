@@ -1,14 +1,21 @@
 name: backup
 
-# BRANCH-ONLY OVERRIDE (claude/linkedin-post-data-impact-l70fd3): read-only
-# depth-of-use snapshot feeding the strategy research. Aggregate counts only —
-# NO emails or per-user rows (public repo, public logs). Restored after use.
+# Nightly Postgres backup: pg_dump on the VM (last 7 kept locally for fast
+# restores) + an ENCRYPTED copy stored off-VM as a workflow artifact.
+#
+# The repo is PUBLIC, so artifacts are downloadable by anyone — the dump is
+# always encrypted before upload (AES-256, PBKDF2). The passphrase is
+# BACKUP_PASSPHRASE if that secret is set, otherwise it's derived from
+# DEPLOY_SSH_KEY (sha256 of the secret's base64 value). Restore instructions:
+# deploy/README.md "Backups & restore".
 
 on:
+  schedule:
+    - cron: '23 2 * * *'
   workflow_dispatch:
 
 jobs:
-  snapshot:
+  backup:
     runs-on: ubuntu-latest
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     steps:
@@ -19,67 +26,58 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Write depth-of-use SQL
+      - name: Dump on the VM + verify TOC + rotate last 7
+        # pg_restore runs on the VM (same Postgres version as pg_dump) — the
+        # runner's client can be older and unable to read the archive header.
         run: |
-          cat > /tmp/depth.sql <<'SQL'
-          \pset pager off
-          \echo === recency buckets (non-admin users) ===
-          SELECT CASE
-                   WHEN last_login_at >= now() - interval '7 days' THEN '1_active_7d'
-                   WHEN last_login_at >= now() - interval '21 days' THEN '2_cooling_8_21d'
-                   ELSE '3_dormant_21d_plus'
-                 END AS bucket, count(*) AS users
-          FROM users WHERE NOT is_admin AND last_login_at IS NOT NULL
-          GROUP BY 1 ORDER BY 1;
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            set -e
+            sudo install -d -o postgres -g postgres -m 700 /var/backups/pursuit
+            ts=$(date -u +%Y%m%d-%H%M%S)
+            f=/var/backups/pursuit/pursuit-$ts.dump
+            sudo -u postgres sh -c "pg_dump --format=custom jobsearch > $f"
+            sudo -u postgres pg_restore --list "$f" > /tmp/backup-toc.txt
+            for t in users applications interviews dossiers debriefs events invited_emails; do
+              grep -q "TABLE DATA public $t " /tmp/backup-toc.txt || { echo "missing table in dump: $t"; exit 1; }
+            done
+            echo "dump OK: $(grep -c "TABLE DATA" /tmp/backup-toc.txt) TABLE DATA entries"
+            rm -f /tmp/backup-toc.txt
+            sudo -u postgres sh -c "ls -1t /var/backups/pursuit/pursuit-*.dump | tail -n +8 | xargs -r rm --"
+            sudo -u postgres ls -lh /var/backups/pursuit/
+          '
 
-          \echo === distinct active days per user (events, non-admin) — stickiness ===
-          SELECT days_active, count(*) AS users FROM (
-            SELECT e.user_id, count(DISTINCT (e.created_at AT TIME ZONE 'Asia/Jerusalem')::date) AS days_active
-            FROM events e JOIN users u ON u.id = e.user_id AND NOT u.is_admin
-            GROUP BY e.user_id
-          ) t GROUP BY 1 ORDER BY 1;
-
-          \echo === playbooks (dossiers) per non-admin user ===
-          SELECT briefs, count(*) AS users FROM (
-            SELECT u.id, count(d.application_id) AS briefs
-            FROM users u
-            LEFT JOIN applications a ON a.user_id = u.id
-            LEFT JOIN dossiers d ON d.application_id = a.id
-            WHERE NOT u.is_admin
-            GROUP BY u.id
-          ) t GROUP BY 1 ORDER BY 1;
-
-          \echo === real applications per non-admin user ===
-          SELECT apps, count(*) AS users FROM (
-            SELECT u.id, count(a.id) AS apps
-            FROM users u LEFT JOIN applications a ON a.user_id = u.id
-              AND (a.notes IS NULL OR a.notes NOT LIKE '[demo] %')
-            WHERE NOT u.is_admin
-            GROUP BY u.id
-          ) t GROUP BY 1 ORDER BY 1;
-
-          \echo === users returning on a later calendar day than signup (non-admin) ===
-          SELECT count(*) AS returned_users FROM users u
-          WHERE NOT is_admin AND EXISTS (
-            SELECT 1 FROM events e WHERE e.user_id = u.id
-              AND (e.created_at AT TIME ZONE 'Asia/Jerusalem')::date
-                > (u.created_at AT TIME ZONE 'Asia/Jerusalem')::date);
-
-          \echo === interview rounds + debriefs coverage (non-admin) ===
-          SELECT
-            (SELECT count(DISTINCT i.user_id) FROM interviews i JOIN users u ON u.id = i.user_id AND NOT u.is_admin) AS users_with_rounds,
-            (SELECT count(*) FROM interviews i JOIN users u ON u.id = i.user_id AND NOT u.is_admin) AS total_rounds,
-            (SELECT count(*) FROM debriefs d JOIN users u ON u.id = d.user_id AND NOT u.is_admin) AS real_debriefs;
-
-          \echo === event volume by name, last 30 days (non-admin) ===
-          SELECT e.name, count(*) AS n, count(DISTINCT e.user_id) AS users
-          FROM events e JOIN users u ON u.id = e.user_id AND NOT u.is_admin
-          WHERE e.created_at >= now() - interval '30 days'
-          GROUP BY 1 ORDER BY 3 DESC, 2 DESC;
-          SQL
-
-      - name: Run on the VM
+      - name: Fetch latest dump
         run: |
-          scp /tmp/depth.sql "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/depth.sql"
           ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            'sudo -u postgres psql -d jobsearch -f /tmp/depth.sql; rm -f /tmp/depth.sql'
+            'sudo -u postgres sh -c "cat \$(ls -1t /var/backups/pursuit/pursuit-*.dump | head -1)"' \
+            > pursuit.dump
+          ls -l pursuit.dump
+
+      - name: Sanity-check the fetched copy
+        run: |
+          test "$(stat -c%s pursuit.dump)" -gt 10000 || { echo "dump suspiciously small"; exit 1; }
+          head -c5 pursuit.dump | grep -q "PGDMP" || { echo "not a pg_dump custom archive"; exit 1; }
+
+      - name: Encrypt (never upload plaintext — public repo)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -n "$BACKUP_PASSPHRASE" ]; then
+            PASS="$BACKUP_PASSPHRASE"
+          else
+            PASS=$(printf %s "$DEPLOY_SSH_KEY" | sha256sum | cut -d' ' -f1)
+          fi
+          export PASS
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in pursuit.dump -out pursuit.dump.enc -pass env:PASS
+          rm -f pursuit.dump
+          ls -l pursuit.dump.enc
+
+      - name: Upload encrypted artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: pursuit.dump.enc
+          retention-days: 30
+          if-no-files-found: error
