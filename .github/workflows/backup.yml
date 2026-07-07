@@ -1,16 +1,21 @@
 name: backup
 
-# BRANCH-ONLY OVERRIDE (claude/linkedin-post-data-impact-l70fd3): repurposed as
-# a one-off read-only adoption snapshot for the Jul 6 LinkedIn-wave read.
-# Dispatching backup.yml with ref=this-branch runs THIS file; main's nightly
-# backup is untouched (schedule always runs from the default branch).
-# Aggregate counts only — NO emails or per-user rows (public repo, public logs).
+# Nightly Postgres backup: pg_dump on the VM (last 7 kept locally for fast
+# restores) + an ENCRYPTED copy stored off-VM as a workflow artifact.
+#
+# The repo is PUBLIC, so artifacts are downloadable by anyone — the dump is
+# always encrypted before upload (AES-256, PBKDF2). The passphrase is
+# BACKUP_PASSPHRASE if that secret is set, otherwise it's derived from
+# DEPLOY_SSH_KEY (sha256 of the secret's base64 value). Restore instructions:
+# deploy/README.md "Backups & restore".
 
 on:
+  schedule:
+    - cron: '23 2 * * *'
   workflow_dispatch:
 
 jobs:
-  snapshot:
+  backup:
     runs-on: ubuntu-latest
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     steps:
@@ -21,64 +26,58 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Write snapshot SQL
+      - name: Dump on the VM + verify TOC + rotate last 7
+        # pg_restore runs on the VM (same Postgres version as pg_dump) — the
+        # runner's client can be older and unable to read the archive header.
         run: |
-          cat > /tmp/snapshot.sql <<'SQL'
-          \pset pager off
-          \echo === signups per day, last 14 days (Israel time) ===
-          SELECT (created_at AT TIME ZONE 'Asia/Jerusalem')::date AS day, count(*) AS new_users
-          FROM users
-          WHERE created_at >= now() - interval '14 days'
-          GROUP BY 1 ORDER BY 1;
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            set -e
+            sudo install -d -o postgres -g postgres -m 700 /var/backups/pursuit
+            ts=$(date -u +%Y%m%d-%H%M%S)
+            f=/var/backups/pursuit/pursuit-$ts.dump
+            sudo -u postgres sh -c "pg_dump --format=custom jobsearch > $f"
+            sudo -u postgres pg_restore --list "$f" > /tmp/backup-toc.txt
+            for t in users applications interviews dossiers debriefs events invited_emails; do
+              grep -q "TABLE DATA public $t " /tmp/backup-toc.txt || { echo "missing table in dump: $t"; exit 1; }
+            done
+            echo "dump OK: $(grep -c "TABLE DATA" /tmp/backup-toc.txt) TABLE DATA entries"
+            rm -f /tmp/backup-toc.txt
+            sudo -u postgres sh -c "ls -1t /var/backups/pursuit/pursuit-*.dump | tail -n +8 | xargs -r rm --"
+            sudo -u postgres ls -lh /var/backups/pursuit/
+          '
 
-          \echo === total users ===
-          SELECT count(*) AS total_users FROM users;
-
-          \echo === login events by src, last 7 days ===
-          SELECT COALESCE(props->>'src','(none)') AS src, count(*) AS logins, count(DISTINCT user_id) AS users
-          FROM events
-          WHERE name = 'login' AND created_at >= now() - interval '7 days'
-          GROUP BY 1 ORDER BY 2 DESC;
-
-          \echo === src=li logins per day (all time) ===
-          SELECT (created_at AT TIME ZONE 'Asia/Jerusalem')::date AS day,
-                 count(*) AS li_logins, count(DISTINCT user_id) AS li_users
-          FROM events
-          WHERE name = 'login' AND props->>'src' = 'li'
-          GROUP BY 1 ORDER BY 1;
-
-          \echo === post-launch cohort: users created since Jul 6 00:00 Israel ===
-          WITH cohort AS (
-            SELECT id FROM users WHERE created_at >= '2026-07-05 21:00+00'
-          )
-          SELECT
-            (SELECT count(*) FROM cohort) AS new_users,
-            (SELECT count(DISTINCT a.user_id) FROM applications a JOIN cohort c ON c.id = a.user_id
-               WHERE a.notes IS NULL OR a.notes NOT LIKE '[demo] %') AS created_real_app,
-            (SELECT count(DISTINCT a.user_id) FROM dossiers d
-               JOIN applications a ON a.id = d.application_id
-               JOIN cohort c ON c.id = a.user_id) AS generated_prep;
-
-          \echo === events per day by name since Jul 4 (Israel time) ===
-          SELECT (created_at AT TIME ZONE 'Asia/Jerusalem')::date AS day, name,
-                 count(*) AS n, count(DISTINCT user_id) AS users
-          FROM events
-          WHERE created_at >= '2026-07-03 21:00+00'
-          GROUP BY 1, 2 ORDER BY 1, 3 DESC;
-
-          \echo === debrief saves (all time) ===
-          SELECT count(*) AS debrief_saves, count(DISTINCT user_id) AS users
-          FROM events WHERE name = 'debrief_save';
-
-          \echo === prepfirst generate errors since Jul 5: step/reason ===
-          SELECT props->>'step' AS step, props->>'reason' AS reason, count(*) AS n
-          FROM events
-          WHERE name = 'prepfirst_generate_error' AND created_at >= '2026-07-04 21:00+00'
-          GROUP BY 1, 2 ORDER BY 3 DESC;
-          SQL
-
-      - name: Run aggregate snapshot on the VM
+      - name: Fetch latest dump
         run: |
-          scp /tmp/snapshot.sql "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/snapshot.sql"
           ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            'sudo -u postgres psql -d jobsearch -f /tmp/snapshot.sql; rm -f /tmp/snapshot.sql'
+            'sudo -u postgres sh -c "cat \$(ls -1t /var/backups/pursuit/pursuit-*.dump | head -1)"' \
+            > pursuit.dump
+          ls -l pursuit.dump
+
+      - name: Sanity-check the fetched copy
+        run: |
+          test "$(stat -c%s pursuit.dump)" -gt 10000 || { echo "dump suspiciously small"; exit 1; }
+          head -c5 pursuit.dump | grep -q "PGDMP" || { echo "not a pg_dump custom archive"; exit 1; }
+
+      - name: Encrypt (never upload plaintext — public repo)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -n "$BACKUP_PASSPHRASE" ]; then
+            PASS="$BACKUP_PASSPHRASE"
+          else
+            PASS=$(printf %s "$DEPLOY_SSH_KEY" | sha256sum | cut -d' ' -f1)
+          fi
+          export PASS
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in pursuit.dump -out pursuit.dump.enc -pass env:PASS
+          rm -f pursuit.dump
+          ls -l pursuit.dump.enc
+
+      - name: Upload encrypted artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: pursuit.dump.enc
+          retention-days: 30
+          if-no-files-found: error
