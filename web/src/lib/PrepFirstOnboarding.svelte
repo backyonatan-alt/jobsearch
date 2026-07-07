@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api } from '$lib/api.js';
+  import { api, isConnectionErr, pollForDossier } from '$lib/api.js';
   import { logEvent } from '$lib/analytics.js';
 
   // onDone marks the user onboarded + unmounts the overlay (shared with the tour).
@@ -46,8 +46,22 @@
       await onDone();
       goto(`/app/${createdId}?welcome=1`);
     } catch (e) {
+      // A dropped connection doesn't kill the build — the server finishes and
+      // saves the brief. Poll for it before declaring failure (mobile Safari
+      // drops the response when the phone locks mid-generation).
+      if (createdId && isConnectionErr(e)) {
+        const d = await pollForDossier(`/api/applications/${createdId}/dossier?scope=company`);
+        if (d) {
+          logEvent('prepfirst_generate_ok', { recovered: true });
+          await onDone();
+          goto(`/app/${createdId}?welcome=1`);
+          return;
+        }
+      }
       console.error(e);
-      errMsg = e?.message || '';
+      errMsg = isConnectionErr(e)
+        ? 'The connection dropped while we were building.'
+        : (e?.message || '');
       // step: did the create or the brief generation fail? reason: capped error string.
       logEvent('prepfirst_generate_error', { step: createdId ? 'generate' : 'create', reason: (e?.message || 'unknown').slice(0, 120) });
       phase = 'error';

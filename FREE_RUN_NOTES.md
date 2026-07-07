@@ -26,6 +26,34 @@ the moment you notice something; triage later.
 
 ---
 
+## Jul 7 2026 — day-1 LinkedIn wave read (prod DB, aggregate snapshot via Actions)
+
+> Method: one-off read-only `workflow_dispatch` run over the deploy SSH key
+> (aggregate counts only — public logs). Branch
+> `claude/linkedin-post-data-impact-l70fd3` has the fix below.
+
+- `[wow]` **The post works.** +10 signups since Jul 6 midnight (5+5/day vs ~1-3
+  baseline; 42 users total). 10 distinct users logged in with `src:li` — 12 of
+  14 last-7d login events carry the tag. Attribution survived OAuth as designed.
+- `[wow]` **40% of the wave reached prep on day one.** 10 new users → 4 created
+  a real app → the same 4 generated a playbook. `interview_save` finally shows
+  real saves (3 users Jul 6).
+- `[bug][high→fixed on branch]` **Generate died when the connection dropped.**
+  2 of 3 prep-first generations on Jul 7 failed with `Failed to fetch`/`Load
+  failed` (Chrome/Safari network-layer, ~23-35s in — phone lock / tab close /
+  blip). Root cause: `handleDossierRefresh` ran the LLM call on `r.Context()`,
+  so a dropped client aborted the generation server-side. Both users recovered
+  by manually retrying (each has a dossier now) but ate the error screen on
+  their first impression. **Fix:** generation now runs on
+  `context.WithoutCancel` (LLM calls have own 150s timeouts, no leak) and both
+  frontends (prep-first + detail page) poll GET dossier after a connection
+  error instead of failing — plus friendlier connection-error copy. nginx was
+  NOT the culprit (180s on AI endpoints, success p50 40s / p95 60s).
+- **`debrief_save` = admin only.** Still zero real-user debriefs → Phase 3b
+  stays gated. `debrief_prompt_view` does fire now (12 views / 2 users Jul 6).
+- **Spend sane:** 38 prep credits across 15 users, no runaway.
+- Privacy paragraph added to the homepage sign-in card (open TODO item).
+
 ## Jun 30 2026 — first external beta tester (Ayelet) — live feedback
 
 > Real beta user, testing on **mobile first then desktop**. Has a real interview
