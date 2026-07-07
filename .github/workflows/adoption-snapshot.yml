@@ -1,0 +1,81 @@
+name: adoption-snapshot
+
+# One-off read-only adoption snapshot for the Jul 6 LinkedIn-post wave read.
+# Aggregate counts only — NO emails or per-user rows (public repo, public logs).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    steps:
+      - name: Install SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" | base64 -d > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Write snapshot SQL
+        run: |
+          cat > /tmp/snapshot.sql <<'SQL'
+          \pset pager off
+          \echo === signups per day, last 14 days (Israel time) ===
+          SELECT (created_at AT TIME ZONE 'Asia/Jerusalem')::date AS day, count(*) AS new_users
+          FROM users
+          WHERE created_at >= now() - interval '14 days'
+          GROUP BY 1 ORDER BY 1;
+
+          \echo === total users ===
+          SELECT count(*) AS total_users FROM users;
+
+          \echo === login events by src, last 7 days ===
+          SELECT COALESCE(props->>'src','(none)') AS src, count(*) AS logins, count(DISTINCT user_id) AS users
+          FROM events
+          WHERE name = 'login' AND created_at >= now() - interval '7 days'
+          GROUP BY 1 ORDER BY 2 DESC;
+
+          \echo === src=li logins per day (all time) ===
+          SELECT (created_at AT TIME ZONE 'Asia/Jerusalem')::date AS day,
+                 count(*) AS li_logins, count(DISTINCT user_id) AS li_users
+          FROM events
+          WHERE name = 'login' AND props->>'src' = 'li'
+          GROUP BY 1 ORDER BY 1;
+
+          \echo === post-launch cohort: users created since Jul 6 00:00 Israel ===
+          WITH cohort AS (
+            SELECT id FROM users WHERE created_at >= '2026-07-05 21:00+00'
+          )
+          SELECT
+            (SELECT count(*) FROM cohort) AS new_users,
+            (SELECT count(DISTINCT a.user_id) FROM applications a JOIN cohort c ON c.id = a.user_id
+               WHERE a.notes IS NULL OR a.notes NOT LIKE '[demo] %') AS created_real_app,
+            (SELECT count(DISTINCT a.user_id) FROM dossiers d
+               JOIN applications a ON a.id = d.application_id
+               JOIN cohort c ON c.id = a.user_id) AS generated_prep;
+
+          \echo === events per day by name since Jul 4 (Israel time) ===
+          SELECT (created_at AT TIME ZONE 'Asia/Jerusalem')::date AS day, name,
+                 count(*) AS n, count(DISTINCT user_id) AS users
+          FROM events
+          WHERE created_at >= '2026-07-03 21:00+00'
+          GROUP BY 1, 2 ORDER BY 1, 3 DESC;
+
+          \echo === debrief saves (all time) ===
+          SELECT count(*) AS debrief_saves, count(DISTINCT user_id) AS users
+          FROM events WHERE name = 'debrief_save';
+
+          \echo === beta interest since Jul 5 by source ===
+          SELECT COALESCE(source,'(none)') AS source, count(*) AS n
+          FROM beta_interest
+          WHERE created_at >= '2026-07-04 21:00+00'
+          GROUP BY 1;
+          SQL
+
+      - name: Run aggregate snapshot on the VM
+        run: |
+          scp /tmp/snapshot.sql "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/snapshot.sql"
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            'sudo -u postgres psql -d jobsearch -f /tmp/snapshot.sql; rm -f /tmp/snapshot.sql'
