@@ -70,11 +70,11 @@ jobs:
           SELECT count(*) AS debrief_saves, count(DISTINCT user_id) AS users
           FROM events WHERE name = 'debrief_save';
 
-          \echo === beta interest since Jul 5 by source ===
-          SELECT COALESCE(source,'(none)') AS source, count(*) AS n
-          FROM beta_interest
-          WHERE created_at >= '2026-07-04 21:00+00'
-          GROUP BY 1;
+          \echo === prepfirst generate errors since Jul 5: step/reason ===
+          SELECT props->>'step' AS step, props->>'reason' AS reason, count(*) AS n
+          FROM events
+          WHERE name = 'prepfirst_generate_error' AND created_at >= '2026-07-04 21:00+00'
+          GROUP BY 1, 2 ORDER BY 3 DESC;
           SQL
 
       - name: Run aggregate snapshot on the VM
