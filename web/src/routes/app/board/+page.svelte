@@ -84,7 +84,12 @@
     dragOver = null;
     dragging = null;
     if (!id) return;
+    await moveCard(id, newStatus, 'board');
+  }
 
+  // Shared by drop (desktop drag) and the per-card Move select (touch — HTML5
+  // drag events never fire on mobile, so the select is the only path there).
+  async function moveCard(id, newStatus, surface) {
     const app = apps.find(a => a.id === id);
     if (!app || app.status === newStatus) return;
     const fromStatus = app.status;
@@ -104,7 +109,7 @@
         body: JSON.stringify({ status: newStatus })
       });
       // Confirmed-success only — never on the optimistic update or a revert.
-      logEvent('status_change', { from: fromStatus, to: newStatus, surface: 'board' });
+      logEvent('status_change', { from: fromStatus, to: newStatus, surface });
     } catch (err) {
       console.error('status update failed', err);
       apps = prevApps;
@@ -135,7 +140,7 @@
         <div class="bdate">{dateLong}</div>
         <h1>Board.</h1>
         <div class="bsub">
-          <b>{inFlight}</b> in flight · drag a card across columns to move its status.
+          <b>{inFlight}</b> in flight · <span class="drag-hint">drag a card across columns to move its status.</span><span class="move-hint">use "Move to" on a card to change its status.</span>
           <span class="legend"><span class="rd"></span>red border = no movement in 7+ days</span>
         </div>
       </div>
@@ -172,8 +177,9 @@
 
             <div class="bcol-list">
               {#each byStatus[col.k] as a (a.id)}
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabindex="0"
                   class="bcard"
                   class:stale={a.stale}
                   class:dragging={dragging === a.id}
@@ -181,6 +187,7 @@
                   ondragstart={(e) => onDragStart(e, a.id)}
                   ondragend={onDragEnd}
                   onclick={() => open(a.id)}
+                  onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open(a.id))}
                 >
                   <div class="bcard-top">
                     {#if a.logoSrc}
@@ -200,7 +207,21 @@
                     <span class="src">{a.source}</span>
                     <span class="ago" class:red={a.stale}>{a.appliedRel}</span>
                   </div>
-                </button>
+
+                  <!-- Touch path: HTML5 drag never fires on mobile, so this
+                       select is the only way to move a card from a phone. -->
+                  <label class="bcard-move" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+                    <span>Move to</span>
+                    <select
+                      value={a.status}
+                      onchange={(e) => moveCard(a.id, e.currentTarget.value, 'board_move')}
+                    >
+                      {#each COLS as c (c.k)}
+                        <option value={c.k}>{c.lbl}</option>
+                      {/each}
+                    </select>
+                  </label>
+                </div>
               {/each}
 
               {#if byStatus[col.k].length === 0}
@@ -405,7 +426,11 @@
     border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px;
   }
 
-  /* Mobile: horizontal scroll, narrower cards */
+  /* Touch move control — the only status-change path on phones. */
+  .bcard-move { display: none; }
+  .move-hint { display: none; }
+
+  /* Tablet: horizontal scroll, narrower cards */
   @media (max-width: 900px) {
     .body { padding: 18px 14px 40px; }
     .board-hd { flex-wrap: wrap; }
@@ -413,5 +438,28 @@
     .bcols { grid-template-columns: repeat(5, minmax(200px, 200px)); }
     .bcol { padding: 6px 8px 10px; }
     .bcard { padding: 11px 12px; }
+  }
+
+  /* Phone: stacked full-width lanes — no horizontal scroll, no drag. */
+  @media (max-width: 720px) {
+    /* design-system's global .board-page padding (28/32) eats 64px of a phone. */
+    .board-page { padding: 0 0 40px; }
+    .bcols { display: flex; flex-direction: column; align-items: stretch; gap: 12px; overflow-x: visible; }
+    .bcol { min-height: 0; }
+    .bcol-h { padding: 8px 6px 10px; }
+    .bcol-list { gap: 8px; }
+    .bcol-empty { padding: 10px 0; font-size: 11.5px; }
+    .bcard { cursor: pointer; }
+    .drag-hint { display: none; }
+    .move-hint { display: inline; }
+    .bsub .legend { margin-left: 0; padding-left: 0; border-left: none; width: 100%; }
+    .bcard-move {
+      display: flex; align-items: center; gap: 8px; margin-top: 10px;
+      font-size: 12px; color: var(--mute);
+    }
+    .bcard-move select {
+      flex: 1; min-height: 38px; font-size: 13px; font-family: inherit; color: var(--ink);
+      background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px;
+    }
   }
 </style>

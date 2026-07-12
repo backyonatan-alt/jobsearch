@@ -152,11 +152,23 @@ present, never block** generation; **build 3a first**.
 - [ ] Watch: rounds created per activated user, and `debrief_save` finally > 0.
       If debriefs now happen → build 3b (proactive Today prompt + admin prep-accuracy).
 
-*3b — proactive + metrics (after 3a):*
-- [ ] proactive Today prompt: once an interview's `starts_at` has passed and it's
-      un-debriefed → "How did the {company} {round} go? → Debrief".
-- [ ] admin Adoption: **prep-accuracy stat** (% "spot-on") — first real trust metric.
-- [ ] give the old vague "Pursuit debrief" Today card real meaning ("what we learned").
+*3b — proactive + metrics — ✅ BUILT Jul 12 (branch `claude/next-steps-analysis-kyr1xc`, pending local preview → deploy):*
+- [x] proactive Today prompt: past/undated un-debriefed round → banner "How did
+      the {round} at {company} go? → Debrief", deep-links to `?debrief=<iid>`
+      with the form open. Fires `debrief_prompt_view {surface:'today'}`.
+- [x] admin Adoption: **prep-accuracy stat** (% spot-on headline + spot_on/partly/off
+      bars) — first real trust metric.
+- [x] "what we learned" on Today: right-rail block with the 2 most recent debriefs
+      (feel · accuracy · topics), links to the app. (The old vague "Pursuit debrief"
+      card no longer existed — this is its real-meaning replacement.)
+- Also shipped alongside: **mobile pass** (board = stacked full-width lanes ≤720px
+  + per-card "Move to" select — HTML5 drag never fires on touch, so phones had NO
+  status-change path; edit-modal capped scroll box so Save stays reachable with
+  the keyboard up; sticky pipeline-editor Save; datalist dropped on touch;
+  `viewport-fit=cover`) and **prep-credit cap UX** (`/api/me` exposes credits;
+  cap note with mailto replaces Generate at limit; "N left" hint at ≤2;
+  `feedback_click {surface:'credit_cap'}`). All verified rendered via local
+  Playwright (20/20 green, desktop + 390px viewports).
 
 *3c — mobile/PWA pass (separate track, deferred):*
 - [ ] responsive fixes to the desktop-only surfaces Ayelet hit — vanishing Save

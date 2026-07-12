@@ -5,6 +5,7 @@
   let total = $state(0);
   let milestones = $state([]);
   let events = $state([]);
+  let prepAcc = $state(null);
   let loading = $state(true);
   let error = $state('');
 
@@ -14,6 +15,7 @@
       total = r.total_users || 0;
       milestones = r.milestones || [];
       events = r.events || [];
+      prepAcc = r.prep_accuracy || null;
     } catch (e) {
       if (e.message !== 'unauthorized') error = e.message;
     } finally {
@@ -38,6 +40,14 @@
 
   // A surface fired by nobody in the last 7 days is worth a second look.
   const stale = (e) => e.recent === 0;
+
+  const debriefTotal = $derived(prepAcc ? prepAcc.spot_on + prepAcc.partly + prepAcc.off : 0);
+  const accPct = (n) => (debriefTotal > 0 ? Math.round((n / debriefTotal) * 100) : 0);
+  const ACC_ROWS = [
+    ['spot_on', 'Spot on'],
+    ['partly', 'Partly right'],
+    ['off', 'Off'],
+  ];
 </script>
 
 <header class="page">
@@ -66,6 +76,31 @@
         </li>
       {/each}
     </ul>
+  </section>
+
+  <!-- Prep accuracy (trust metric) -->
+  <section class="block">
+    <h2>Prep accuracy</h2>
+    <p class="sub">From post-interview debriefs: "was our prep right?" This is the trust metric — <b>% spot-on</b> is the number that says the playbook holds up in a real interview.</p>
+    {#if debriefTotal === 0}
+      <p class="muted">No debriefs saved yet.</p>
+    {:else}
+      <div class="acc-head">
+        <span class="acc-big">{accPct(prepAcc.spot_on)}%</span>
+        <span class="acc-cap">spot-on · {debriefTotal} debrief{debriefTotal === 1 ? '' : 's'} from {prepAcc.users} user{prepAcc.users === 1 ? '' : 's'}</span>
+      </div>
+      <ul class="reach">
+        {#each ACC_ROWS as [key, label] (key)}
+          <li>
+            <div class="rlabel">{label}</div>
+            <div class="rbar">
+              <div class="rfill" class:warn={key === 'off'} style="width: {Math.max(accPct(prepAcc[key]), prepAcc[key] > 0 ? 3 : 0)}%"></div>
+            </div>
+            <div class="rnum"><b>{prepAcc[key]}</b> <span>· {accPct(prepAcc[key])}%</span></div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   </section>
 
   <!-- Event activity -->
@@ -120,6 +155,10 @@
   .rlabel { font-size: 13px; color: var(--ink); }
   .rbar { height: 12px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
   .rfill { height: 100%; background: var(--accent); border-radius: 6px; transition: width .3s ease; }
+  .rfill.warn { background: var(--danger-text, #c0392b); }
+  .acc-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .acc-big { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .acc-cap { font-size: 12.5px; color: var(--mute); }
   .rnum { font-size: 12.5px; color: var(--mute); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .rnum b { color: var(--ink); font-weight: 600; font-size: 14px; }
 

@@ -5,6 +5,7 @@
   import {
     STATUS_LABEL, toDisplayApp, daysSince, fmtRelativeDate
   } from '$lib/app-helpers.js';
+  import { logEvent } from '$lib/analytics.js';
   import AddApplication from '$lib/AddApplication.svelte';
 
   // `api` self-routes to the in-memory mock when ?preview=1 is on (see
@@ -21,6 +22,7 @@
   // sourced framing without N round-trips for the whole pipeline.
   let eventsByApp = $state({});   // id -> [{starts_at, ends_at, summary, location, medium, panel, interviewer}]
   let dossierByApp = $state({});  // id -> dossier DTO (content + meeting + interviewer_name)
+  let debriefsByApp = $state({}); // id -> [{interview_id, feel, prep_accuracy, topics, updated_at}]
 
   onMount(() => {
     refresh();
@@ -60,16 +62,19 @@
   async function hydrateBrief(raw) {
     const live = raw.filter(a => ['screen', 'interview', 'offer'].includes(a.status));
     await Promise.all(live.map(async (a) => {
-      const [ivs, doss] = await Promise.all([
+      const [ivs, doss, dbs] = await Promise.all([
         call(`/api/applications/${a.id}/interviews`).catch(() => []),
-        call(`/api/applications/${a.id}/dossier`).catch(() => null)
+        call(`/api/applications/${a.id}/dossier`).catch(() => null),
+        call(`/api/applications/${a.id}/debriefs`).catch(() => [])
       ]);
       if (Array.isArray(ivs) && ivs.length) eventsByApp[a.id] = ivs;
       if (doss) dossierByApp[a.id] = doss;
+      if (Array.isArray(dbs) && dbs.length) debriefsByApp[a.id] = dbs;
     }));
     // reassign to trigger reactivity
     eventsByApp = { ...eventsByApp };
     dossierByApp = { ...dossierByApp };
+    debriefsByApp = { ...debriefsByApp };
     seedTasks();
   }
 
@@ -136,6 +141,51 @@
     const named = arr.find(x => x && typeof x === 'object' && x.name && !/recruit/i.test(x.name || ''));
     return named?.name || '';
   }
+
+  // ── Debrief loop (Phase 3b) ─────────────────────────────────
+  // A past (or undated one-tap) round with no debrief yet → proactive prompt.
+  // Same debrief-able semantics as the detail page.
+  const pendingDebrief = $derived.by(() => {
+    const now = Date.now();
+    const due = [];
+    for (const a of apps) {
+      if (!['screen', 'interview', 'offer'].includes(a.status)) continue;
+      const done = new Set((debriefsByApp[a.id] || []).map(d => d.interview_id));
+      for (const iv of (eventsByApp[a.id] || [])) {
+        if (done.has(iv.id)) continue;
+        const past = iv.scheduled === false || !iv.starts_at ||
+          new Date(iv.starts_at).getTime() < now;
+        if (past) due.push({ app: a, iv });
+      }
+    }
+    if (!due.length) return null;
+    due.sort((a, b) => new Date(b.iv.starts_at || 0) - new Date(a.iv.starts_at || 0));
+    return due[0];
+  });
+  const debriefViewLogged = new Set();
+  $effect(() => {
+    const p = pendingDebrief;
+    if (p && !debriefViewLogged.has(p.iv.id)) {
+      debriefViewLogged.add(p.iv.id);
+      logEvent('debrief_prompt_view', { app_id: Number(p.app.id), surface: 'today' });
+    }
+  });
+  function openDebrief(p) { goto(`/app/${p.app.id}?debrief=${p.iv.id}`); }
+
+  // "What we learned" — the two most recent saved debriefs, joined to their round.
+  const feelWord = (f) => ({ strong: 'went strong', mixed: 'went so-so', rough: 'was rough' }[f] || '');
+  const accWord = (a) => ({ spot_on: 'prep was spot-on', partly: 'prep was partly right', off: 'prep was off' }[a] || '');
+  const learned = $derived.by(() => {
+    const out = [];
+    for (const a of apps) {
+      for (const d of (debriefsByApp[a.id] || [])) {
+        const iv = (eventsByApp[a.id] || []).find(x => x.id === d.interview_id);
+        out.push({ app: a, round: (iv?.summary || 'Interview').trim() || 'Interview', d });
+      }
+    }
+    out.sort((x, y) => new Date(y.d.updated_at || y.d.created_at) - new Date(x.d.updated_at || x.d.created_at));
+    return out.slice(0, 2);
+  });
 
   const nextInterview = $derived(upcomingEvents[0] || null);
   // Dossier for the soonest interview — the source for the insight + tips.
@@ -393,6 +443,14 @@
         {/if}
       </div>
 
+      {#if !loading && pendingDebrief}
+        <button type="button" class="db-banner" onclick={() => openDebrief(pendingDebrief)}>
+          <span class="db-spark">✦</span>
+          <span class="db-banner-tx">How did the <b>{(pendingDebrief.iv.summary || 'last').trim() || 'last'}</b> round at <b>{pendingDebrief.app.co}</b> go? A 20-second debrief sharpens your next round's prep.</span>
+          <span class="db-cta">Debrief {@render Arrow()}</span>
+        </button>
+      {/if}
+
       {#if loading}
         <p class="lede">Loading your day…</p>
       {:else if nextInterview}
@@ -518,6 +576,26 @@
       {/each}
       <div class="tasks-note">Personal checklist · stays on this device.</div>
     </div>
+
+    {#if learned.length}
+      <div class="learned">
+        <div class="pulse-sec">
+          <span class="t">What we learned</span>
+          <span class="c">from your debriefs</span>
+        </div>
+        {#each learned as l (l.d.id)}
+          <div class="ln-row" onclick={() => openDetail(l.app.id)} role="button" tabindex="0">
+            <span class="ln-tx">
+              <b>{l.app.co} · {l.round}</b>
+              <small>{feelWord(l.d.feel)}{l.d.feel && l.d.prep_accuracy ? ' — ' : ''}{accWord(l.d.prep_accuracy)}</small>
+              {#if l.d.topics}<small class="ln-topics">Came up: {l.d.topics}</small>{/if}
+            </span>
+            <span class="ln-go">{@render Arrow()}</span>
+          </div>
+        {/each}
+        <div class="tasks-note">Feeds straight into your next round's playbook.</div>
+      </div>
+    {/if}
 
     {#if advisoryLabel}
       <div class="pulse-foot">
@@ -743,6 +821,23 @@
   .task .due { font-family: var(--mono); font-size: 11.5px; color: var(--mute); white-space: nowrap; }
   .task .due.hot { color: var(--warm-text); }
   .tasks-note { font-size: 11px; color: var(--mute-2); margin-top: 12px; padding-left: 4px; }
+
+  .db-banner { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+    background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 10px; padding: 10px 14px; font-family: inherit; margin: 0 0 18px; }
+  .db-banner:hover { border-color: var(--accent); }
+  .db-spark { width: 22px; height: 22px; border-radius: 6px; background: var(--card); color: var(--accent-text); display: grid; place-items: center; flex-shrink: 0; }
+  .db-banner-tx { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-2); line-height: 1.4; }
+  .db-banner-tx b { color: var(--ink); }
+  .db-cta { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--accent-text); }
+
+  .learned { margin-top: 28px; }
+  .ln-row { display: flex; align-items: center; gap: 10px; padding: 11px 4px; border-top: 1px solid var(--rule); cursor: pointer; border-radius: 8px; transition: background .12s; }
+  .ln-row:hover { background: var(--surface-2); }
+  .ln-tx { flex: 1; min-width: 0; line-height: 1.35; }
+  .ln-tx b { font-size: 13.5px; font-weight: 500; }
+  .ln-tx small { display: block; font-size: 12px; color: var(--mute); }
+  .ln-tx .ln-topics { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ln-go { flex-shrink: 0; color: var(--mute-2); display: inline-flex; }
 
   .pulse-foot { display: flex; align-items: center; gap: 13px; margin-top: 24px; padding: 13px 14px; background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--sh-1); }
   .pulse-foot .fic { flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: var(--warm-tint); color: var(--warm-text); }

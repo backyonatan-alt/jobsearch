@@ -267,10 +267,18 @@ type eventStatDTO struct {
 	LastAt *time.Time `json:"last_at"`
 }
 
+type prepAccuracyDTO struct {
+	SpotOn int `json:"spot_on"`
+	Partly int `json:"partly"`
+	Off    int `json:"off"`
+	Users  int `json:"users"` // distinct users who saved a debrief
+}
+
 type adoptionResp struct {
-	TotalUsers int            `json:"total_users"`
-	Milestones []milestoneDTO `json:"milestones"`
-	Events     []eventStatDTO `json:"events"`
+	TotalUsers   int             `json:"total_users"`
+	Milestones   []milestoneDTO  `json:"milestones"`
+	Events       []eventStatDTO  `json:"events"`
+	PrepAccuracy prepAccuracyDTO `json:"prep_accuracy"`
 }
 
 // handleAdminAdoption answers "of everyone who signed in, how many reached each
@@ -293,6 +301,20 @@ func (s *Server) handleAdminAdoption(w http.ResponseWriter, r *http.Request) {
 		  (SELECT count(*) FROM users WHERE prep_credits_used > 0),
 		  (SELECT count(DISTINCT user_id) FROM events WHERE name = 'bulk_import')
 	`).Scan(&total, &createdApp, &addedInterview, &genDossier, &ranPrep, &bulkImport)
+	if err != nil {
+		s.Logger.Error("adoption milestones", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	err = s.Pool.QueryRow(ctx, `
+		SELECT
+		  count(*) FILTER (WHERE prep_accuracy = 'spot_on'),
+		  count(*) FILTER (WHERE prep_accuracy = 'partly'),
+		  count(*) FILTER (WHERE prep_accuracy = 'off'),
+		  count(DISTINCT user_id)
+		FROM debriefs
+	`).Scan(&resp.PrepAccuracy.SpotOn, &resp.PrepAccuracy.Partly,
+		&resp.PrepAccuracy.Off, &resp.PrepAccuracy.Users)
 	if err != nil {
 		s.Logger.Error("adoption milestones", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal")
