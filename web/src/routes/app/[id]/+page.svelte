@@ -799,18 +799,22 @@
     return future[0] || null;
   });
 
-  // Next interview = soonest future interview, else the dossier meeting.
+  // Next interview = soonest future interview, else the dossier meeting —
+  // but only a future-dated one; a past .ics meeting is not "next".
+  const dosUpcoming = $derived(
+    dosMeeting?.starts_at && new Date(dosMeeting.starts_at).getTime() >= Date.now() ? dosMeeting : null
+  );
   const nextWhen = $derived.by(() => {
     if (upcoming) return evWhen(upcoming);
-    if (dosMeeting?.starts_at) return dosFmtWhen(dosMeeting);
+    if (dosUpcoming) return dosFmtWhen(dosUpcoming);
     return '';
   });
   const nextTitle = $derived.by(() => {
     if (upcoming) return `${upcoming.summary || 'Interview'} · ${evWhen(upcoming)}`;
-    if (dosMeeting?.starts_at) return `${dosMeeting.panel || 'Interview'} · ${dosFmtWhen(dosMeeting)}`;
+    if (dosUpcoming) return `${dosUpcoming.panel || 'Interview'} · ${dosFmtWhen(dosUpcoming)}`;
     return '';
   });
-  const hasNext = $derived(!!(upcoming || dosMeeting?.starts_at));
+  const hasNext = $derived(!!(upcoming || dosUpcoming));
   const nextRows = $derived.by(() => {
     const rows = [];
     if (upcoming) {
@@ -819,7 +823,7 @@
       if (upcoming.location) rows.push(upcoming.location);
       const mins = evDuration(upcoming);
       if (mins) rows.push(`${mins} min`);
-    } else if (dosMeeting?.starts_at) {
+    } else if (dosUpcoming) {
       const who = dosInterviewer?.name || dossier?.interviewer_name || app?.raw?.hiring_manager_name;
       if (who) rows.push(`${who} (Hiring manager)`);
       if (dosFactMedium !== '—') rows.push(dosFactMedium);
@@ -831,6 +835,7 @@
   const personLabel = $derived(hasNext ? 'Likely interviewer' : 'Hiring manager');
 
   const awaiting = $derived(app && ['applied', 'screen'].includes(app.status));
+  const closedOut = $derived(app && ['rejected', 'withdrawn', 'closed'].includes(app.status));
   const quiet = $derived(app ? isStale(app.raw) : false);
   const lastActivityDays = $derived(app ? daysSince(app.raw.updated_at ?? app.raw.applied_at) : null);
   const waitDays = $derived(app ? daysSince(app.raw.applied_at) : null);
@@ -1476,8 +1481,10 @@
 
         <!-- RIGHT — meta rail -->
         <aside class="rail">
-          <!-- Next interview -->
-          {#if hasNext}
+          <!-- Next interview — hidden once the application is closed out -->
+          {#if closedOut}
+            <!-- no next-interview card for rejected / withdrawn / closed -->
+          {:else if hasNext}
             <div class="next-card">
               <div class="nc-kicker"><span class="nc-dot"></span>NEXT INTERVIEW</div>
               <div class="nc-title">{nextTitle}</div>
