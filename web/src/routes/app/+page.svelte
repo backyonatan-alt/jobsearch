@@ -6,6 +6,7 @@
     STATUS_LABEL, toDisplayApp, daysSince, fmtRelativeDate
   } from '$lib/app-helpers.js';
   import AddApplication from '$lib/AddApplication.svelte';
+  import StatusPill from '$lib/StatusPill.svelte';
 
   // `api` self-routes to the in-memory mock when ?preview=1 is on (see
   // $lib/api.js → preview-mode.js), so the Brief renders with no backend.
@@ -469,7 +470,7 @@
                   <span class={`row-logo letter ${r.logoCls}`}>{r.coShort}</span>
                 {/if}
                 <span class="rx"><b>{r.co}</b><small>{r.role}</small></span>
-                <span class={`pill ${r.status}`}><span class="pdot"></span>{STATUS_LABEL[r.status]}</span>
+                <StatusPill id={r.id} status={r.status} surface="today_recent" />
                 <span class="ago">added {fmtRelativeDate(r.raw.created_at)}</span>
               </div>
             {/each}
@@ -485,7 +486,7 @@
             <div class="ag-row" onclick={() => openDetail(e.app.id)} role="button" tabindex="0">
               <span class="when"><b>{w.day}</b> {w.time}</span>
               <span><span class="co">{e.app.co}</span> <span class="role">· {e.app.role}</span></span>
-              <span class={`pill ${e.app.status}`}><span class="pdot"></span>{STATUS_LABEL[e.app.status]}</span>
+              <StatusPill id={e.app.id} status={e.app.status} surface="today_agenda" />
             </div>
           {/each}
         </div>
