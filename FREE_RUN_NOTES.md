@@ -1,9 +1,10 @@
 # Free run notes — Pursuit
 
 > 🚀 **PUBLIC LAUNCH — Jul 6 2026.** Open signup live, LinkedIn post out
-> (`/?src=li`). Watch `/admin/adoption` for `login {src:li}` signups, prepfirst
-> conversion, and the first real `debrief_save`. Wave re-read: **Jul 13**
-> (trigger set, fires into the session). See `TODO.md` top entry.
+> (`/?src=li`). **Wave re-read done Jul 12** (a day early, user call) — see the
+> Jul 12 entry below + `TODO.md` top entry. Headlines: activation holds (9/17
+> to playbook), first real `debrief_save` landed (3b gate open), top of funnel
+> dry since Jul 8.
 
 A scratchpad for observations while actually using the app. Capture
 the moment you notice something; triage later.
@@ -25,6 +26,37 @@ the moment you notice something; triage later.
    "Shipped".
 
 ---
+
+## Jul 12 2026 — full wave re-read (prod DB, aggregate snapshot via Actions)
+
+> Same method as Jul 7: branch-only `backup.yml` override, read-only aggregate
+> SQL over the deploy key, workflow restored after use. Run a day ahead of the
+> Jul 13 trigger (user call). Wave cohort = non-admin users created ≥ Jul 5
+> (n=17). GA4 context: 48 active / 44 "new users" Jul 5–12 — those are homepage
+> *visitors*; real signups were 17.
+
+- `[wow]` **Activation held at real n.** 17 signups → 9 real app → 9 playbooks
+  (**53%**, up from day-1 40%). Everyone who created an app reached a playbook.
+  Prepfirst funnel: 17 prompt_view → 9 submit → 7 generate_ok (+2 pre-fix
+  Jul 7 connection errors, both users recovered; zero errors since the
+  `context.WithoutCancel` fix deployed).
+- `[wow]` **First real `debrief_save`.** 1 user saved a debrief; prompt views
+  now fire across all three surfaces (banner 2u / round_tab 3u / stage_done 1u).
+  Per the pre-committed plan: **the 3b gate is open.**
+- `[wow]` **One-tap rounds work.** `interview_save` 10 events / 4 users in 7d —
+  the surface real users touch now.
+- **Attribution:** 14 of 15 logging-in users since Jul 5 carry `src:li`.
+- `[gap]` **Top of funnel died Jul 8.** Signups: 3/5/8/1 (Jul 5–8), then zero
+  Jul 9–12. Daily actives: 4/7/9 → 1/0/1/2. A single LinkedIn post has a
+  ~3-day half-life; growth needs repeated distribution, not one post.
+- `[gap]` **Retention is the open question.** 3/17 (18%) returned on a later
+  calendar day — all 3 came back to the playbook (the wedge is what pulls
+  returns). 14/17 were single-day users. Small n + episodic-use caveat, but
+  this is now the number to move (debrief loop = the retention mechanic).
+- **Spend sane:** 39 credits / 17 users. One user hit the 10-credit limit —
+  worth a look at what the at-limit UX shows before scaling distribution.
+- `dossier_open` 32 / `dossier_refresh` 31 (10 users each) in 7d — wedge still
+  the #1 surface by far.
 
 ## Jul 7 2026 — day-1 LinkedIn wave read (prod DB, aggregate snapshot via Actions)
 
