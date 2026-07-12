@@ -302,6 +302,26 @@ distinct status.
 
 ## Shipped (move items here once fixed)
 
+### Phase 3b + mobile board + credit-cap UX (Jul 12 2026, PR #36)
+
+- **3b live:** Today debrief banner (past/undated un-debriefed round →
+  `?debrief=<iid>` deep-link with the form open, `debrief_prompt_view
+  {surface:'today'}`), "What we learned" rail block (2 most recent debriefs),
+  admin Adoption "Prep accuracy" stat (% spot-on + breakdown). Watch next
+  re-read: does the Today surface finally drive `debrief_save` volume, and
+  what does prep-accuracy read at n>1?
+- **Mobile board fixed for real:** phones had NO status-change path (HTML5
+  drag never fires on touch). Now: ≤720px stacked full-width lanes + per-card
+  native "Move to" select (`status_change {surface:'board_move'}`). Also:
+  edit-modal capped scroll box (vanishing-Save fix), sticky pipeline Save,
+  datalist dropped on touch, `viewport-fit=cover`. User verified on a real
+  iPhone against prod.
+- **Credit cap visible before the wall:** `/api/me` exposes credits; at limit
+  the Generate button is replaced by a top-up note (mailto, `feedback_click
+  {surface:'credit_cap'}`); "N left" hint at ≤2.
+- Verified rendered pre-merge: local Go+Postgres+built-frontend stack driven
+  by Playwright, 20/20 checks at 1360px + 390px.
+
 ### Debrief prompt was unreachable — surfacing fix (Jul 6 2026)
 
 > Jul 6 cohort re-read: `debrief_save` = 0 **and** `debrief_prompt_view` = 0

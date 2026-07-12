@@ -152,7 +152,8 @@ present, never block** generation; **build 3a first**.
 - [ ] Watch: rounds created per activated user, and `debrief_save` finally > 0.
       If debriefs now happen → build 3b (proactive Today prompt + admin prep-accuracy).
 
-*3b — proactive + metrics — ✅ BUILT Jul 12 (branch `claude/next-steps-analysis-kyr1xc`, pending local preview → deploy):*
+*3b — proactive + metrics — ✅ SHIPPED Jul 12 (PR #36, deploy #92 green; user
+verified the new mobile board on a real iPhone against prod — "looks perfect"):*
 - [x] proactive Today prompt: past/undated un-debriefed round → banner "How did
       the {round} at {company} go? → Debrief", deep-links to `?debrief=<iid>`
       with the form open. Fires `debrief_prompt_view {surface:'today'}`.
