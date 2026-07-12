@@ -5,6 +5,7 @@
   import { isPreview, mockApi } from '$lib/preview-mode.js';
   import { logEvent } from '$lib/analytics.js';
   import ConfirmDialog from '$lib/ConfirmDialog.svelte';
+  import StatusPill from '$lib/StatusPill.svelte';
   import {
     toDisplayApp, STATUS_LABEL, STATUSES, SOURCE_SUGGESTIONS,
     fmtLongDate, fmtRelativeDate, daysSince, isStale
@@ -1019,7 +1020,7 @@
             {#if app.cv && app.cv !== '—'}<span>CV <b>{app.cv}</b></span>{/if}
           </div>
         </div>
-        <span class={`pill ${app.status}`}><span class="pdot"></span>{STATUS_LABEL[app.status]}</span>
+        <StatusPill id={Number(id)} status={app.status} surface="detail_pill" onchanged={() => loadApp()} />
       </div>
 
       <!-- TWO-COLUMN GRID -->
