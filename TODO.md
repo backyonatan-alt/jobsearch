@@ -11,13 +11,27 @@ open-beta homepage, `src` attribution on the `login` event, nightly encrypted
 backups, grounding gate passed live QA. Cost guardrails: 10 prep credits/user
 (~$3–6 worst case each), auto-reload enabled on the Anthropic account.
 
-**⏳ Jul 13 — wave re-read** (reminder trigger is set; fires into the session).
-Pre-committed questions: (1) wave signups — `login` events with `src:li` vs
-organic; (2) signup → first-playbook conversion for prepfirst at real n;
-(3) `debrief_prompt_view → debrief_save` conversion now that the prompt
-surfaces; (4) prep-credit burn / API spend sanity; (5) any
-`prepfirst_generate_error` reasons. Then: scale the wave / fix what surfaced /
-build Phase 3b if debriefs > 0.
+**✅ Jul 12 — wave re-read DONE** (ran a day early, user call; the Jul 13
+trigger is now moot). Full numbers in FREE_RUN_NOTES (Jul 12). Answers to the
+five pre-committed questions:
+1. **Wave:** 17 signups Jul 5–8 (peak 8 on Jul 7), 14/15 logging-in users
+   tagged `src:li` — then **zero signups Jul 9–12**. One post ≈ 3-day reach.
+2. **Activation:** 9/17 (53%) signup → playbook, up from day-1 40%. Prepfirst:
+   17 view → 9 submit → 7 generate_ok.
+3. **Debrief:** `debrief_prompt_view` fires on all 3 surfaces (6 users) →
+   **first real `debrief_save` (1 user)**. The 3b gate is OPEN.
+4. **Spend:** 39 credits / 17 users, sane. One user at the 10-credit limit.
+5. **Errors:** only the two known pre-fix Jul 7 connection drops; zero since
+   the `context.WithoutCancel` fix. Clean.
+
+**Decisions this implies (per the pre-committed tree):**
+- **Build Phase 3b** (debriefs > 0): proactive Today prompt + admin
+  prep-accuracy stat.
+- **Scale distribution** (activation holds, errors clean) — but as a repeated
+  cadence, not another one-off post: the funnel was dry within 48h.
+- **Watch retention**: 3/17 returned on a later day (all to the playbook).
+  The debrief loop is the retention mechanic — 3b serves this too.
+- Check the at-limit prep-credit UX before pushing more users in.
 
 Still open (soft): privacy paragraph on the homepage (what's stored, who sees
 it) — ship early in the wave window.
@@ -138,11 +152,23 @@ present, never block** generation; **build 3a first**.
 - [ ] Watch: rounds created per activated user, and `debrief_save` finally > 0.
       If debriefs now happen → build 3b (proactive Today prompt + admin prep-accuracy).
 
-*3b — proactive + metrics (after 3a):*
-- [ ] proactive Today prompt: once an interview's `starts_at` has passed and it's
-      un-debriefed → "How did the {company} {round} go? → Debrief".
-- [ ] admin Adoption: **prep-accuracy stat** (% "spot-on") — first real trust metric.
-- [ ] give the old vague "Pursuit debrief" Today card real meaning ("what we learned").
+*3b — proactive + metrics — ✅ BUILT Jul 12 (branch `claude/next-steps-analysis-kyr1xc`, pending local preview → deploy):*
+- [x] proactive Today prompt: past/undated un-debriefed round → banner "How did
+      the {round} at {company} go? → Debrief", deep-links to `?debrief=<iid>`
+      with the form open. Fires `debrief_prompt_view {surface:'today'}`.
+- [x] admin Adoption: **prep-accuracy stat** (% spot-on headline + spot_on/partly/off
+      bars) — first real trust metric.
+- [x] "what we learned" on Today: right-rail block with the 2 most recent debriefs
+      (feel · accuracy · topics), links to the app. (The old vague "Pursuit debrief"
+      card no longer existed — this is its real-meaning replacement.)
+- Also shipped alongside: **mobile pass** (board = stacked full-width lanes ≤720px
+  + per-card "Move to" select — HTML5 drag never fires on touch, so phones had NO
+  status-change path; edit-modal capped scroll box so Save stays reachable with
+  the keyboard up; sticky pipeline-editor Save; datalist dropped on touch;
+  `viewport-fit=cover`) and **prep-credit cap UX** (`/api/me` exposes credits;
+  cap note with mailto replaces Generate at limit; "N left" hint at ≤2;
+  `feedback_click {surface:'credit_cap'}`). All verified rendered via local
+  Playwright (20/20 green, desktop + 390px viewports).
 
 *3c — mobile/PWA pass (separate track, deferred):*
 - [ ] responsive fixes to the desktop-only surfaces Ayelet hit — vanishing Save

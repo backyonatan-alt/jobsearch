@@ -13,6 +13,10 @@
 
   const call = isPreview() ? mockApi : api;
 
+  // On touch, <datalist> is a dead affordance (tap doesn't open it) — the
+  // source chips below the input are the mobile path, so drop the list there.
+  const coarsePointer = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+
   // First playbook from the prep-first cold start lands here with ?welcome=1.
   let welcomeDismissed = $state(false);
   const showWelcome = $derived(!welcomeDismissed && page.url.searchParams.get('welcome') === '1');
@@ -43,6 +47,21 @@
   // Interviews
   let interviews = $state([]);
   let interviewsLoading = $state(false);
+
+  // Prep credits — surfaced so the cap is visible BEFORE a user burns their
+  // last generate on a 429. limit 0 = unknown (older /api/me) → don't gate.
+  let prepCredits = $state(null); // { used, limit }
+  const prepLeft = $derived(
+    prepCredits && prepCredits.limit > 0 ? Math.max(0, prepCredits.limit - prepCredits.used) : null
+  );
+  const atPrepLimit = $derived(prepLeft === 0);
+  async function loadCredits() {
+    try {
+      const me = await call('/api/me');
+      prepCredits = { used: me.prep_credits_used || 0, limit: me.prep_credits_limit || 0 };
+    } catch { prepCredits = null; }
+  }
+  const capMailto = `mailto:back.yonatan@gmail.com?subject=${encodeURIComponent('Pursuit — more prep credits please')}`;
 
   // Debriefs (Phase 3a) — keyed by interview_id. The post-round "how did it go /
   // was the prep right?" that feeds the next round's playbook.
@@ -98,6 +117,7 @@
     void id;
     loadApp();
     loadFollowUps();
+    loadCredits();
     initPrep();
     if (id && id !== lastDossierOpenId) {
       lastDossierOpenId = id;
@@ -108,13 +128,21 @@
   // Load interviews first so we can default the prep to the next upcoming round.
   // With no upcoming round, prefer a past round still waiting on its debrief
   // (that's when the prompt matters) before falling back to the Company tab.
+  // ?debrief=<interview_id> (Today's proactive prompt) deep-links straight into
+  // that round with the debrief form open.
   async function initPrep() {
     prepReady = false;
     await loadInterviews();
     await loadDebriefs();
-    selectedTab = nextRoundId ?? pendingDebriefRoundId ?? 'company';
+    const want = Number(page.url.searchParams.get('debrief'));
+    const deepLinked = want && (interviews || []).some(iv => iv.id === want);
+    selectedTab = deepLinked ? want : (nextRoundId ?? pendingDebriefRoundId ?? 'company');
     prepReady = true;
+    if (deepLinked && !debriefsByIv[want]) startDebrief();
     await loadDossier(selectedTab);
+    if (deepLinked) {
+      try { document.getElementById('interview-prep')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+    }
   }
 
   async function loadDebriefs() {
@@ -405,6 +433,7 @@
       dossier = d;
       interviewerInput = d.interviewer_name ?? interviewerInput;
       showReground = false;
+      loadCredits();
     } catch (e) {
       // A dropped connection doesn't kill the build — the server finishes and
       // saves. Poll for the fresh brief before showing an error.
@@ -432,6 +461,10 @@
 
   function friendlyGenErr(msg) {
     const m = String(msg || '');
+    if (/interview-prep limit/i.test(m)) {
+      loadCredits(); // refresh so the cap note replaces the button
+      return "You've used all your prep credits for the beta — email me and I'll top you up.";
+    }
     if (/failed to fetch|load failed|networkerror/i.test(m))
       return 'The connection dropped mid-build. If it finished on our side it will appear when you reload — otherwise try again.';
     if (m.includes('rate_limit_error') || m.includes('429'))
@@ -1169,30 +1202,40 @@
                 <p class="gen-sub">
                   A shared brief on {app.co} — what they do, where they're headed, the typical interview loop, and what this team grades for. Researched once and used across every round.
                 </p>
-                <div class="gen-row">
-                  <button class="btn-generate" onclick={generateDossier} disabled={generating}>
-                    Generate company brief
-                  </button>
-                </div>
+                {#if atPrepLimit}
+                  <p class="credit-cap">You've used all <b>{prepCredits.limit}</b> prep credits for the beta. <a href={capMailto} onclick={() => logEvent('feedback_click', { surface: 'credit_cap' })}>Email me</a> and I'll top you up — takes a minute.</p>
+                {:else}
+                  <div class="gen-row">
+                    <button class="btn-generate" onclick={generateDossier} disabled={generating}>
+                      Generate company brief
+                    </button>
+                  </div>
+                  {#if prepLeft !== null && prepLeft <= 2}<p class="credit-left">{prepLeft} prep credit{prepLeft === 1 ? '' : 's'} left in your beta allowance.</p>{/if}
+                {/if}
                 {#if genError}<p class="gen-err">{genError}</p>{/if}
               {:else}
                 <h3>Playbook for {selectedRound ? roundLabel(selectedRound) : 'this round'}</h3>
                 <p class="gen-sub">
                   We'll research the person interviewing you in this round — their background, how they tend to interview, what lands, and smart questions to ask. The shared {app.co} company brief is generated alongside it if you don't have one yet, so you only wait once.
                 </p>
-                <div class="gen-row">
-                  <input
-                    class="gen-input"
-                    type="text"
-                    placeholder="Interviewer name (optional) — e.g. Sarah Chen"
-                    bind:value={interviewerInput}
-                    disabled={generating}
-                    onkeydown={(e) => e.key === 'Enter' && generateDossier()}
-                  />
-                  <button class="btn-generate" onclick={generateDossier} disabled={generating}>
-                    Build playbook
-                  </button>
-                </div>
+                {#if atPrepLimit}
+                  <p class="credit-cap">You've used all <b>{prepCredits.limit}</b> prep credits for the beta. <a href={capMailto} onclick={() => logEvent('feedback_click', { surface: 'credit_cap' })}>Email me</a> and I'll top you up — takes a minute.</p>
+                {:else}
+                  <div class="gen-row">
+                    <input
+                      class="gen-input"
+                      type="text"
+                      placeholder="Interviewer name (optional) — e.g. Sarah Chen"
+                      bind:value={interviewerInput}
+                      disabled={generating}
+                      onkeydown={(e) => e.key === 'Enter' && generateDossier()}
+                    />
+                    <button class="btn-generate" onclick={generateDossier} disabled={generating}>
+                      Build playbook
+                    </button>
+                  </div>
+                  {#if prepLeft !== null && prepLeft <= 2}<p class="credit-left">{prepLeft} prep credit{prepLeft === 1 ? '' : 's'} left in your beta allowance.</p>{/if}
+                {/if}
                 {#if genError}<p class="gen-err">{genError}</p>{/if}
               {/if}
             </div>
@@ -1661,7 +1704,7 @@
         <label>Company <input bind:value={edit.company} required /></label>
         <label>Role <input bind:value={edit.role} required /></label>
         <label class="span-2">Source
-          <input bind:value={edit.source} list="edit-source-suggestions" placeholder="LinkedIn / Referral / Cold email" />
+          <input bind:value={edit.source} list={coarsePointer ? undefined : 'edit-source-suggestions'} placeholder="LinkedIn / Referral / Cold email" />
           <div class="src-chips">
             {#each SOURCE_SUGGESTIONS as s}<button type="button" class="src-chip" onclick={() => (edit.source = s)}>{s}</button>{/each}
           </div>
@@ -2150,7 +2193,10 @@
   .pe-btn:hover:not(:disabled) { border-color: var(--rule-strong); color: var(--ink); }
   .pe-btn:disabled { opacity: 0.4; cursor: default; }
   .pe-x:hover:not(:disabled) { color: var(--danger-text); border-color: var(--danger-tint); }
-  .pe-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  /* Sticky within the page scroller so Save stays reachable while the mobile
+     keyboard is up (the stage inputs sit above it in the rail card). */
+  .pe-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;
+    position: sticky; bottom: 0; z-index: 2; background: var(--card); padding: 8px 0 2px; }
   .kv { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 9px 12px; }
   .kv dt { font-size: 12.5px; color: var(--mute); }
   .kv dd { margin: 0; font-size: 12.5px; color: var(--ink); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
@@ -2199,6 +2245,9 @@
   .btn-generate:hover:not(:disabled) { background: var(--ink-2); }
   .btn-generate:disabled { opacity: 0.5; cursor: default; }
   .gen-err { color: var(--danger-text); font-size: 13px; margin: 14px 0 0; text-align: left; }
+  .credit-left { color: var(--mute); font-size: 12.5px; margin: 10px 0 0; }
+  .credit-cap { color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin: 6px auto 0; max-width: 46ch; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; }
+  .credit-cap a { color: var(--accent); font-weight: 500; }
   .big-spinner { width: 36px; height: 36px; border: 2.5px solid var(--rule-strong); border-top-color: var(--accent); border-radius: 50%; animation: prep-spin 0.75s linear infinite; margin: 24px auto 0; }
   .gen-eta { font-size: 12px; color: var(--mute-2); margin: 16px auto 0; max-width: 40ch; }
   @keyframes prep-spin { to { transform: rotate(360deg); } }
@@ -2297,9 +2346,12 @@
     .logo-big { width: 48px; height: 48px; }
     .det-hd .co { font-size: 21px; }
     .modal-overlay { padding: 0; }
-    .modal { max-width: 100%; border-radius: 0; min-height: 100dvh; padding: 1rem; }
+    /* Capped scroll box (NOT min-height) — with min-height the modal grows past
+       the viewport, the sticky Save footer resolves against the page, and the
+       keyboard pushes it off-screen (Ayelet's vanishing-Save bug). */
+    .modal { max-width: 100%; border-radius: 0; height: 100dvh; max-height: 100dvh; padding: 1rem; padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
     .ev-overlay { padding: 0; }
-    .ev-card { max-width: 100%; border-radius: 0; min-height: 100dvh; margin: 0; padding: 20px 16px; }
+    .ev-card { max-width: 100%; border-radius: 0; height: 100dvh; max-height: 100dvh; overflow-y: auto; margin: 0; padding: 20px 16px; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
     .fields { grid-template-columns: 1fr; }
     .fields .span-2 { grid-column: auto; }
     .fu-row { grid-template-columns: 1fr; }
@@ -2310,5 +2362,11 @@
     .tells { grid-template-columns: 1fr; }
     .la-grid { grid-template-columns: 1fr; }
     .la-col + .la-col { border-left: none; border-top: 1px solid var(--rule); }
+  }
+  @media (max-width: 480px) {
+    .body { padding: 14px 10px; }
+    .det-hd .co { font-size: 19px; }
+    .logo-big { width: 40px; height: 40px; }
+    .modal { padding: .8rem .7rem; padding-bottom: calc(.8rem + env(safe-area-inset-bottom)); }
   }
 </style>

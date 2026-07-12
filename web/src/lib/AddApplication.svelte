@@ -8,6 +8,10 @@
 
   let { open = $bindable(false), onCreated } = $props();
 
+  // On touch, <datalist> is a dead affordance (tap doesn't open it) — the
+  // source chips below the input are the mobile path, so drop the list there.
+  const coarsePointer = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+
   // Intent signal: fire once each time the modal opens, so we can see who opens
   // the add flow but never completes it (application_create). The drop between
   // the two is the onboarding leak we're trying to make visible.
@@ -283,7 +287,7 @@
         </label>
         <label class="span-2">
           <span class="lbl">Source <span class="opt">— optional</span></span>
-          <input bind:value={form.source} list="source-suggestions" placeholder="LinkedIn / Referral / Cold email" />
+          <input bind:value={form.source} list={coarsePointer ? undefined : 'source-suggestions'} placeholder="LinkedIn / Referral / Cold email" />
           <div class="src-chips">
             {#each SOURCE_SUGGESTIONS as s}<button type="button" class="src-chip" onclick={() => (form.source = s)}>{s}</button>{/each}
           </div>
