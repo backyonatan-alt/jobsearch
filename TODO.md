@@ -2,6 +2,28 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 📣 Jul 13 2026 — first warm-network distribution: BGU student cohort (12)
+
+Sent the invite (Hebrew, leads with the playbook, laptop nudge, BCC) to **12 BGU
+students** (@post.bgu.ac.il — addresses kept OUT of this public repo). First
+warm, high-intent cohort — higher intent than the Jul 6 LinkedIn wave. Honors
+the §9 gate: both trust rails shipped earlier today (PR #38/#39). The live
+grounding-eval workflow was deliberately not run (user call); the cohort tests
+grounding empirically instead.
+
+**Read plan — pinned (answer once they land):**
+1. **Activation** — of 12, how many create a real app → reach a playbook? (baseline 53%)
+2. **Grounding held live** — any wrong-company / "Not them?" signal? (this IS the live grounding proof we skipped the workflow for)
+3. **Retention** — how many return on a later calendar day? (the open number; baseline 18%)
+4. **Debrief** — anyone hit `debrief_prompt_view → debrief_save`? (retention mechanic; 1 real save so far)
+5. **Errors/spend** — any `prepfirst_generate_error`; anyone at the 10-credit cap?
+
+**Cadence:** light read **~Jul 16** (activation + grounding = go/no-go for
+widening to more students) → fuller read **~Jul 20** once retention/debrief have
+calendar days to show. Reminder trigger set to fire into the session ~Jul 16.
+Read method: read-only aggregate over the deploy key (as Jul 7/12) or the admin
+console (`/admin/adoption`, `/admin/invite-funnel`).
+
 ## ✅ Jul 13 2026 — Phase A trust rails (§9) — first two gates shipped
 
 The Jul 12 re-read's fork said: activation holds, so the next lever is
