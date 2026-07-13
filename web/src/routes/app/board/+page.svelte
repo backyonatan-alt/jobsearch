@@ -6,12 +6,15 @@
   import { logEvent } from '$lib/analytics.js';
   import { STATUS_LABEL, toDisplayApp, fmtLongDate, isStale } from '$lib/app-helpers.js';
   import ImportApplications from '$lib/ImportApplications.svelte';
+  import AddApplication from '$lib/AddApplication.svelte';
 
   const call = isPreview() ? mockApi : api;
 
   let apps = $state([]);
   let loading = $state(true);
   let showImport = $state(false);
+  let showAdd = $state(false);
+  let addStatus = $state('applied');
   let dragOver = $state(null);   // column key being hovered during drag
   let dragging = $state(null);   // id of card being dragged
 
@@ -51,6 +54,11 @@
   const dateLong = fmtLongDate(new Date());
 
   function open(id) { goto(`/app/${id}`); }
+
+  function openAdd(status) {
+    addStatus = status;
+    showAdd = true;
+  }
 
   // ── Drag handlers ──────────────────────────────────────────
 
@@ -144,10 +152,13 @@
           <span class="legend"><span class="rd"></span>red border = no movement in 7+ days</span>
         </div>
       </div>
-      <button class="import-btn" onclick={() => (showImport = true)}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 12v1.5h10V12"/></svg>
-        Import from spreadsheet
-      </button>
+      <div class="hd-actions">
+        <button class="import-btn" onclick={() => (showImport = true)}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 12v1.5h10V12"/></svg>
+          Import from spreadsheet
+        </button>
+        <button class="btn btn-primary" onclick={() => openAdd('applied')}>New application</button>
+      </div>
     </div>
 
     {#if loading}
@@ -155,7 +166,7 @@
     {:else if apps.length === 0}
       <div class="empty-state">
         <h3>No applications yet</h3>
-        <p>Add your first one from the Today page (⌘N) — they'll appear here grouped by status.</p>
+        <p>Add your first one with "New application" above — they'll appear here grouped by status.</p>
       </div>
     {:else}
       <div class="bcols" data-tour="board">
@@ -172,7 +183,7 @@
                 <span class="dot"></span>{col.lbl}
               </span>
               <span class="bcol-ct">{byStatus[col.k].length}</span>
-              <button class="bcol-add" title="Add to {col.lbl}" onclick={() => goto('/app')}>+</button>
+              <button class="bcol-add" title="Add to {col.lbl}" onclick={() => openAdd(col.k)}>+</button>
             </header>
 
             <div class="bcol-list">
@@ -237,6 +248,7 @@
 </div>
 
 <ImportApplications bind:open={showImport} onImported={refresh} />
+<AddApplication bind:open={showAdd} initialStatus={addStatus} onCreated={refresh} />
 
 <style>
   /* ── Layout ──────────────────────────────────────────────── */
@@ -245,6 +257,7 @@
 
   /* ── Header ──────────────────────────────────────────────── */
   .board-hd { margin-bottom: 26px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .hd-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
   .import-btn { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; background: var(--card); border: 1px solid var(--rule); border-radius: 9px; padding: 9px 14px; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; font-family: inherit; }
   .import-btn:hover { border-color: var(--rule-strong); color: var(--ink); }
   .import-btn svg { color: var(--mute); }

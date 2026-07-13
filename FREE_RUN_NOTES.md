@@ -32,6 +32,53 @@ the moment you notice something; triage later.
 
 ---
 
+## Jul 13 2026 — user review session (live walkthrough with a beta user)
+
+> Notes from a sit-down review with a real user. Four concrete issues
+> (all verified against the code) + a batch of ideas. The wrong-company
+> item is another live reproduction of the #1 trust problem.
+
+- `[gap]` **`closed` status is a black hole.** We added `closed` to
+  `STATUSES` but no surface lists closed apps: the board excludes
+  rejected/withdrawn/closed by design (`board/+page.svelte:18`), Today
+  doesn't show them, and the funnel only counts them. Once an app is
+  closed there is no way to see it again, reopen it, or recall what
+  happened. Same is true for rejected/withdrawn — needs an archive/all
+  list view or a board toggle.
+- `[bug][trust]` **Wrong same-named company from a LinkedIn link — again.**
+  Pasting a LinkedIn job link still produced a brief for a different
+  company with a similar name. User's words: forgivable on manual free
+  text, *not* forgivable when the input is a link to a real posting.
+  Second external reproduction after Ayelet (Jun 30) — direct evidence
+  for the §9 grounding/disambiguation workstream; check whether the
+  Jul 13 trust rails cover this path.
+- `[bug]` **New Application modal overflows short screens with no scroll.**
+  User had to zoom to 80% to reach the Add Application button. Root
+  cause: `.modal` has `overflow: hidden` and no desktop `max-height`
+  (`AddApplication.svelte:330`) — only the mobile media query adds
+  `max-height: 100dvh; overflow-y: auto`. Small CSS fix.
+- `[ux]` **Board column `+` doesn't add — it navigates to Today.**
+  `bcol-add` does `goto('/app')` (`board/+page.svelte:175`), dropping
+  the user on Today to hunt for the New Application button. Should open
+  the add modal in place (ideally prefilling the column's status), and
+  the board page should have its own New Application button.
+- `[idea]` **"Maybe no board at all."** One list with action buttons;
+  first page = only what needs doing today, full applied/interviewing
+  history at the end. Echoes his next point:
+- `[idea]` **Right sidebar feels redundant** — "Your move" and "what you
+  can do today" read as the same thing competing for attention; the
+  center column may be enough.
+- `[idea]` **Top numbers should carry the story**: how many applied /
+  awaiting reply / rejected, more prominent and more visual (logos, a
+  line, less list-like). Maybe tabs per company for quick navigation.
+- `[idea]` **Prep → practice sessions.** When a playbook exists, offer
+  training: what to focus on / skip, where you're strong, practice
+  questions. On-strategy — deepens the wedge.
+- `[idea]` **CV upload + strengths/weaknesses questionnaire** to
+  personalize prep quality.
+- `[idea]` **Split prep by presentation**: how I present myself, and how
+  to answer each question style.
+
 ## Jul 12 2026 — full wave re-read (prod DB, aggregate snapshot via Actions)
 
 > Same method as Jul 7: branch-only `backup.yml` override, read-only aggregate
