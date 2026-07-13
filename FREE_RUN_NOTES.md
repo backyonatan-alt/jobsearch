@@ -52,16 +52,8 @@ the moment you notice something; triage later.
   Second external reproduction after Ayelet (Jun 30) — direct evidence
   for the §9 grounding/disambiguation workstream; check whether the
   Jul 13 trust rails cover this path.
-- `[bug]` **New Application modal overflows short screens with no scroll.**
-  User had to zoom to 80% to reach the Add Application button. Root
-  cause: `.modal` has `overflow: hidden` and no desktop `max-height`
-  (`AddApplication.svelte:330`) — only the mobile media query adds
-  `max-height: 100dvh; overflow-y: auto`. Small CSS fix.
-- `[ux]` **Board column `+` doesn't add — it navigates to Today.**
-  `bcol-add` does `goto('/app')` (`board/+page.svelte:175`), dropping
-  the user on Today to hunt for the New Application button. Should open
-  the add modal in place (ideally prefilling the column's status), and
-  the board page should have its own New Application button.
+- ~~`[bug]` New Application modal overflows short screens~~ → **Shipped Jul 13** (PR #41, see below)
+- ~~`[ux]` Board column `+` navigates to Today instead of adding~~ → **Shipped Jul 13** (PR #41, see below)
 - `[idea]` **"Maybe no board at all."** One list with action buttons;
   first page = only what needs doing today, full applied/interviewing
   history at the end. Echoes his next point:
@@ -353,6 +345,22 @@ distinct status.
 ---
 
 ## Shipped (move items here once fixed)
+
+### Jul 13 review-session spine fixes (Jul 13 2026, PR #41)
+
+- **Add modal scrolls on short screens:** `.modal` now caps at viewport
+  height (`calc(100dvh - 4rem)`) with internal scroll — the Add
+  application button is reachable without zooming out.
+- **Board `+` adds in place:** column `+` opens the New Application
+  modal on the board with that column's status prefilled (new
+  `initialStatus` prop); board header got its own "New application"
+  button. No more bounce to Today.
+- Verified rendered pre-merge: local Go+Postgres+built-frontend stack
+  driven by Playwright at 1280×620 (11/11 checks), then Claude-for-Chrome
+  on prod post-deploy (5/5 ✅).
+- Still open from the same session: wrong same-named company from a
+  LinkedIn link (`[bug][trust]`), `closed`-status black hole (`[gap]`),
+  and the home-screen/prep ideas — see the Jul 13 entry above.
 
 ### Phase 3b + mobile board + credit-cap UX (Jul 12 2026, PR #36)
 
