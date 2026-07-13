@@ -84,6 +84,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /admin/", s.serveIndexHTML)
 	mux.HandleFunc("GET /preview", s.serveIndexHTML)
 	mux.HandleFunc("GET /preview/", s.serveIndexHTML)
+	mux.HandleFunc("GET /privacy", s.serveIndexHTML)
 	// Root serves the same shell (with GA injected); everything else under "/"
 	// is a static asset (js/css/favicon) served straight off disk.
 	mux.HandleFunc("GET /{$}", s.serveIndexHTML)
