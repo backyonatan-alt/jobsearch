@@ -5,6 +5,11 @@
 > Jul 12 entry below + `TODO.md` top entry. Headlines: activation holds (9/17
 > to playbook), first real `debrief_save` landed (3b gate open), top of funnel
 > dry since Jul 8.
+>
+> 🎓 **Jul 13 — first warm-network push: 12 BGU students invited** (after the
+> §9 trust rails shipped). First high-intent cohort. Read plan pinned in
+> `TODO.md`; first light read ~Jul 16 (go/no-go for widening). The number to
+> move now is **retention/debrief**, not activation.
 
 A scratchpad for observations while actually using the app. Capture
 the moment you notice something; triage later.

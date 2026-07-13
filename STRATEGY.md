@@ -338,7 +338,7 @@ reason — the instinct was right, extend it to all public surfaces).
 | Bet | Verdict mechanism | Date/trigger | Outcome (fill in) |
 |---|---|---|---|
 | Scenario 6.2 pricing | ≥5 / 1–4 / 0 purchases per 100 prep-activated post-paywall users (§7) | ~6 weeks after Paddle ships | — |
-| Debrief loop demand | `debrief_save` > 0 among eligible users with the Jul 6 surfacing fix live; then *density* (≥N per active user), not just >0 | Jul 13 re-read + one more cycle | — |
+| Debrief loop demand | `debrief_save` > 0 among eligible users with the Jul 6 surfacing fix live; then *density* (≥N per active user), not just >0 | Jul 13 re-read + one more cycle | In progress — `debrief_save`=1 (Jul 12); BGU cohort (12, invited Jul 13) is the cycle; read ~Jul 20 |
 | Prep quality (trust) | prep-accuracy "spot-on" ≥70% on ≥30 rated playbooks | as ratings accumulate | — |
 | Grounding holds live | eval harness green on deploys; Ayelet real-loop retry; "Not them?" click-rate ~0 | before next distribution wave | — |
 | Coach demand (6.4 door) | ≥3 coaches actively run real clients; ≥1 pays unprompted | 4 weeks after coach pilot starts | — |
