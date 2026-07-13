@@ -6,7 +6,7 @@
   import { logEvent } from '$lib/analytics.js';
   import { SOURCE_SUGGESTIONS } from '$lib/app-helpers.js';
 
-  let { open = $bindable(false), onCreated } = $props();
+  let { open = $bindable(false), onCreated, initialStatus = 'applied' } = $props();
 
   // On touch, <datalist> is a dead affordance (tap doesn't open it) — the
   // source chips below the input are the mobile path, so drop the list there.
@@ -17,7 +17,10 @@
   // the two is the onboarding leak we're trying to make visible.
   let wasOpen = false;
   $effect(() => {
-    if (open && !wasOpen) logEvent('addmodal_open');
+    if (open && !wasOpen) {
+      form.status = initialStatus;
+      logEvent('addmodal_open');
+    }
     wasOpen = open;
   });
 
@@ -336,6 +339,11 @@
     display: flex; flex-direction: column;
     box-shadow: var(--sh-pop);
     overflow: hidden;
+    /* Short screens: cap to the viewport and scroll inside the modal —
+       without this the Add button falls below the fold with no way to reach it. */
+    max-height: calc(100vh - 4rem);
+    max-height: calc(100dvh - 4rem);
+    overflow-y: auto;
   }
   .m-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 22px 14px; }
   .m-head h2 { font-size: 19px; font-weight: 500; letter-spacing: -0.018em; margin: 0; color: var(--ink); }
