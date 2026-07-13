@@ -155,7 +155,7 @@
     </div>
 
     <p class="footnote">Free while in beta. Sign in with Google — no waitlist.</p>
-    <p class="privacy">Everything you enter — applications, notes, salary, prep briefs — is private to your account; no other user sees it. We store your Google email and profile picture for sign-in. Briefs are generated with Anthropic's API, which doesn't train on your data. Want out? One email and we delete everything.</p>
+    <p class="privacy">Everything you enter — applications, notes, salary, prep briefs — is private to your account; no other user sees it. We store your Google email and profile picture for sign-in. Briefs are generated with Anthropic's API, which doesn't train on your data. Want out? One email and we delete everything. <a href="/privacy">How we research interviewers →</a></p>
   </div>
 </main>
 
@@ -282,4 +282,5 @@
 
   .footnote { font-size: 11.5px; color: var(--mute-2); margin: 18px 0 0; }
   .privacy { font-size: 11px; line-height: 1.5; color: var(--mute-2); margin: 10px 0 0; text-wrap: pretty; }
+  .privacy a { color: var(--accent-text); white-space: nowrap; }
 </style>

@@ -1,0 +1,56 @@
+name: grounding-eval
+
+# Live accuracy gate for company-brief generation (STRATEGY §9.1). Manual only —
+# it calls the Anthropic API, so it never runs on every push. The deterministic
+# half (go test ./internal/grounding/...) runs in CI on every deploy for free.
+#
+# Run this before a distribution wave and after any model/prompt change. It
+# generates each case in testdata/cases.json for real and checks: right company,
+# citations are deep links, citations resolve (HTTP). With "update" it also
+# uploads refreshed golden fixtures for you to review and commit.
+#
+# Requires a repo secret ANTHROPIC_API_KEY (same value as the VM's env).
+
+on:
+  workflow_dispatch:
+    inputs:
+      update:
+        description: 'Refresh golden fixtures and upload them as an artifact'
+        type: boolean
+        default: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go mod download
+
+      - name: Run grounding eval (live)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. Add it in repo Settings → Secrets (same value as the VM) to run the live gate."
+            exit 1
+          fi
+          FLAGS=""
+          if [ "${{ inputs.update }}" = "true" ]; then FLAGS="-update"; fi
+          go run ./cmd/groundingeval $FLAGS | tee grounding-report.txt
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grounding-report
+          path: grounding-report.txt
+
+      - name: Upload refreshed fixtures
+        if: ${{ inputs.update && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: refreshed-fixtures
+          path: internal/grounding/testdata/briefs/

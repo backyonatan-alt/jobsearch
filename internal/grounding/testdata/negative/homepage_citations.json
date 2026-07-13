@@ -1,0 +1,14 @@
+{
+  "identity": {
+    "name": "Lusha Systems Inc.",
+    "domain": "lusha.com",
+    "summary": "B2B sales-intelligence platform, HQ in Tel Aviv / New York."
+  },
+  "company": {
+    "blurb": "Lusha sells a sales-intelligence platform with verified contact and company data."
+  },
+  "sources": [
+    {"label": "TechCrunch", "href": "https://techcrunch.com"},
+    {"label": "Glassdoor", "href": "https://www.glassdoor.com/"}
+  ]
+}

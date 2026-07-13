@@ -1,0 +1,33 @@
+{
+  "identity": {
+    "name": "Lusha Systems Inc.",
+    "domain": "lusha.com",
+    "summary": "B2B sales-intelligence platform (contact & company data), HQ in Tel Aviv / New York."
+  },
+  "company": {
+    "blurb": "Lusha sells a sales-intelligence platform that gives go-to-market teams verified contact and company data.",
+    "direction": "Raised $205M Series B at a $1.5B valuation and has been pushing into enterprise workflows and data-compliance tooling over the last year.",
+    "hq": "Tel Aviv",
+    "employees": "~300",
+    "stage": "Series B · $1.5B valuation",
+    "founded": "2016",
+    "process": [
+      {"kind": "Recruiter screen", "detail": "30 min · role fit"},
+      {"kind": "Hiring-manager call", "detail": "45 min · backend systems, prior wins"},
+      {"kind": "Technical screen", "detail": "60 min · live coding"},
+      {"kind": "Onsite loop", "detail": "system design, IC coding, behavioral"}
+    ],
+    "watch_fors": [
+      "Data pipelines at scale — Lusha's product is a data asset, expect depth on ingestion and freshness.",
+      "GDPR/CCPA compliance shows up in the product; be ready to reason about privacy-by-design.",
+      "They grade for pragmatic delivery over architecture astronautics.",
+      "Blind reviews mention a fast, product-driven eng culture.",
+      "Know the difference between their self-serve and enterprise motions."
+    ]
+  },
+  "sources": [
+    {"label": "TechCrunch — Lusha raises $205M Series B (Nov 2021)", "href": "https://techcrunch.com/2021/11/03/lusha-raises-205m-series-b-at-a-1-5b-valuation/"},
+    {"label": "Glassdoor — Lusha interview reviews", "href": "https://www.glassdoor.com/Interview/Lusha-Interview-Questions-E1234567.htm"},
+    {"label": "Lusha engineering blog — data freshness", "href": "https://www.lusha.com/blog/engineering/data-freshness-at-scale/"}
+  ]
+}

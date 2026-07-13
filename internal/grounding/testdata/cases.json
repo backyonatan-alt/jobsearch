@@ -1,0 +1,28 @@
+[
+  {
+    "slug": "lusha",
+    "company": "Lusha",
+    "role": "Senior Backend Engineer",
+    "location": "Tel Aviv, Israel",
+    "company_url": "https://www.lusha.com",
+    "expect_domain": "lusha.com",
+    "note": "The Jul 6 grounding-gate QA case. B2B sales-intelligence Lusha, not any lookalike."
+  },
+  {
+    "slug": "365scores",
+    "company": "365Scores",
+    "role": "Product Manager",
+    "location": "Tel Aviv, Israel",
+    "expect_domain": "365scores.com",
+    "note": "The original wrong-company failure (Ayelet, Jun 30) — a thin-English-web Israeli name that collides. The beachhead's worst grounding terrain."
+  },
+  {
+    "slug": "wix",
+    "company": "Wix",
+    "role": "Frontend Engineer",
+    "location": "Tel Aviv, Israel",
+    "company_url": "https://www.wix.com",
+    "expect_domain": "wix.com",
+    "note": "Well-known Israeli company; a sanity case with a strong English web presence."
+  }
+]

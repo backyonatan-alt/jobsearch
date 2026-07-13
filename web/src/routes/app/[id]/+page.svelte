@@ -1469,7 +1469,7 @@
               {#if onCompany}
                 Shared across every round · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'}
               {:else}
-                Synthesised from public posts, talks, and papers · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'} · always verify before you walk in
+                Synthesised from public posts, talks, and papers · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'} · always verify before you walk in · <a href="/privacy" target="_blank" rel="noreferrer">how we research people</a>
               {/if}
               <button class="prep-refresh" type="button" onclick={generateDossier} disabled={generating}>
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
