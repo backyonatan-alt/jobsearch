@@ -1,0 +1,32 @@
+{
+  "identity": {
+    "name": "365Scores",
+    "domain": "365scores.com",
+    "summary": "Real-time sports scores and news app, based in Tel Aviv, Israel."
+  },
+  "company": {
+    "blurb": "365Scores makes a real-time sports-tracking app for scores, stats, and personalized match news.",
+    "direction": "Acquired by Minute Media and has been integrating into its broader sports-media and content network over the past year.",
+    "hq": "Tel Aviv",
+    "employees": "~100",
+    "stage": "Acquired (Minute Media)",
+    "founded": "2011",
+    "process": [
+      {"kind": "Recruiter screen", "detail": "30 min · role fit"},
+      {"kind": "PM case", "detail": "60 min · product sense on a sports-app feature"},
+      {"kind": "Hiring-manager loop", "detail": "prioritization, metrics, execution"}
+    ],
+    "watch_fors": [
+      "Consumer scale — millions of MAU, so metrics literacy and retention thinking matter.",
+      "Personalization and notifications are core; expect product-sense on engagement without spamming.",
+      "Sports domain fluency is a plus but they grade for product judgment.",
+      "Post-acquisition, expect questions on working across a larger media org.",
+      "Mobile-first product instincts are graded heavily."
+    ]
+  },
+  "sources": [
+    {"label": "Calcalist — Minute Media acquires 365Scores", "href": "https://www.calcalistech.com/ctech/articles/0,7340,L-3841234,00.html"},
+    {"label": "Glassdoor — 365Scores reviews", "href": "https://www.glassdoor.com/Overview/Working-at-365Scores-EI_IE1122334.htm"},
+    {"label": "365Scores — about page", "href": "https://www.365scores.com/about"}
+  ]
+}

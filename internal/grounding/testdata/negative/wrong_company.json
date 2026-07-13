@@ -1,0 +1,30 @@
+{
+  "identity": {
+    "name": "365 Sports Betting Ltd.",
+    "domain": "365.com",
+    "summary": "Online sports-betting operator — a DIFFERENT company that shares the '365' name."
+  },
+  "company": {
+    "blurb": "An online sports-betting and gaming operator.",
+    "direction": "Expanding into new regulated markets.",
+    "hq": "Malta",
+    "employees": "~2,000",
+    "stage": "Private",
+    "founded": "2000",
+    "process": [
+      {"kind": "Recruiter screen", "detail": "30 min"},
+      {"kind": "Loop", "detail": "product + behavioral"}
+    ],
+    "watch_fors": [
+      "Regulated-gambling domain knowledge.",
+      "Risk and compliance thinking.",
+      "High-scale betting systems.",
+      "Responsible-gaming product tradeoffs.",
+      "Market-by-market licensing."
+    ]
+  },
+  "sources": [
+    {"label": "Article about the betting company", "href": "https://example.com/betting/365-expands"},
+    {"label": "Glassdoor", "href": "https://www.glassdoor.com/Overview/betting-365-EI_IE555.htm"}
+  ]
+}

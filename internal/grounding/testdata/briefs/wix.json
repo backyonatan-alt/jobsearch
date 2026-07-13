@@ -1,0 +1,32 @@
+{
+  "identity": {
+    "name": "Wix.com Ltd.",
+    "domain": "wix.com",
+    "summary": "Website-building and business SaaS platform, HQ in Tel Aviv; NASDAQ: WIX."
+  },
+  "company": {
+    "blurb": "Wix provides a cloud platform for building and running websites and online businesses.",
+    "direction": "Public company leaning hard into AI site-generation and its Studio product for agencies over the last year.",
+    "hq": "Tel Aviv",
+    "employees": "~5,000",
+    "stage": "Public (NASDAQ: WIX)",
+    "founded": "2006",
+    "process": [
+      {"kind": "Recruiter screen", "detail": "30 min · role fit"},
+      {"kind": "Home assignment", "detail": "frontend task"},
+      {"kind": "Technical loop", "detail": "coding, system design, behavioral"}
+    ],
+    "watch_fors": [
+      "Frontend depth at scale — Wix's editor is a massive client-side app; expect rendering-performance questions.",
+      "They grade for craft and attention to UX detail.",
+      "Component architecture and state management come up.",
+      "Know their move toward AI-assisted site building.",
+      "Large org — show you can navigate cross-team dependencies."
+    ]
+  },
+  "sources": [
+    {"label": "Wix Q4 2025 earnings release", "href": "https://investors.wix.com/news-releases/news-release-details/wix-reports-fourth-quarter-2025-results"},
+    {"label": "Glassdoor — Wix frontend interview", "href": "https://www.glassdoor.com/Interview/Wix-Frontend-Engineer-Interview-Questions-EI_IE9876543.htm"},
+    {"label": "Wix Engineering — building the editor", "href": "https://www.wix.engineering/post/building-the-wix-editor"}
+  ]
+}

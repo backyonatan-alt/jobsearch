@@ -2,6 +2,38 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## ✅ Jul 13 2026 — Phase A trust rails (§9) — first two gates shipped
+
+The Jul 12 re-read's fork said: activation holds, so the next lever is
+distribution — but STRATEGY §9 gates the next wave on trust infrastructure.
+Built both gating deliverables before any wider push:
+
+- [x] **Grounding/citation eval harness (§9.1).** `internal/grounding` — the
+      accuracy checker. `CheckCompanyBrief` asserts right-company
+      (identity.domain == expected) + citations are real deep links (not
+      homepages). Two layers: deterministic `go test` over golden fixtures
+      (every deploy, no API spend, incl. Israeli-collision cases + negative
+      fixtures that must fail) and `cmd/groundingeval` + the `grounding-eval`
+      workflow (live: generates for real, checks citation reachability over
+      HTTP, refreshes fixtures). PR #38.
+- [x] **Interviewer-privacy policy published (§9.2).** `/privacy` page — public
+      professional sources only, no personal-life inference, visible sourcing,
+      a stated line, GDPR posture, one-email removal. Linked from the homepage
+      + the playbook's interviewer disclaimer. PR #38.
+
+**Still open in Phase A before distribution wave 2:**
+- [ ] **Add the `ANTHROPIC_API_KEY` repo secret** so the `grounding-eval`
+      workflow can run live. The deterministic test guards regressions for
+      free; the live gate needs the secret (same value as the VM). Run it green
+      once — that's the actual "grounding holds" evidence STRATEGY §12 wants —
+      *before* pouring in a new cohort.
+- [ ] OAuth secret rotation (the other half of §9.2 item 2).
+- [ ] Phase A #3–5: mobile read-only playbook view, day-of cheat sheet,
+      feedback-on-claims. Then Phase B (pricing experiment).
+
+> Distribution stays gated until the live eval runs green. Growth also needs a
+> *repeated* cadence, not another one-off post (funnel died 48h after Jul 6).
+
 ## 🚀 Jul 6 2026 — PUBLIC LAUNCH (LinkedIn post live)
 
 Open signup went live (`OPEN_SIGNUP=true` on the VM) and the user posted the
