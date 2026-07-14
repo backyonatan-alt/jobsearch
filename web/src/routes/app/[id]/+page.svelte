@@ -6,9 +6,10 @@
   import { logEvent } from '$lib/analytics.js';
   import ConfirmDialog from '$lib/ConfirmDialog.svelte';
   import StatusPill from '$lib/StatusPill.svelte';
+  import CompanyLogo from '$lib/CompanyLogo.svelte';
   import {
-    toDisplayApp, STATUS_LABEL, STATUSES, SOURCE_SUGGESTIONS,
-    fmtLongDate, fmtRelativeDate, daysSince, isStale
+    toDisplayApp, STATUS_LABEL, SOURCE_SUGGESTIONS,
+    fmtLongDate, fmtRelativeDate, daysSince
   } from '$lib/app-helpers.js';
 
   const call = isPreview() ? mockApi : api;
@@ -28,21 +29,24 @@
   let loading = $state(true);
   let notFound = $state(false);
 
-  // Interview prep (dossier) — inline section
+  // Interview prep (dossier) — the selected tab's brief + the shared company brief.
   let dossier = $state(null);
   let dossierLoading = $state(true);
+  let companyDossier = $state(null);
   let generating = $state(false);
+  let regrounding = $state(false); // identity "Re-research" in flight → show the build state
   let prepStage = $state('');
   let genError = $state('');
   let interviewerInput = $state('');
-  // "Not them? →" re-ground: user-confirmed company website that overrides
-  // same-named-company drift on regeneration.
-  let showReground = $state(false);
   let companyUrlInput = $state('');
+  // Identity strip ("Not them?") state: bar | confirm | fix | verified. Session-local.
+  let identity = $state('bar');
   // Which tab is showing: 'company' (shared brief) or an interview id (that
   // round's interviewer brief).
   let selectedTab = $state('company');
   let prepReady = $state(false); // interviews+debriefs loaded and the default tab chosen
+  // Rounds we know have (or lack) a generated brief — filled as tabs load.
+  let hasBriefByIv = $state({});
 
   // Interviews
   let interviews = $state([]);
@@ -63,8 +67,8 @@
   }
   const capMailto = `mailto:back.yonatan@gmail.com?subject=${encodeURIComponent('Pursuit — more prep credits please')}`;
 
-  // Debriefs (Phase 3a) — keyed by interview_id. The post-round "how did it go /
-  // was the prep right?" that feeds the next round's playbook.
+  // Debriefs — keyed by interview_id. The post-round "how did it go / was the
+  // prep right?" that feeds the next round's playbook.
   let debriefsByIv = $state({});
   let debriefDraft = $state({ feel: '', prep_accuracy: '', topics: '', notes: '' });
   let debriefSaving = $state(false);
@@ -83,8 +87,7 @@
   const EV_IMG_MAX = 6 * 1024 * 1024;
   const looksLikeIcs = (t) => /BEGIN:VCALENDAR/i.test(t);
 
-  // Inline-action state
-  let showStatusMenu = $state(false);
+  // Edit modal
   let showEditModal = $state(false);
   let edit = $state({ company: '', role: '', source: '', location: '', cv_variant: '', jd_url: '', jd_text: '', salary_note: '', hiring_manager_name: '', hiring_manager_linkedin: '', recruiter_name: '', recruiter_email: '', recruiter_linkedin: '' });
   let saving = $state(false);
@@ -134,6 +137,7 @@
     prepReady = false;
     await loadInterviews();
     await loadDebriefs();
+    loadCompanyBrief();
     const want = Number(page.url.searchParams.get('debrief'));
     const deepLinked = want && (interviews || []).some(iv => iv.id === want);
     selectedTab = deepLinked ? want : (nextRoundId ?? pendingDebriefRoundId ?? 'company');
@@ -143,6 +147,12 @@
     if (deepLinked) {
       try { document.getElementById('interview-prep')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
     }
+  }
+
+  async function loadCompanyBrief() {
+    try {
+      companyDossier = (await call(`/api/applications/${id}/dossier?scope=company`)) || null;
+    } catch { companyDossier = null; }
   }
 
   async function loadDebriefs() {
@@ -287,6 +297,15 @@
     const s = (iv?.summary || '').trim();
     return s ? (d ? `${d} · ${s}` : s) : (d || 'Interview');
   }
+  // Tab caption: name first, near-future suffix ("Panel · tomorrow").
+  function tabLabel(iv) {
+    const s = (iv?.summary || '').trim() || 'Interview';
+    if (iv?.scheduled !== false && iv?.starts_at && new Date(iv.starts_at).getTime() >= Date.now()) {
+      const rel = evRelative(iv);
+      if (['today', 'tomorrow'].includes(rel) || rel.startsWith('in ')) return `${s} · ${rel}`;
+    }
+    return s;
+  }
 
   function attendeeName(iv) {
     const a = iv?.attendees;
@@ -395,9 +414,12 @@
       const d = await call(`/api/applications/${id}/dossier${q}`);
       dossier = d || null;
       if (dossier?.interviewer_name) interviewerInput = dossier.interviewer_name;
+      if (tab === 'company') companyDossier = dossier;
+      else hasBriefByIv = { ...hasBriefByIv, [tab]: !!dossier };
     } catch (e) {
       // 404 / empty → this tab hasn't been generated yet
       dossier = null;
+      if (tab !== 'company') hasBriefByIv = { ...hasBriefByIv, [tab]: false };
     } finally {
       dossierLoading = false;
     }
@@ -430,10 +452,7 @@
         method: 'POST',
         body: JSON.stringify(body)
       });
-      dossier = d;
-      interviewerInput = d.interviewer_name ?? interviewerInput;
-      showReground = false;
-      loadCredits();
+      applyGenerated(d);
     } catch (e) {
       // A dropped connection doesn't kill the build — the server finishes and
       // saves. Poll for the fresh brief before showing an error.
@@ -443,9 +462,7 @@
         const q = onCompany ? '?scope=company' : `?interview_id=${selectedTab}`;
         const d = await pollForDossier(`/api/applications/${id}/dossier${q}`, prevGeneratedAt);
         if (d) {
-          dossier = d;
-          interviewerInput = d.interviewer_name ?? interviewerInput;
-          showReground = false;
+          applyGenerated(d);
           generating = false;
           prepStage = '';
           return;
@@ -457,6 +474,18 @@
       generating = false;
       prepStage = '';
     }
+  }
+  function applyGenerated(d) {
+    dossier = d;
+    interviewerInput = d.interviewer_name ?? interviewerInput;
+    companyUrlInput = '';
+    if (onCompany) companyDossier = d;
+    else {
+      hasBriefByIv = { ...hasBriefByIv, [selectedTab]: true };
+      // Round generation may have built the shared company brief alongside it.
+      loadCompanyBrief();
+    }
+    loadCredits();
   }
 
   function friendlyGenErr(msg) {
@@ -474,6 +503,30 @@
     if (m.includes('http 5') || m.includes('not configured'))
       return 'Something went wrong — try again in a moment.';
     return m || 'Could not build the playbook.';
+  }
+
+  // ── Identity strip ("Not them?") — wrong-company disambiguation flow ──
+  function identityOpen() {
+    identity = 'confirm';
+    logEvent('dossier_identity_open', { app_id: Number(id) });
+  }
+  function identityConfirm() {
+    identity = 'verified';
+    logEvent('identity_confirmed', { app_id: Number(id) });
+  }
+  function identityReject() {
+    identity = 'fix';
+    companyUrlInput = '';
+    logEvent('identity_rejected', { app_id: Number(id) });
+  }
+  async function identityReresearch() {
+    if (!companyUrlInput.trim() || generating) return;
+    logEvent('identity_reresearch_submitted', { app_id: Number(id) });
+    identity = 'bar';
+    regrounding = true;
+    // Re-grounding rebuilds the COMPANY brief — show the build on the company tab.
+    if (selectedTab !== 'company') await selectTab('company');
+    try { await generateDossier(); } finally { regrounding = false; }
   }
 
   async function loadInterviews() {
@@ -639,16 +692,7 @@
     if (showFollowUpModal) closeFollowUp();
   }
 
-  // ── Status / edit / delete (preserved) ───────────────────────
-  async function setStatus(newStatus) {
-    showStatusMenu = false;
-    if (!app || newStatus === app.status) return;
-    const fromStatus = app.status;
-    await call(`/api/applications/${id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
-    logEvent('status_change', { from: fromStatus, to: newStatus, surface: 'detail' });
-    await loadApp();
-    try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
-  }
+  // ── Edit / delete (preserved) ─────────────────────────────────
   function openEdit() {
     if (!app) return;
     edit = {
@@ -695,7 +739,6 @@
       }
     });
   }
-  function back() { goto('/app'); }
 
   // ── Follow-up (records what the user did — sends nothing) ─────
   function todayInputValue() {
@@ -746,49 +789,22 @@
   const hiringManagerInitials = $derived(initialsOf(app?.raw?.hiring_manager_name));
   const recruiterInitials = $derived(initialsOf(app?.raw?.recruiter_name));
 
-  // ── Interview-prep (dossier) derived view data ───────────────
+  // Selected-tab brief content (round or company, depending on the tab).
   const dosContent = $derived(dossier?.content ?? null);
   const dosInterviewer = $derived(dosContent?.interviewer ?? null);
   const dosIvInitials = $derived(
-    initialsOf(dosInterviewer?.name ?? dossier?.interviewer_name ?? app?.raw?.hiring_manager_name ?? '')
+    initialsOf(dosInterviewer?.name ?? dossier?.interviewer_name ?? '')
   );
   const dosIvName = $derived(
-    dosInterviewer?.name ?? dossier?.interviewer_name ?? app?.raw?.hiring_manager_name ?? 'Your interviewer'
+    dosInterviewer?.name ?? dossier?.interviewer_name ?? ''
   );
-  const dosMeeting = $derived(dossier?.meeting ?? null);
+  const dosGeneratedAgo = $derived(dossier?.generatedAgo ?? '');
+  const headerAgo = $derived(dossier?.generatedAgo ?? companyDossier?.generatedAgo ?? '');
 
-  function dosFmtWhen(m) {
-    if (!m) return '—';
-    if (m.starts_at) {
-      const d = new Date(m.starts_at);
-      const now = new Date();
-      const startOfDay = x => new Date(x.getFullYear(), x.getMonth(), x.getDate());
-      const days = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
-      const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-      if (days === 0) return `Today · ${time}`;
-      if (days === 1) return `Tomorrow · ${time}`;
-      if (days > 1 && days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'long' })} · ${time}`;
-      if (days < 0) return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time}`;
-      return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${time}`;
-    }
-    return m.when ?? '—';
-  }
-  function dosFmtDuration(m) {
-    if (!m) return '—';
-    if (m.starts_at && m.ends_at) {
-      const mins = Math.round((new Date(m.ends_at) - new Date(m.starts_at)) / 60000);
-      if (mins <= 0) return m.duration ?? '—';
-      return mins >= 60 && mins % 60 === 0 ? `${mins / 60}h` : `${mins} min`;
-    }
-    return m.duration ?? '—';
-  }
-  const dosFactWhen     = $derived(dosFmtWhen(dosMeeting));
-  const dosFactDuration = $derived(dosFmtDuration(dosMeeting));
-  const dosFactMedium   = $derived(dosMeeting?.medium ?? '—');
-  const dosFactPanel    = $derived(dosMeeting?.panel ?? '—');
-
-  // Company brief (editorial) — from dossier content.company.*
-  const dosCompany = $derived(dosContent?.company ?? null);
+  // Shared company brief content — used for the identity strip + Company tab.
+  const companyContent = $derived(companyDossier?.content ?? null);
+  const dosIdentity = $derived(companyContent?.identity ?? null);
+  const dosCompany = $derived(companyContent?.company ?? null);
   const companyBlurb = $derived(dosCompany?.blurb ?? '');
   const companyAbout = $derived(dosCompany?.direction ?? dosCompany?.about ?? '');
   const companyFacts = $derived.by(() => {
@@ -806,20 +822,18 @@
     if (!Array.isArray(p)) return [];
     return p.map(s => s?.kind || s?.detail || '').filter(Boolean);
   });
+  const companySources = $derived(Array.isArray(companyContent?.sources) ? companyContent.sources.filter(s => s?.href) : []);
+  const tips = $derived((dosCompany?.watch_fors ?? []).slice(0, 5));
 
-  // Company identity (disambiguation) + sources (citations) — from the brief.
-  const dosIdentity = $derived(dosContent?.identity ?? null);
-  const dosSources = $derived(Array.isArray(dosContent?.sources) ? dosContent.sources.filter(s => s?.href) : []);
-
-  // AI tips box — up to 3 company watch-fors.
-  const tips = $derived((dosCompany?.watch_fors ?? []).slice(0, 3));
   function dosSigDomain(src) {
     if (!src) return '';
     try {
       return new URL(src.startsWith('http') ? src : `https://${src}`).hostname.replace(/^www\./, '');
     } catch { return src; }
   }
-  const dosGeneratedAgo = $derived(dossier?.generatedAgo ?? '');
+  const identityDomainHref = $derived(
+    dosIdentity?.domain ? `https://${String(dosIdentity.domain).replace(/^https?:\/\//, '')}` : ''
+  );
 
   const appliedLong = $derived(app ? fmtLongDate(app.raw.applied_at) : '');
 
@@ -832,53 +846,43 @@
     return future[0] || null;
   });
 
-  // Next interview = soonest future interview, else the dossier meeting —
-  // but only a future-dated one; a past .ics meeting is not "next".
-  const dosUpcoming = $derived(
-    dosMeeting?.starts_at && new Date(dosMeeting.starts_at).getTime() >= Date.now() ? dosMeeting : null
-  );
-  const nextWhen = $derived.by(() => {
-    if (upcoming) return evWhen(upcoming);
-    if (dosUpcoming) return dosFmtWhen(dosUpcoming);
-    return '';
-  });
-  const nextTitle = $derived.by(() => {
-    if (upcoming) return `${upcoming.summary || 'Interview'} · ${evWhen(upcoming)}`;
-    if (dosUpcoming) return `${dosUpcoming.panel || 'Interview'} · ${dosFmtWhen(dosUpcoming)}`;
-    return '';
-  });
-  const hasNext = $derived(!!(upcoming || dosUpcoming));
-  const nextRows = $derived.by(() => {
-    const rows = [];
-    if (upcoming) {
-      const who = evWho(upcoming) || app?.raw?.hiring_manager_name;
-      if (who) rows.push(`${who} (Hiring manager)`);
-      if (upcoming.location) rows.push(upcoming.location);
-      const mins = evDuration(upcoming);
-      if (mins) rows.push(`${mins} min`);
-    } else if (dosUpcoming) {
-      const who = dosInterviewer?.name || dossier?.interviewer_name || app?.raw?.hiring_manager_name;
-      if (who) rows.push(`${who} (Hiring manager)`);
-      if (dosFactMedium !== '—') rows.push(dosFactMedium);
-      if (dosFactDuration !== '—') rows.push(dosFactDuration);
-    }
-    return rows;
-  });
-  // Label the prep person "Hiring manager" only when nothing's scheduled.
-  const personLabel = $derived(hasNext ? 'Likely interviewer' : 'Hiring manager');
-
-  const awaiting = $derived(app && ['applied', 'screen'].includes(app.status));
   const closedOut = $derived(app && ['rejected', 'withdrawn', 'closed'].includes(app.status));
-  const quiet = $derived(app ? isStale(app.raw) : false);
-  const lastActivityDays = $derived(app ? daysSince(app.raw.updated_at ?? app.raw.applied_at) : null);
-  const waitDays = $derived(app ? daysSince(app.raw.applied_at) : null);
+
+  // Tomorrow-banner: the next round when it's within a week.
+  const soonRound = $derived.by(() => {
+    if (!upcoming || closedOut) return null;
+    const days = Math.round((startOfDay(new Date(upcoming.starts_at)) - startOfDay(new Date())) / 86400000);
+    return days <= 7 ? upcoming : null;
+  });
+  function startOfDay(x) { return new Date(x.getFullYear(), x.getMonth(), x.getDate()); }
+  const soonCal = $derived.by(() => {
+    if (!soonRound) return null;
+    const d = new Date(soonRound.starts_at);
+    return {
+      mon: d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
+      day: d.getDate()
+    };
+  });
+  const soonLine = $derived.by(() => {
+    if (!soonRound) return '';
+    const d = new Date(soonRound.starts_at);
+    const rel = evRelative(soonRound);
+    const time = soonRound.all_day ? '' : ` at ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+    const mins = evDuration(soonRound);
+    return `${(soonRound.summary || 'Interview').trim()} ${rel}${time}${mins ? ` — ${mins} minutes.` : '.'}`;
+  });
+  function reviewPrep() {
+    if (!soonRound) return;
+    if (hasBriefByIv[soonRound.id]) { goto(`/app/${id}/brief/${soonRound.id}`); return; }
+    selectTab(soonRound.id);
+    try { document.getElementById('interview-prep')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+  }
 
   function evWhen(iv) {
     if (!iv?.starts_at) return '';
     const d = new Date(iv.starts_at);
     if (iv.all_day) return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · all day';
     const now = new Date();
-    const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
     const days = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
     const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
     if (days === 0) return `Today · ${time}`;
@@ -890,7 +894,6 @@
     if (!iv?.starts_at) return 'upcoming';
     const now = new Date();
     const d = new Date(iv.starts_at);
-    const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
     const days = Math.round((startOfDay(d) - startOfDay(now)) / 86400000);
     if (days <= 0) return 'today';
     if (days === 1) return 'tomorrow';
@@ -931,9 +934,15 @@
     }
     return s;
   }
-  function isPast(ev) { return new Date(ev.starts_at) < new Date(); }
+  function isPastEvent(ev) { return new Date(ev.starts_at) < new Date(); }
 
   const monoDate = (iso) => iso ? new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) : '';
+
+  // The round tile's interviewer name (from the brief, else the round's attendee).
+  const roundTileName = $derived.by(() => {
+    if (onCompany) return '';
+    return dosIvName || (selectedRound ? attendeeName(selectedRound) : '') || '';
+  });
 
   // Activity timeline — derived honestly from real data. We DON'T fabricate
   // events: just the application being submitted, each interview on file, the
@@ -957,7 +966,7 @@
         ts: new Date(iv.starts_at).getTime(),
         date: monoDate(iv.starts_at),
         title: iv.summary || 'Interview',
-        note: isPast(iv) ? 'Past event' : 'Scheduled',
+        note: isPastEvent(iv) ? 'Past event' : 'Scheduled',
         tag: 'accent',
         interview: iv
       });
@@ -983,6 +992,21 @@
     });
     return rows.sort((a, b) => b.ts - a.ts);
   });
+
+  // "The role, in short" — honest one-liner from the fields we actually have.
+  const roleShort = $derived.by(() => {
+    if (!app) return '';
+    const bits = [];
+    if (app.raw.location) bits.push(app.raw.location);
+    if (app.raw.salary_note) bits.push(app.raw.salary_note);
+    if (app.cv && app.cv !== '—') bits.push(`CV ${app.cv}`);
+    return bits.join(' · ');
+  });
+  const jdSnippet = $derived.by(() => {
+    const t = (app?.raw?.jd_text || '').trim().replace(/\s+/g, ' ');
+    if (!t) return '';
+    return t.length > 220 ? t.slice(0, 220).replace(/\s+\S*$/, '') + '…' : t;
+  });
 </script>
 
 <svelte:head>
@@ -991,708 +1015,469 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
-<div class="topbar">
-  <div class="crumb">
-    <span class="root" onclick={back}>Applications</span>
-    <span class="sep">/</span>
-    <span class="here">{app?.co ?? '…'}</span>
-  </div>
-  <div class="right">
-    <div class="status-wrap">
-      <button class="btn" onclick={() => (showStatusMenu = !showStatusMenu)} disabled={!app}>
-        Update status
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-left: 2px"><path d="M3 4.5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      {#if showStatusMenu}
-        <div class="status-menu" role="menu" onclick={(e) => e.stopPropagation()}>
-          {#each STATUSES as s}
-            <button class="status-menu-item" class:current={app?.status === s} onclick={() => setStatus(s)}>
-              <span class={`pill ${s}`} style="margin: 0"><span class="pdot"></span>{STATUS_LABEL[s]}</span>
-              {#if app?.status === s}<span class="check">✓</span>{/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
+<div class="wrap">
+  {#if loading}
+    <p class="loading">Loading…</p>
+  {:else if notFound || !app}
+    <div class="empty-tab">
+      <h3>Application not found</h3>
+      <p>It may have been deleted, or you might not have access. <a href="/app">Back to Home →</a></p>
     </div>
-    <button class="btn" onclick={openEdit} disabled={!app}>Edit</button>
-    <button class="btn btn-danger" onclick={deleteApp} disabled={!app} title="Delete this application">Delete</button>
-  </div>
-</div>
+  {:else}
 
-{#if showStatusMenu}
-  <div class="menu-scrim" onclick={() => (showStatusMenu = false)} role="presentation"></div>
-{/if}
+    <div class="crumb"><a href="/app/applications">Applications</a> <span class="sep">/</span> <span class="here">{app.co}</span></div>
 
-<div class="body">
-  <div class="det">
-    {#if loading}
-      <p style="color:var(--mute)">Loading…</p>
-    {:else if notFound || !app}
-      <div class="empty-tab">
-        <h3>Application not found</h3>
-        <p>It may have been deleted, or you might not have access. <a href="/app" style="color:var(--accent-text)">Back to Today →</a></p>
+    {#if showWelcome}
+      <div class="welcome-banner">
+        <span class="wb-spark">✦</span>
+        <span class="wb-tx">Here's your first playbook. Add who's interviewing you for round-by-round prep, or <a href="/app">track another application</a>.</span>
+        <button class="wb-x" onclick={() => (welcomeDismissed = true)} aria-label="Dismiss">✕</button>
       </div>
-    {:else}
+    {/if}
 
-      {#if showWelcome}
-        <div class="welcome-banner">
-          <span class="wb-spark">✦</span>
-          <span class="wb-tx">Here's your first playbook. Add who's interviewing you for round-by-round prep, or <a href="/app">track another application</a>.</span>
-          <button class="wb-x" onclick={() => (welcomeDismissed = true)} aria-label="Dismiss">✕</button>
+    <!-- HEADER -->
+    <div class="hd">
+      <div class="hd-logo"><CompanyLogo app={app} size={52} radius={13} /></div>
+      <div class="hd-main">
+        <div class="hd-row">
+          <h1>{app.co}</h1>
+          <StatusPill id={Number(id)} status={app.status} surface="detail_pill" align="left" onchanged={() => loadApp()} />
         </div>
-      {/if}
-
-      <!-- HEADER -->
-      <div class="det-hd">
-        {#if app.logoSrc}
-          <img class="logo-big" src={app.logoSrc} alt={app.co} />
-        {:else}
-          <span class={`logo-big letter ${app.logoCls}`}>{app.coShort}</span>
-        {/if}
-        <div class="meta">
-          <div class="co">{app.co}</div>
-          <div class="role">{app.role}</div>
-          <div class="sub">
-            {#if app.raw.applied_at}<span>Applied <b>{appliedLong}</b></span>{/if}
-            {#if app.source && app.source !== '—'}<span>Source <b>{app.source}</b></span>{/if}
-            {#if app.cv && app.cv !== '—'}<span>CV <b>{app.cv}</b></span>{/if}
-          </div>
+        <div class="hd-role">{app.role}</div>
+        <div class="hd-sub">
+          {#if app.raw.applied_at}<span>Applied {appliedLong}</span>{/if}
+          {#if app.source && app.source !== '—'}<span class="dot">·</span><span>{app.source}</span>{/if}
+          {#if app.raw.location}<span class="dot">·</span><span>{app.raw.location}</span>{/if}
+          {#if app.raw.jd_url}<span class="dot">·</span><a href={app.raw.jd_url} target="_blank" rel="noopener">Open job post ↗</a>{/if}
         </div>
-        <StatusPill id={Number(id)} status={app.status} surface="detail_pill" onchanged={() => loadApp()} />
       </div>
+      <div class="hd-actions">
+        <button class="linkbtn" onclick={openEdit}>Edit</button>
+        <button class="linkbtn danger" onclick={deleteApp}>Delete</button>
+      </div>
+    </div>
 
-      <!-- TWO-COLUMN GRID -->
-      <div class="det-grid">
-        <!-- LEFT — AI prep hero + activity -->
-        <div class="left">
+    <!-- Soon banner -->
+    {#if soonRound && soonCal}
+      <div class="soon">
+        <div class="soon-cal"><div class="sc-mon">{soonCal.mon}</div><div class="sc-day">{soonCal.day}</div></div>
+        <div class="soon-tx">
+          <div class="soon-t">{soonLine}</div>
+          <div class="soon-s">{hasBriefByIv[soonRound.id] ? 'Your brief is ready below. 20 focused minutes is enough.' : 'Build your brief below — 20 focused minutes is enough.'}</div>
+        </div>
+        <button class="soon-cta" onclick={reviewPrep}>Review prep →</button>
+      </div>
+    {/if}
 
-          <!-- ── INTERVIEW PREP (inline dossier) ── -->
-          <div id="interview-prep" class="prep-lead">
-            <span class="ai-pill"><span class="spark">✦</span> AI</span>
-            <h2>Interview playbook</h2>
-            {#if dosGeneratedAgo && dossier}
-              <p class="prep-gen">
-                <span class="sp" aria-hidden="true">
-                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                    <path d="M6.5 1.5C6.5 4.5 4.5 6.5 1.5 6.5C4.5 6.5 6.5 8.5 6.5 11.5C6.5 8.5 8.5 6.5 11.5 6.5C8.5 6.5 6.5 4.5 6.5 1.5Z" fill="currentColor"/>
-                  </svg>
+    <div class="grid">
+      <!-- LEFT — playbook -->
+      <div class="col-main">
+        <div id="interview-prep" class="pb-card">
+
+          <!-- Identity strip + "Not them?" wrong-company flow (from the company brief) -->
+          {#if dosIdentity}
+            {#if identity === 'bar'}
+              <div class="idbar">
+                <CompanyLogo app={app} size={24} radius={6} />
+                <span class="id-tx">Researched for <strong>{dosIdentity.name || app.co}</strong>{#if dosIdentity.domain}&nbsp;· <a href={identityDomainHref} target="_blank" rel="noreferrer">{dosIdentity.domain}</a>{/if}{#if dosIdentity.summary}&nbsp;<span class="id-sum">— {dosIdentity.summary}</span>{/if}</span>
+                <button class="linkbtn id-not" onclick={identityOpen}>Not them?</button>
+              </div>
+            {:else if identity === 'confirm'}
+              <div class="idbox">
+                <div class="id-q">Is this the company you're interviewing with?</div>
+                <div class="id-card">
+                  <CompanyLogo app={app} size={38} radius={10} />
+                  <div class="id-card-tx"><strong>{dosIdentity.name || app.co}</strong>{#if dosIdentity.domain}&nbsp;· <a href={identityDomainHref} target="_blank" rel="noreferrer">{dosIdentity.domain}</a>{/if}<br><span class="id-sum">{dosIdentity.summary || ''}</span></div>
+                </div>
+                <div class="id-actions">
+                  <button class="btn-blue" onclick={identityConfirm}>Yes — that's them</button>
+                  <button class="btn-ghost-warm" onclick={identityReject}>No — wrong company</button>
+                  <span class="id-hint">Same-name companies are the #1 cause of a wasted brief.</span>
+                </div>
+              </div>
+            {:else if identity === 'fix'}
+              <div class="idbox">
+                <div class="id-q">Point us at the right one.</div>
+                <div class="id-fix-sub">Paste their website or LinkedIn page — we'll re-research and rebuild the company brief.</div>
+                <div class="id-fix-row">
+                  <input class="id-input" placeholder="https://" bind:value={companyUrlInput} disabled={generating}
+                    onkeydown={(e) => e.key === 'Enter' && identityReresearch()} />
+                  <button class="btn-blue" onclick={identityReresearch} disabled={generating || !companyUrlInput.trim()}>Re-research →</button>
+                  <button class="linkbtn id-cancel" onclick={() => (identity = 'bar')}>Cancel</button>
+                </div>
+              </div>
+            {:else}
+              <div class="idok">
+                <span>✓ Verified — {dosIdentity.name || app.co}{#if dosIdentity.domain}&nbsp;· {dosIdentity.domain}{/if}</span>
+                <button class="linkbtn id-change" onclick={identityOpen}>change</button>
+              </div>
+            {/if}
+          {/if}
+
+          <div class="pb-hd">
+            <div class="pb-title-row">
+              <div class="pb-title">✦ Interview playbook</div>
+              {#if headerAgo}<div class="pb-ago">refreshed {headerAgo}</div>{/if}
+              {#if informedByDebrief && dossier}
+                <span class="informed-chip" title="This round's prep was tailored using your debrief of an earlier round">
+                  <span class="ic-dot"></span>Informed by your last round
                 </span>
-                Generated by Pursuit · {dosGeneratedAgo}
-              </p>
-            {/if}
-            {#if informedByDebrief && dossier}
-              <span class="informed-chip" title="This round's prep was tailored using your debrief of an earlier round">
-                <span class="ic-dot"></span>Informed by your last round
-              </span>
-            {/if}
-          </div>
-
-          <div class="round-tabs" role="tablist" aria-label="Interview round">
-            <button
-              type="button" role="tab"
-              aria-selected={onCompany}
-              class="round-tab company" class:active={onCompany}
-              onclick={() => selectTab('company')}
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="2" width="11" height="12" rx="1"/><path d="M5.5 5h2M5.5 8h2M5.5 11h2M9.5 5h1.5M9.5 8h1.5"/></svg>
-              Company
-            </button>
-            {#each interviews as iv}
-              <button
-                type="button" role="tab"
-                aria-selected={selectedTab === iv.id}
-                class="round-tab" class:active={selectedTab === iv.id}
-                onclick={() => selectTab(iv.id)}
-              >{roundLabel(iv)}</button>
-            {/each}
-            <button type="button" class="round-tab add" onclick={() => (showAddRound = !showAddRound)} title="Add a round">+ Add round</button>
-          </div>
-
-          {#if showAddRound}
-            <div class="add-round">
-              <span class="ar-lbl">Add a round you did or have coming up:</span>
-              <div class="ar-chips">
-                {#each ROUND_PRESETS as p}
-                  <button type="button" class="ar-chip" onclick={() => createRound(p)}>{p}</button>
-                {/each}
-              </div>
-              <div class="ar-custom">
-                <input class="ar-input" placeholder="Or type a round name…" bind:value={addRoundText}
-                  onkeydown={(e) => e.key === 'Enter' && addRoundText.trim() && createRound(addRoundText)} />
-                <button type="button" class="btn" onclick={() => createRound(addRoundText)} disabled={!addRoundText.trim()}>Add</button>
-              </div>
-            </div>
-          {/if}
-
-          <!-- A past round on ANOTHER tab still needs its debrief → slim jump-in banner. -->
-          {#if prepReady && pendingDebriefRoundId && pendingDebriefRoundId !== selectedTab}
-            {@const pendingIv = (interviews || []).find(x => x.id === pendingDebriefRoundId)}
-            <button type="button" class="db-banner" onclick={debriefPendingRound}>
-              <span class="db-spark">✦</span>
-              <span class="db-banner-tx">How did the <b>{(pendingIv?.summary || 'last').trim() || 'last'}</b> round go? A 20-second debrief sharpens this round's prep.</span>
-              <span class="db-prompt-cta">Debrief →</span>
-            </button>
-          {/if}
-
-          <!-- Debrief (Phase 3a): capture how a past round went → feeds next round. -->
-          {#if roundIsPast}
-            <section class="debrief">
-              {#if roundDebrief && !debriefEditing}
-                <div class="db-summary">
-                  <div class="db-sum-main">
-                    <span class="db-badge">Debriefed</span>
-                    <span class="db-sum-line">Went <b>{feelLabel(roundDebrief.feel)}</b> · prep was <b>{accLabel(roundDebrief.prep_accuracy)}</b></span>
-                  </div>
-                  <button class="db-edit" type="button" onclick={startDebrief}>Edit</button>
-                </div>
-                {#if roundDebrief.topics}<p class="db-topics">What came up: {roundDebrief.topics}</p>{/if}
-              {:else if debriefEditing}
-                <div class="db-form">
-                  <div class="db-hd"><h3>How did this round go?</h3><span class="db-hint">20 seconds — it sharpens your next round's prep</span></div>
-                  <div class="db-q">
-                    <span class="db-q-lbl">How it felt</span>
-                    <div class="db-opts">
-                      {#each [['strong','Strong'],['mixed','Mixed'],['rough','Rough']] as opt}
-                        <button type="button" class="db-opt" class:sel={debriefDraft.feel === opt[0]} onclick={() => (debriefDraft.feel = opt[0])}>{opt[1]}</button>
-                      {/each}
-                    </div>
-                  </div>
-                  <div class="db-q">
-                    <span class="db-q-lbl">Was our prep right?</span>
-                    <div class="db-opts">
-                      {#each [['spot_on','Spot on'],['partly','Partly'],['off','Off']] as opt}
-                        <button type="button" class="db-opt" class:sel={debriefDraft.prep_accuracy === opt[0]} onclick={() => (debriefDraft.prep_accuracy = opt[0])}>{opt[1]}</button>
-                      {/each}
-                    </div>
-                  </div>
-                  <input class="db-input" placeholder="What actually came up? (optional)" bind:value={debriefDraft.topics} />
-                  <div class="db-actions">
-                    <button class="btn" type="button" onclick={() => (debriefEditing = false)}>Cancel</button>
-                    <button class="btn btn-primary" type="button" onclick={saveDebrief} disabled={debriefSaving || !debriefDraft.feel || !debriefDraft.prep_accuracy}>{debriefSaving ? 'Saving…' : 'Save debrief'}</button>
-                  </div>
-                </div>
-              {:else}
-                <button type="button" class="db-prompt" onclick={startDebrief}>
-                  <span class="db-spark">✦</span>
-                  <span class="db-prompt-tx"><b>How did this round go?</b><small>A 20-second debrief sharpens your next round's prep.</small></span>
-                  <span class="db-prompt-cta">Debrief →</span>
-                </button>
               {/if}
-            </section>
-          {/if}
+            </div>
+            <div class="tabs" role="tablist" aria-label="Interview round">
+              <button type="button" role="tab" aria-selected={onCompany}
+                class="tab company" class:active={onCompany}
+                onclick={() => selectTab('company')}>▦ Company</button>
+              {#each interviews as iv (iv.id)}
+                <button type="button" role="tab" aria-selected={selectedTab === iv.id}
+                  class="tab round" class:active={selectedTab === iv.id} class:done={!!debriefsByIv[iv.id]}
+                  onclick={() => selectTab(iv.id)}>{debriefsByIv[iv.id] && selectedTab !== iv.id ? '✓ ' : ''}{tabLabel(iv)}</button>
+              {/each}
+              <button type="button" class="tab add" onclick={() => (showAddRound = !showAddRound)} title="Add a round">+ Add round</button>
+            </div>
+          </div>
 
-          {#if dossierLoading}
-            <p style="color:var(--mute); font-size:13px;">Loading…</p>
-
-          {:else if !dossier}
-            <!-- Generate / empty state -->
-            <div class="generate-card">
-              <div class="gen-icon" aria-hidden="true">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 3C12 7.97 8.97 11 4 11C8.97 11 12 14.03 12 19C12 14.03 15.03 11 20 11C15.03 11 12 7.97 12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-                </svg>
+          <div class="pb-body">
+            {#if showAddRound}
+              <div class="add-round">
+                <span class="ar-lbl">Add a round you did or have coming up:</span>
+                <div class="ar-chips">
+                  {#each ROUND_PRESETS as p (p)}
+                    <button type="button" class="ar-chip" onclick={() => createRound(p)}>{p}</button>
+                  {/each}
+                </div>
+                <div class="ar-custom">
+                  <input class="ar-input" placeholder="Or type a round name…" bind:value={addRoundText}
+                    onkeydown={(e) => e.key === 'Enter' && addRoundText.trim() && createRound(addRoundText)} />
+                  <button type="button" class="btn" onclick={() => createRound(addRoundText)} disabled={!addRoundText.trim()}>Add</button>
+                </div>
               </div>
-              {#if generating}
+            {/if}
+
+            <!-- A past round on ANOTHER tab still needs its debrief → slim jump-in banner. -->
+            {#if prepReady && pendingDebriefRoundId && pendingDebriefRoundId !== selectedTab}
+              {@const pendingIv = (interviews || []).find(x => x.id === pendingDebriefRoundId)}
+              <button type="button" class="db-banner" onclick={debriefPendingRound}>
+                <span class="db-spark">✦</span>
+                <span class="db-banner-tx">How did the <b>{(pendingIv?.summary || 'last').trim() || 'last'}</b> round go? A 20-second debrief sharpens this round's prep.</span>
+                <span class="db-prompt-cta">Debrief →</span>
+              </button>
+            {/if}
+
+            <!-- Debrief: capture how a past round went → feeds next round. -->
+            {#if roundIsPast}
+              <section class="debrief">
+                {#if roundDebrief && !debriefEditing}
+                  <div class="db-summary">
+                    <div class="db-sum-main">
+                      <span class="db-badge">Debriefed</span>
+                      <span class="db-sum-line">Went <b>{feelLabel(roundDebrief.feel)}</b> · prep was <b>{accLabel(roundDebrief.prep_accuracy)}</b></span>
+                    </div>
+                    <button class="db-edit" type="button" onclick={startDebrief}>Edit</button>
+                  </div>
+                  {#if roundDebrief.topics}<p class="db-topics">What came up: {roundDebrief.topics}</p>{/if}
+                {:else if debriefEditing}
+                  <div class="db-form">
+                    <div class="db-hd"><h3>How did this round go?</h3><span class="db-hint">20 seconds — it sharpens your next round's prep</span></div>
+                    <div class="db-q">
+                      <span class="db-q-lbl">How it felt</span>
+                      <div class="db-opts">
+                        {#each [['strong','Strong'],['mixed','Mixed'],['rough','Rough']] as opt (opt[0])}
+                          <button type="button" class="db-opt" class:sel={debriefDraft.feel === opt[0]} onclick={() => (debriefDraft.feel = opt[0])}>{opt[1]}</button>
+                        {/each}
+                      </div>
+                    </div>
+                    <div class="db-q">
+                      <span class="db-q-lbl">Was our prep right?</span>
+                      <div class="db-opts">
+                        {#each [['spot_on','Spot on'],['partly','Partly'],['off','Off']] as opt (opt[0])}
+                          <button type="button" class="db-opt" class:sel={debriefDraft.prep_accuracy === opt[0]} onclick={() => (debriefDraft.prep_accuracy = opt[0])}>{opt[1]}</button>
+                        {/each}
+                      </div>
+                    </div>
+                    <input class="db-input" placeholder="What actually came up? (optional)" bind:value={debriefDraft.topics} />
+                    <div class="db-actions">
+                      <button class="btn" type="button" onclick={() => (debriefEditing = false)}>Cancel</button>
+                      <button class="btn btn-primary" type="button" onclick={saveDebrief} disabled={debriefSaving || !debriefDraft.feel || !debriefDraft.prep_accuracy}>{debriefSaving ? 'Saving…' : 'Save debrief'}</button>
+                    </div>
+                  </div>
+                {:else}
+                  <button type="button" class="db-prompt" onclick={startDebrief}>
+                    <span class="db-spark">✦</span>
+                    <span class="db-prompt-tx"><b>How did this round go?</b><small>A 20-second debrief sharpens your next round's prep.</small></span>
+                    <span class="db-prompt-cta">Debrief →</span>
+                  </button>
+                {/if}
+              </section>
+            {/if}
+
+            {#if generating}
+              <!-- Build state (generation or identity re-research) -->
+              <div class="genbox">
                 <h3>Researching {app.co}{!onCompany && interviewerInput ? ` & ${interviewerInput}` : ''}…</h3>
                 <p class="gen-sub" aria-live="polite">{prepStage || PREP_STAGES[0]}</p>
                 <div class="big-spinner"></div>
                 <p class="gen-eta">This usually takes 1–2 minutes — you can keep working, it'll be here when it's done.</p>
+              </div>
+
+            {:else if dossierLoading}
+              <p class="loading">Loading…</p>
+
+            {:else if !dossier}
+              <!-- Generate / empty state -->
+              {#if atPrepLimit}
+                <div class="genbox">
+                  <h3>You've used all {prepCredits.limit} prep credits for the beta.</h3>
+                  <p class="gen-sub">Everything already generated stays yours. <a href={capMailto} onclick={() => logEvent('feedback_click', { surface: 'credit_cap' })}>Write to us</a> — we won't leave you hanging the night before.</p>
+                  <p class="gen-eta">Tracker features — statuses, follow-ups, archive, the home page — are never limited by credits.</p>
+                </div>
               {:else if onCompany}
-                <h3>Generate company brief</h3>
-                <p class="gen-sub">
-                  A shared brief on {app.co} — what they do, where they're headed, the typical interview loop, and what this team grades for. Researched once and used across every round.
-                </p>
-                {#if atPrepLimit}
-                  <p class="credit-cap">You've used all <b>{prepCredits.limit}</b> prep credits for the beta. <a href={capMailto} onclick={() => logEvent('feedback_click', { surface: 'credit_cap' })}>Email me</a> and I'll top you up — takes a minute.</p>
-                {:else}
-                  <div class="gen-row">
-                    <button class="btn-generate" onclick={generateDossier} disabled={generating}>
-                      Generate company brief
-                    </button>
-                  </div>
+                <div class="genbox">
+                  <h3>Generate the company brief</h3>
+                  <p class="gen-sub">A shared brief on {app.co} — what they do, where they're headed, the typical loop, and what this team grades for. Researched once and used across every round.</p>
+                  <button class="btn-generate" onclick={generateDossier} disabled={generating}>Generate company brief</button>
                   {#if prepLeft !== null && prepLeft <= 2}<p class="credit-left">{prepLeft} prep credit{prepLeft === 1 ? '' : 's'} left in your beta allowance.</p>{/if}
-                {/if}
-                {#if genError}<p class="gen-err">{genError}</p>{/if}
+                  {#if genError}<p class="gen-err">{genError}</p>{/if}
+                </div>
               {:else}
-                <h3>Playbook for {selectedRound ? roundLabel(selectedRound) : 'this round'}</h3>
-                <p class="gen-sub">
-                  We'll research the person interviewing you in this round — their background, how they tend to interview, what lands, and smart questions to ask. The shared {app.co} company brief is generated alongside it if you don't have one yet, so you only wait once.
-                </p>
-                {#if atPrepLimit}
-                  <p class="credit-cap">You've used all <b>{prepCredits.limit}</b> prep credits for the beta. <a href={capMailto} onclick={() => logEvent('feedback_click', { surface: 'credit_cap' })}>Email me</a> and I'll top you up — takes a minute.</p>
-                {:else}
+                <div class="genbox">
+                  <h3>Brief for {selectedRound ? (selectedRound.summary || 'this round') : 'this round'}</h3>
+                  <p class="gen-sub">We'll research the person interviewing you in this round — their background, how they tend to interview, what lands, and smart questions to ask. The shared {app.co} company brief is generated alongside it if you don't have one yet, so you only wait once.</p>
                   <div class="gen-row">
-                    <input
-                      class="gen-input"
-                      type="text"
+                    <input class="gen-input" type="text"
                       placeholder="Interviewer name (optional) — e.g. Sarah Chen"
-                      bind:value={interviewerInput}
-                      disabled={generating}
-                      onkeydown={(e) => e.key === 'Enter' && generateDossier()}
-                    />
-                    <button class="btn-generate" onclick={generateDossier} disabled={generating}>
-                      Build playbook
-                    </button>
+                      bind:value={interviewerInput} disabled={generating}
+                      onkeydown={(e) => e.key === 'Enter' && generateDossier()} />
+                    <button class="btn-generate" onclick={generateDossier} disabled={generating}>Build the brief</button>
                   </div>
                   {#if prepLeft !== null && prepLeft <= 2}<p class="credit-left">{prepLeft} prep credit{prepLeft === 1 ? '' : 's'} left in your beta allowance.</p>{/if}
-                {/if}
-                {#if genError}<p class="gen-err">{genError}</p>{/if}
-              {/if}
-            </div>
-
-          {:else}
-            <!-- Full brief -->
-
-            <!-- Researched-the-right-company assurance + re-ground (disambiguation) -->
-            {#if dosIdentity}
-              <div class="researched">
-                <div class="rs-main">
-                  <span class="rs-lbl">Researched</span>
-                  <strong class="rs-name">{dosIdentity.name || app.co}</strong>
-                  {#if dosIdentity.domain}
-                    <a class="rs-dom" href={`https://${String(dosIdentity.domain).replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer">{dosIdentity.domain}</a>
-                  {/if}
-                  {#if dosIdentity.summary}<span class="rs-sum">— {dosIdentity.summary}</span>{/if}
-                </div>
-                <button class="rs-not" type="button" onclick={() => { showReground = !showReground; companyUrlInput = ''; }}>
-                  {showReground ? 'Cancel' : 'Not them?'}
-                </button>
-              </div>
-              {#if showReground}
-                <div class="reground">
-                  <p>Paste the company's website so we research the right one — this regenerates the playbook.</p>
-                  <div class="rg-row">
-                    <input class="gen-input" type="url" placeholder="https://company.com" bind:value={companyUrlInput}
-                      onkeydown={(e) => e.key === 'Enter' && companyUrlInput.trim() && generateDossier()} disabled={generating} />
-                    <button class="btn-generate" onclick={generateDossier} disabled={generating || !companyUrlInput.trim()}>
-                      {generating ? 'Re-grounding…' : 'Re-ground'}
-                    </button>
-                  </div>
+                  {#if genError}<p class="gen-err">{genError}</p>{/if}
                 </div>
               {/if}
-            {/if}
 
-            {#if onCompany}
-            <!-- What this team grades for (company watch-fors) -->
-            {#if tips.length}
-              <section class="tips">
-                <div class="tips-hd">
-                  <span class="tips-spark">✦</span>
-                  <h3>What this team grades for</h3>
-                  <span class="tips-ai">AI</span>
-                </div>
-                <ul class="tips-list">
-                  {#each tips as t}
-                    <li><span class="tip-dot"></span><span>{t}</span></li>
+            {:else if onCompany}
+              <!-- COMPANY BRIEF — rendered inline -->
+              <div class="cb-hd">Company brief <span class="cb-shared">· shared across every round</span></div>
+              {#if companyBlurb}<p class="cb-blurb">{companyBlurb}</p>{/if}
+              {#if companyAbout}<p class="cb-about">{companyAbout}</p>{/if}
+              {#if companyFacts.length}
+                <div class="cb-facts">
+                  {#each companyFacts as f (f.lbl)}
+                    <div class="cb-cell"><div class="f-lbl">{f.lbl}</div><div class="f-val">{f.val}</div></div>
                   {/each}
-                </ul>
-              </section>
-            {/if}
-
-            <!-- Company brief — Editorial -->
-            {#if dosCompany && (companyBlurb || companyAbout || companyFacts.length || companyProcess.length)}
-              <section class="card brief-1">
-                <div class="b1-hd">
-                  {#if app.logoSrc}
-                    <img class="logo" src={app.logoSrc} alt={app.co} />
-                  {:else}
-                    <div class="logo letter">{app.coShort}</div>
-                  {/if}
-                  <div class="b1-titles">
-                    <div class="b1-name-row">
-                      <h3>{app.co}</h3>
-                      <span class="ai-pill"><span class="spark">✦</span> AI</span>
-                    </div>
-                    {#if companyBlurb}<div class="b1-headline">{companyBlurb}</div>{/if}
-                  </div>
                 </div>
-                {#if companyAbout}<p class="about">{companyAbout}</p>{/if}
-                {#if companyFacts.length}
-                  <div class="b1-facts">
-                    {#each companyFacts as f}
-                      <div class="b1-cell">
-                        <div class="f-lbl">{f.lbl}</div>
-                        <div class="f-val">{f.val}</div>
-                      </div>
+              {/if}
+              {#if companyProcess.length}
+                <div class="cb-proc">
+                  <div class="cb-lbl">The loop, as reported</div>
+                  <div class="cb-chips">
+                    {#each companyProcess as step, i (i)}
+                      <span class="chip">{step}</span>{#if i < companyProcess.length - 1}<span class="chip-arrow">→</span>{/if}
                     {/each}
                   </div>
-                {/if}
-                {#if companyProcess.length}
-                  <div class="b1-process">
-                    <div class="proc-lbl">Interview process</div>
-                    <div class="proc-chips">
-                      {#each companyProcess as step, i}
-                        <span class="chip">{step}</span>{#if i < companyProcess.length - 1}<span class="proc-arrow">→</span>{/if}
-                      {/each}
-                    </div>
-                  </div>
-                {/if}
-                {#if dosSources.length}
-                  <div class="b1-sources">
-                    <div class="proc-lbl">Sources</div>
-                    <ul>
-                      {#each dosSources as s}
-                        <li><a href={s.href} target="_blank" rel="noreferrer">
-                          <img class="src-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.href)}`} alt="" width="12" height="12" />
-                          {s.label || dosSigDomain(s.href)}
-                        </a></li>
-                      {/each}
-                    </ul>
-                  </div>
-                {/if}
-              </section>
-            {/if}
-
-            {:else}
-
-            <!-- Hiring manager / interviewer -->
-            {#if dosInterviewer || dosContent?.snapshot || app.raw.hiring_manager_name}
-              <section class="card">
-                <div class="card-hd"><h3>{personLabel}</h3><span class="ai-tag">AI{dosGeneratedAgo ? ` · ${dosGeneratedAgo}` : ''}</span></div>
-                <div class="person">
-                  <div class="p-av">{dosIvInitials || '?'}</div>
-                  <div class="p-info">
-                    <div class="p-name-row">
-                      <h4>{dosIvName}</h4>
-                      <span class="role-tag">{personLabel}</span>
-                    </div>
-                    {#if dosInterviewer?.role}<div class="p-role">{dosInterviewer.role}</div>{/if}
-                    {#if dosInterviewer?.prior?.length}
-                      <div class="p-prior">{dosInterviewer.prior.join(' · ')}</div>
-                    {/if}
-                  </div>
                 </div>
-                {#if dosInterviewer?.links?.length}
-                  <div class="p-links">
-                    {#each dosInterviewer.links as l}
-                      <a href={l.href} target="_blank" rel="noopener">{l.label}</a>
-                    {/each}
-                  </div>
-                {/if}
-                {#if dosContent?.snapshot}
-                  <p class="snapshot">{@html dosContent.snapshot}</p>
-                {/if}
-                {#if dosContent?.style?.lead || dosContent?.style?.tells?.length}
-                  <div class="tells-block">
-                    {#if dosContent.style.lead}
-                      <div class="tells-hd">How {dosIvName.split(' ')[0]} interviews</div>
-                      <p class="tells-lead">{dosContent.style.lead}</p>
-                    {/if}
-                    {#if dosContent.style.tells?.length}
-                      <div class="tells">
-                        {#each dosContent.style.tells as t}
-                          <div class="tell"><div class="t-lbl">{t.lbl}</div><div class="t-val">{t.val}</div></div>
-                        {/each}
-                      </div>
-                    {/if}
-                  </div>
-                {/if}
-              </section>
-            {/if}
-
-            <!-- Lands / avoid -->
-            {#if dosContent?.lands?.length || dosContent?.avoid?.length}
-              <section class="la-grid">
-                {#if dosContent.lands?.length}
-                  <div class="la-col lands">
-                    <h3><span class="glyph">✓</span> What lands</h3>
-                    <ul>{#each dosContent.lands as l}<li><span class="g">✓</span><span>{l}</span></li>{/each}</ul>
-                  </div>
-                {/if}
-                {#if dosContent.avoid?.length}
-                  <div class="la-col avoid">
-                    <h3><span class="glyph">✕</span> What to avoid</h3>
-                    <ul>{#each dosContent.avoid as a}<li><span class="g">✕</span><span>{a}</span></li>{/each}</ul>
-                  </div>
-                {/if}
-              </section>
-            {/if}
-
-            <!-- Recent signals -->
-            {#if dosContent?.signals?.length}
-              <section class="card">
-                <div class="card-hd"><h3>Recent signals</h3><span class="ai-tag">AI · web search</span></div>
-                <ul class="signals">
-                  {#each dosContent.signals as s}
-                    <li>
-                      <span class="s-date">{s.date ?? ''}</span>
-                      <span class="s-body">
-                        {#if s.kind}<span class="s-kind">{s.kind}</span>{/if}{s.body}
-                        {#if s.source || s.source_url}
-                          {#if s.source_url}
-                            <a class="s-source" href={s.source_url} target="_blank" rel="noreferrer">
-                              <img class="sig-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.source_url || s.source)}`} alt="" width="12" height="12" />
-                              {s.source || dosSigDomain(s.source_url)}
-                            </a>
-                          {:else}
-                            <span class="s-source">
-                              {#if dosSigDomain(s.source)}
-                                <img class="sig-favicon" src={`https://www.google.com/s2/favicons?sz=32&domain=${dosSigDomain(s.source)}`} alt="" width="12" height="12" />
-                              {/if}
-                              {s.source}
-                            </span>
-                          {/if}
-                        {/if}
-                      </span>
-                    </li>
-                  {/each}
-                </ul>
-              </section>
-            {/if}
-
-            <!-- Questions worth asking (A's card design) -->
-            {#if dosContent?.questions?.length}
-              <section class="card">
-                <div class="card-hd"><h3>Questions worth asking</h3></div>
-                <div class="questions">
-                  {#each dosContent.questions as item}
-                    <div class="prep-q">
-                      <div class="q">"{item.q}"</div>
-                      {#if item.why}
-                        <div class="why">
-                          <span class="why-spark" aria-hidden="true">
-                            <svg width="11" height="11" viewBox="0 0 13 13" fill="none">
-                              <path d="M6.5 1.5C6.5 4.5 4.5 6.5 1.5 6.5C4.5 6.5 6.5 8.5 6.5 11.5C6.5 8.5 8.5 6.5 11.5 6.5C8.5 6.5 6.5 4.5 6.5 1.5Z" fill="currentColor"/>
-                            </svg>
-                          </span>
-                          {item.why}
-                        </div>
-                      {/if}
-                    </div>
-                  {/each}
-                </div>
-              </section>
-            {/if}
-            {/if}
-
-            <div class="prep-disclaimer">
-              {#if onCompany}
-                Shared across every round · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'}
-              {:else}
-                Synthesised from public posts, talks, and papers · {dosGeneratedAgo ? `refreshed ${dosGeneratedAgo}` : 'just generated'} · always verify before you walk in · <a href="/privacy" target="_blank" rel="noreferrer">how we research people</a>
               {/if}
-              <button class="prep-refresh" type="button" onclick={generateDossier} disabled={generating}>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6a4 4 0 1 1 1.2 2.8M2 4v2h2"/></svg>
-                {generating ? 'Refreshing…' : (onCompany ? 'Refresh company brief' : 'Refresh playbook')}
-              </button>
-            </div>
+              {#if tips.length}
+                <div class="grades">
+                  <div class="grades-hd">✦ What this team grades for</div>
+                  <div class="grades-list">
+                    {#each tips as t (t)}<div>· {t}</div>{/each}
+                  </div>
+                </div>
+              {/if}
+              {#if companySources.length}
+                <div class="srcs">
+                  <span class="srcs-lbl">Sources</span>
+                  {#each companySources as s (s.href)}
+                    <a class="src-chip" href={s.href} target="_blank" rel="noreferrer">{s.label || dosSigDomain(s.href)}</a>
+                  {/each}
+                </div>
+              {/if}
+              {#if genError}<p class="gen-err">{genError}</p>{/if}
 
-            {#if genError}
-              <p class="gen-err" style="margin-top: 16px">{genError}</p>
-            {/if}
-          {/if}
-
-          <!-- Activity (full width, redesigned) -->
-          <section class="card activity">
-            <div class="act-hd">
-              <h3>Activity</h3>
-              <div class="act-actions">
-                <button class="ghost-btn" onclick={openFollowUp}>+ Log a follow-up</button>
-                <button class="ghost-btn" onclick={openEdit}>+ Add a note</button>
-                <button class="ghost-btn" onclick={openAddEvent}>+ Add interview</button>
-              </div>
-            </div>
-            {#if timeline.length > 0}
-              <ul class="timeline">
-                {#each timeline as e}
-                  <li class="tl-row {e.tag}">
-                    <span class="tl-rail"><span class="tl-dot"></span></span>
-                    <span class="tl-date">{e.date}</span>
-                    <span class="tl-body">
-                      <span class="tl-title">
-                        {e.title}
-                        {#if e.followUp}
-                          <button class="tl-del" title="Delete follow-up" aria-label="Delete follow-up" onclick={() => deleteFollowUp(e.followUp)}>
-                            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
-                          </button>
-                        {:else if e.interview}
-                          <button class="tl-del" title="Delete interview" aria-label="Delete interview" onclick={() => deleteInterview(e.interview)}>
-                            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
-                          </button>
-                        {/if}
-                      </span>
-                      {#if e.note}<span class="tl-note">{e.note}</span>{/if}
-                    </span>
-                  </li>
-                {/each}
-              </ul>
             {:else}
-              <p style="color:var(--mute); font-size:13px; margin:0;">No activity yet.</p>
+              <!-- ROUND — the tab is a door into the reading page -->
+              <div class="rd-hd">{(selectedRound?.summary || 'Interview').trim()}{#if selectedRound?.starts_at && selectedRound?.scheduled !== false}&nbsp;<span class="rd-when">· {evWhen(selectedRound)}</span>{/if}</div>
+              {#if roundTileName}
+                <div class="pcards">
+                  <a class="pcard" href={`/app/${id}/brief/${selectedTab}`}>
+                    <div class="pc-av">{initialsOf(roundTileName) || '?'}</div>
+                    <div class="pc-name">{roundTileName}</div>
+                    {#if dosInterviewer?.role}<div class="pc-role">{dosInterviewer.role}</div>{/if}
+                  </a>
+                </div>
+              {/if}
+              <a class="doorbar" href={`/app/${id}/brief/${selectedTab}`}>
+                <div class="db-main">
+                  <div class="db-t">Open the {(selectedRound?.summary || 'round').trim().toLowerCase()} brief →</div>
+                  <div class="db-s">What they grade for, likely questions, your angle, sources · 5 min read</div>
+                </div>
+                <span class="db-arrow">→</span>
+              </a>
+              {#if genError}<p class="gen-err">{genError}</p>{/if}
             {/if}
-          </section>
+          </div>
         </div>
 
-        <!-- RIGHT — meta rail -->
-        <aside class="rail">
-          <!-- Next interview — hidden once the application is closed out -->
-          {#if closedOut}
-            <!-- no next-interview card for rejected / withdrawn / closed -->
-          {:else if hasNext}
-            <div class="next-card">
-              <div class="nc-kicker"><span class="nc-dot"></span>NEXT INTERVIEW</div>
-              <div class="nc-title">{nextTitle}</div>
-              {#if nextRows.length}
-                <div class="nc-rows">
-                  {#each nextRows as r}
-                    <div class="nc-row">{r}</div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {:else}
-            <div class="rail-card next-empty">
-              <div class="rc-hd">Next interview</div>
-              <p class="next-empty-line">No interview scheduled yet — your prep's ready for when one is.</p>
-              <button class="next-add-btn" onclick={openAddEvent}>+ Add interview</button>
-            </div>
+        <!-- credits footnote -->
+        <div class="pb-foot">
+          {#if dossier && !generating}
+            <button class="linkbtn foot-refresh" onclick={generateDossier} disabled={generating}>
+              {onCompany ? 'Refresh company brief' : "Refresh this round's brief"}
+            </button>
+            <span class="foot-sep">·</span>
           {/if}
+          <span>1 credit per round brief{#if prepLeft !== null}&nbsp;· <strong>{prepLeft} left</strong>{/if}</span>
+          {#if !onCompany && dossier}
+            <span class="foot-sep">·</span>
+            <a href="/privacy" target="_blank" rel="noreferrer">how we research people</a>
+          {/if}
+          {#if selectedRound && selectedRound.scheduled === false}
+            <button class="linkbtn foot-remove" onclick={() => deleteInterview(selectedRound)}>Remove round</button>
+          {/if}
+        </div>
+      </div>
 
-          <!-- Pipeline -->
-          <div class="rail-card">
-            <div class="rc-hd rc-hd-row">
-              <span>Pipeline</span>
-              {#if pipeline.length && !pipelineEditing}
-                <button class="rc-edit" onclick={startEditPipeline}>Edit</button>
-              {/if}
+      <!-- RIGHT column -->
+      <aside class="col-side">
+        <div class="side-sec first">
+          <div class="side-hd-row">
+            <span class="side-lbl">The role, in short</span>
+            {#if app.raw.jd_url}<a class="side-act" href={app.raw.jd_url} target="_blank" rel="noopener">Full JD →</a>{/if}
+          </div>
+          <div class="side-prose">
+            {#if jdSnippet}{jdSnippet}{:else}{app.role}{#if roleShort}&nbsp;· {roleShort}{/if}{/if}
+          </div>
+          {#if jdSnippet && roleShort}<div class="side-note">{roleShort}</div>{/if}
+          {#if app.raw.jd_text}
+            <details class="jd-saved">
+              <summary>Saved job description</summary>
+              <p class="jd-body">{app.raw.jd_text}</p>
+            </details>
+          {/if}
+          <div class="side-note">Last activity {fmtRelativeDate(app.raw.updated_at ?? app.raw.applied_at)} · <button class="linkbtn side-edit" onclick={openEdit}>edit details</button></div>
+        </div>
+
+        <div class="side-sec">
+          <div class="side-hd-row">
+            <span class="side-lbl">Process</span>
+            {#if pipeline.length && !pipelineEditing}
+              <button class="side-act linkbtn" onclick={startEditPipeline}>Edit</button>
+            {/if}
+          </div>
+          {#if pipelineEditing}
+            <div class="pipe-edit">
+              {#each pipelineDraft as st, i (i)}
+                <div class="pe-row" class:pe-dragging={pipeDragIdx === i} ondragover={(e) => onStageDragOver(e, i)} role="listitem">
+                  <span class="pe-grip" draggable="true" ondragstart={() => onStageDragStart(i)} ondragend={onStageDragEnd} title="Drag to reorder" aria-label="Drag to reorder" role="button" tabindex="-1">⠿</span>
+                  <input class="pe-input" bind:value={st.name} placeholder="Stage name" />
+                  <button class="pe-btn" onclick={() => moveDraft(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
+                  <button class="pe-btn" onclick={() => moveDraft(i, 1)} disabled={i === pipelineDraft.length - 1} aria-label="Move down">↓</button>
+                  <button class="pe-btn pe-x" onclick={() => removeDraftStage(i)} aria-label="Remove stage">×</button>
+                </div>
+              {/each}
+              <button class="add-line" onclick={addDraftStage}>+ Add stage</button>
+              <div class="pe-actions">
+                <button class="btn" onclick={() => (pipelineEditing = false)}>Cancel</button>
+                <button class="btn btn-primary" onclick={saveEditPipeline} disabled={pipelineSaving}>{pipelineSaving ? 'Saving…' : 'Save'}</button>
+              </div>
             </div>
-
-            {#if pipelineEditing}
-              <div class="pipe-edit">
-                {#each pipelineDraft as st, i (i)}
-                  <div class="pe-row" class:pe-dragging={pipeDragIdx === i} ondragover={(e) => onStageDragOver(e, i)}>
-                    <span class="pe-grip" draggable="true" ondragstart={() => onStageDragStart(i)} ondragend={onStageDragEnd} title="Drag to reorder" aria-label="Drag to reorder">⠿</span>
-                    <input class="pe-input" bind:value={st.name} placeholder="Stage name" />
-                    <button class="pe-btn" onclick={() => moveDraft(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
-                    <button class="pe-btn" onclick={() => moveDraft(i, 1)} disabled={i === pipelineDraft.length - 1} aria-label="Move down">↓</button>
-                    <button class="pe-btn pe-x" onclick={() => removeDraftStage(i)} aria-label="Remove stage">×</button>
-                  </div>
-                {/each}
-                <button class="add-hm" onclick={addDraftStage}>
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
-                  Add stage
-                </button>
-                <div class="pe-actions">
-                  <button class="btn" onclick={() => (pipelineEditing = false)}>Cancel</button>
-                  <button class="btn btn-primary" onclick={saveEditPipeline} disabled={pipelineSaving}>{pipelineSaving ? 'Saving…' : 'Save'}</button>
+          {:else if pipeline.length}
+            <div class="proc-list">
+              {#each pipeline as st, i (i)}
+                <div class="proc-row" class:done={st.done}>
+                  <button class="proc-dot" class:done={st.done} onclick={() => toggleStage(i)} aria-label={st.done ? 'Mark not done' : 'Mark done'}>
+                    {#if st.done}✓{/if}
+                  </button>
+                  <span class="proc-name">{st.name}</span>
+                </div>
+              {/each}
+            </div>
+            <div class="side-note">{pipelineDone} of {pipeline.length} done · as you mapped it</div>
+            {#if stageDebriefPrompt}
+              <div class="stage-debrief">
+                <span class="sd-tx">Just did the <b>{stageDebriefPrompt.name}</b> round?</span>
+                <div class="sd-actions">
+                  <button type="button" class="sd-x" onclick={() => (stageDebriefPrompt = null)}>Not yet</button>
+                  <button type="button" class="sd-go" onclick={debriefFromStage}>Debrief it →</button>
                 </div>
               </div>
-            {:else if pipeline.length}
-              <div class="pl-prog">{pipelineDone} of {pipeline.length} done</div>
-              <ol class="pipe">
-                {#each pipeline as st, i}
-                  <li class="pipe-step" class:done={st.done}>
-                    <button class="pipe-dot" onclick={() => toggleStage(i)} aria-label={st.done ? 'Mark not done' : 'Mark done'}>
-                      {#if st.done}<svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg>{/if}
-                    </button>
-                    <span class="pipe-name">{st.name}</span>
-                  </li>
-                {/each}
-              </ol>
-              {#if stageDebriefPrompt}
-                <div class="stage-debrief">
-                  <span class="sd-tx">Just did the <b>{stageDebriefPrompt.name}</b> round?</span>
-                  <div class="sd-actions">
-                    <button type="button" class="sd-x" onclick={() => (stageDebriefPrompt = null)}>Not yet</button>
-                    <button type="button" class="sd-go" onclick={debriefFromStage}>Debrief it →</button>
-                  </div>
-                </div>
-              {/if}
-            {:else}
-              <p class="contact-empty">No stages yet — map the steps the recruiter described.</p>
-              <button class="add-hm" onclick={seedTypicalLoop}>
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
-                Start from a typical loop
-              </button>
             {/if}
-          </div>
+          {:else}
+            <p class="side-empty">No stages yet — map the steps the recruiter described.</p>
+            <button class="add-line" onclick={seedTypicalLoop}>+ Start from a typical loop</button>
+          {/if}
+        </div>
 
-          <!-- Details -->
-          <div class="rail-card">
-            <div class="rc-hd">Details</div>
-            <dl class="kv">
-              <dt>Status</dt><dd>{STATUS_LABEL[app.status]}</dd>
-              <dt>Source</dt><dd>{app.source}</dd>
-              {#if app.raw.location}<dt>Location</dt><dd>{app.raw.location}</dd>{/if}
-              {#if app.raw.salary_note}<dt>Salary</dt><dd>{app.raw.salary_note}</dd>{/if}
-              <dt>Last activity</dt><dd>{fmtRelativeDate(app.raw.updated_at ?? app.raw.applied_at)}</dd>
-            </dl>
-            {#if app.raw.jd_url}
-              <a class="jd-link" href={app.raw.jd_url} target="_blank" rel="noopener">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 11l6-6M6 5h5v5"/></svg>
-                Open job post
-              </a>
-            {/if}
-            {#if app.raw.jd_text}
-              <details class="jd-saved">
-                <summary>
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2h6l3 3v9H4z"/><path d="M9 2v4h4"/></svg>
-                  Saved job description
-                </summary>
-                <p class="jd-body">{app.raw.jd_text}</p>
-              </details>
-            {/if}
-          </div>
-
-          <!-- Contact -->
-          <div class="rail-card">
-            <div class="rc-hd">Contacts</div>
+        <div class="side-sec">
+          <div class="side-lbl">People</div>
+          <div class="people">
             {#if app.raw.recruiter_name}
-              <div class="contact">
-                <div class="c-av c-av-warm">{recruiterInitials || '—'}</div>
-                <div class="c-info">
-                  <div class="c-name">{app.raw.recruiter_name}</div>
-                  <div class="c-role">Recruiter / contact</div>
-                </div>
-              </div>
-              <div class="c-links">
+              <div class="pp-row">
+                <span class="pp-av warm">{recruiterInitials || '—'}</span>
+                <span class="pp-main"><strong>{app.raw.recruiter_name}</strong> <span class="pp-role">· recruiter</span></span>
                 {#if app.raw.recruiter_email}
-                  <a class="c-li" href={`mailto:${app.raw.recruiter_email}`}>
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg>
-                    Email
-                  </a>
-                {/if}
-                {#if app.raw.recruiter_linkedin}
-                  <a class="c-li" href={app.raw.recruiter_linkedin} target="_blank" rel="noopener">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
-                    LinkedIn
-                  </a>
+                  <a class="pp-link" href={`mailto:${app.raw.recruiter_email}`}>Email →</a>
+                {:else if app.raw.recruiter_linkedin}
+                  <a class="pp-link" href={app.raw.recruiter_linkedin} target="_blank" rel="noopener">LinkedIn →</a>
                 {/if}
               </div>
+              {#if app.raw.recruiter_email && app.raw.recruiter_linkedin}
+                <div class="pp-extra"><a class="pp-link" href={app.raw.recruiter_linkedin} target="_blank" rel="noopener">LinkedIn →</a></div>
+              {/if}
             {/if}
             {#if app.raw.hiring_manager_name}
-              <div class="contact" class:contact-stacked={app.raw.recruiter_name}>
-                <div class="c-av">{hiringManagerInitials || '—'}</div>
-                <div class="c-info">
-                  <div class="c-name">{app.raw.hiring_manager_name}</div>
-                  <div class="c-role">Hiring manager</div>
-                </div>
+              <div class="pp-row">
+                <span class="pp-av">{hiringManagerInitials || '—'}</span>
+                <span class="pp-main"><strong>{app.raw.hiring_manager_name}</strong> <span class="pp-role">· hiring manager</span></span>
+                {#if app.raw.hiring_manager_linkedin}
+                  <a class="pp-link" href={app.raw.hiring_manager_linkedin} target="_blank" rel="noopener">LinkedIn →</a>
+                {/if}
               </div>
-              {#if app.raw.hiring_manager_linkedin}
-                <a class="c-li" href={app.raw.hiring_manager_linkedin} target="_blank" rel="noopener">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 6h2v6h-2zM4.5 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM7 6h2v.9c.3-.5.9-1 1.8-1 1.6 0 2.2 1 2.2 2.6V12h-2V9c0-.9-.3-1.4-1.1-1.4-.6 0-1 .4-1 1.2V12H7z"/></svg>
-                  LinkedIn
-                </a>
-              {/if}
             {/if}
             {#if !app.raw.recruiter_name && !app.raw.hiring_manager_name}
-              <p class="contact-empty">No contacts yet — add the recruiter or hiring manager.</p>
-              <button class="add-hm" onclick={openEdit}>
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
-                Add a contact
-              </button>
+              <p class="side-empty">No contacts yet — add the recruiter or hiring manager.</p>
             {/if}
+            <button class="linkbtn add-contact" onclick={openEdit}>+ Add a contact</button>
           </div>
-        </aside>
-      </div>
-    {/if}
-  </div>
+        </div>
+
+        <div class="side-sec">
+          <div class="side-hd-row">
+            <span class="side-lbl">Activity</span>
+            <span class="side-acts">
+              <button class="side-act linkbtn" onclick={openFollowUp}>+ Follow-up</button>
+              <button class="side-act linkbtn" onclick={openEdit}>+ Note</button>
+              <button class="side-act linkbtn" onclick={openAddEvent}>+ Interview</button>
+            </span>
+          </div>
+          {#if timeline.length > 0}
+            <div class="tl">
+              {#each timeline as e (e.ts + e.title)}
+                <div class="tl-row">
+                  <span class="tl-date">{e.date}</span>
+                  <span class="tl-body">
+                    <span class="tl-title">{e.title}{#if e.note}<span class="tl-note"> — {e.note}</span>{/if}</span>
+                    {#if e.followUp}
+                      <button class="tl-del" title="Delete follow-up" aria-label="Delete follow-up" onclick={() => deleteFollowUp(e.followUp)}>✕</button>
+                    {:else if e.interview}
+                      <button class="tl-del" title="Delete interview" aria-label="Delete interview" onclick={() => deleteInterview(e.interview)}>✕</button>
+                    {/if}
+                  </span>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="side-empty">No activity yet.</p>
+          {/if}
+        </div>
+      </aside>
+    </div>
+  {/if}
 </div>
 
 {#if toast}
-  <div class="toast">
-    <span class="ok"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5"/></svg></span>
-    {toast}
-  </div>
+  <div class="toast"><span class="ok">✓</span>{toast}</div>
 {/if}
 
 {#if showEditModal}
@@ -1706,11 +1491,11 @@
         <label class="span-2">Source
           <input bind:value={edit.source} list={coarsePointer ? undefined : 'edit-source-suggestions'} placeholder="LinkedIn / Referral / Cold email" />
           <div class="src-chips">
-            {#each SOURCE_SUGGESTIONS as s}<button type="button" class="src-chip" onclick={() => (edit.source = s)}>{s}</button>{/each}
+            {#each SOURCE_SUGGESTIONS as s (s)}<button type="button" class="src-pick" onclick={() => (edit.source = s)}>{s}</button>{/each}
           </div>
         </label>
         <datalist id="edit-source-suggestions">
-          {#each SOURCE_SUGGESTIONS as s}<option value={s}></option>{/each}
+          {#each SOURCE_SUGGESTIONS as s (s)}<option value={s}></option>{/each}
         </datalist>
         <label>Location <input bind:value={edit.location} placeholder="Remote / San Francisco" /></label>
         <label>CV variant <input bind:value={edit.cv_variant} placeholder="v3-ai-focus" /></label>
@@ -1727,10 +1512,7 @@
         <label>Email <input bind:value={edit.recruiter_email} type="email" placeholder="sam@company.com" /></label>
         <label class="span-2">LinkedIn <input bind:value={edit.recruiter_linkedin} placeholder="https://linkedin.com/in/…" /></label>
       </div>
-      <p class="privacy-note">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="7" width="10" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>
-        Private to your account. Your notes and salary info are never shared or shown to anyone else.
-      </p>
+      <p class="privacy-note">Private to your account. Your notes and salary info are never shared or shown to anyone else.</p>
       <div class="modal-actions">
         <button type="button" class="btn" onclick={() => (showEditModal = false)}>Cancel</button>
         <button type="submit" class="btn btn-primary" disabled={saving || !edit.company || !edit.role}>
@@ -1742,58 +1524,33 @@
 {/if}
 
 {#if showEventModal}
-  <div class="ev-overlay" onclick={closeEventModal} role="presentation">
-    <div class="ev-card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Add an interview">
-      <button class="x-close" onclick={closeEventModal} aria-label="Close">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
-      </button>
+  <div class="modal-overlay" onclick={closeEventModal} role="presentation">
+    <div class="modal ev-card" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Add an interview">
+      <button class="x-close" onclick={closeEventModal} aria-label="Close">✕</button>
       <div class="add-hd">
         <h3>Add an interview</h3>
         <p>Paste the invite, drop a screenshot or .ics file, or just type the details — we'll pull out the event.</p>
       </div>
 
-      <div
-        class="ev-input"
-        class:drag={evDragOver}
-        class:loading={icsParsing}
-        ondragover={onEvDragOver}
-        ondragleave={() => (evDragOver = false)}
-        ondrop={onEvDrop}
-        role="presentation"
-      >
+      <div class="ev-input" class:drag={evDragOver} class:loading={icsParsing}
+        ondragover={onEvDragOver} ondragleave={() => (evDragOver = false)} ondrop={onEvDrop} role="presentation">
         {#if evAttach}
           <div class="ev-attached">
-            <span class="ev-att-ic">
-              {#if evAttach.kind === 'image'}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="5.5" cy="6.5" r="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12M6 2v2M10 2v2"/></svg>
-              {/if}
-            </span>
             <span class="ev-att-name">{evAttach.name}</span>
             <span class="ev-att-kind">{evAttach.kind === 'image' ? 'screenshot' : 'calendar file'} · {Math.round(evAttach.size / 1024)} KB</span>
             <button type="button" class="ev-att-x" onclick={() => (evAttach = null)} aria-label="Remove" disabled={icsParsing}>×</button>
           </div>
         {:else}
-          <textarea
-            class="ev-ta"
-            rows="3"
-            bind:value={evText}
-            onpaste={onEvPaste}
+          <textarea class="ev-ta" rows="3" bind:value={evText} onpaste={onEvPaste}
             placeholder={"Paste an invite, or type it — e.g. “Interview Wed Jun 10, 11:00, Google Meet”"}
-            disabled={icsParsing}
-          ></textarea>
+            disabled={icsParsing}></textarea>
         {/if}
-
         <div class="ev-foot">
           <label class="ev-browse">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/></svg>
-            <span>Drop a screenshot or .ics, paste, or <u>browse</u></span>
+            <span>↓ Drop a screenshot or .ics, paste, or <u>browse</u></span>
             <input type="file" accept=".ics,text/calendar,image/png,image/jpeg,image/gif,image/webp" onchange={onEvFileInput} hidden />
           </label>
-          {#if icsParsing}
-            <span class="ev-loading"><span class="ev-spin" aria-hidden="true"></span> Reading the event…</span>
-          {/if}
+          {#if icsParsing}<span class="ev-loading"><span class="ev-spin" aria-hidden="true"></span> Reading the event…</span>{/if}
         </div>
       </div>
 
@@ -1804,17 +1561,17 @@
         </button>
       </div>
 
-      {#if icsParseError}<p class="dossier-err" style="margin-top: 14px">{icsParseError}</p>{/if}
+      {#if icsParseError}<p class="parse-err">{icsParseError}</p>{/if}
 
       {#if icsPreview.length > 0}
         <div class="ics-preview">
           <h4>Preview</h4>
           <p class="prev-check">Double-check the day and time before saving.</p>
-          {#each icsPreview as ev}
+          {#each icsPreview as ev, i (i)}
             <div class="prev-row">
               <div class="prev-summary">{ev.summary || 'Untitled event'}</div>
               <div class="prev-when"><strong>{fmtEventDay(ev)}</strong>{fmtEventTimeSuffix(ev)}</div>
-              {#if ev.location}<div class="prev-loc">📍 {ev.location}</div>{/if}
+              {#if ev.location}<div class="prev-loc">{ev.location}</div>{/if}
             </div>
           {/each}
           <button class="btn btn-primary" onclick={saveParsedEvents} disabled={icsSaving}>
@@ -1827,11 +1584,9 @@
 {/if}
 
 {#if showFollowUpModal}
-  <div class="ev-overlay" onclick={closeFollowUp} role="presentation">
-    <form class="ev-card fu-card" onclick={(e) => e.stopPropagation()} onsubmit={saveFollowUp} role="dialog" aria-modal="true" aria-label="Log a follow-up">
-      <button type="button" class="x-close" onclick={closeFollowUp} aria-label="Close">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3l8 8M11 3l-8 8" stroke-linecap="round"/></svg>
-      </button>
+  <div class="modal-overlay" onclick={closeFollowUp} role="presentation">
+    <form class="modal fu-card" onclick={(e) => e.stopPropagation()} onsubmit={saveFollowUp} role="dialog" aria-modal="true" aria-label="Log a follow-up">
+      <button type="button" class="x-close" onclick={closeFollowUp} aria-label="Close">✕</button>
       <div class="add-hd">
         <h3>Log a follow-up</h3>
         <p>Record something you did yourself — Pursuit doesn't send anything. We'll reset the quiet clock.</p>
@@ -1844,7 +1599,7 @@
           <label class="fu-label">Channel
             <select class="fu-input" bind:value={fuChannel}>
               <option value=""></option>
-              {#each FU_CHANNELS as c}<option value={c}>{c}</option>{/each}
+              {#each FU_CHANNELS as c (c)}<option value={c}>{c}</option>{/each}
             </select>
           </label>
           <label class="fu-label">Date
@@ -1873,500 +1628,453 @@
 />
 
 <style>
-  .body { padding: 28px; }
-  .det { max-width: 1080px; margin: 0 auto; }
+  .wrap {
+    max-width: 1160px; width: 100%; box-sizing: border-box;
+    margin: 0 auto; padding: 26px 32px 80px;
+    color: #16181c;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap :global(a) { color: #2463eb; text-decoration: none; }
+  .loading { color: #8a9099; font-size: 13px; }
+  .linkbtn { background: none; border: 0; cursor: pointer; padding: 0; font-family: inherit; font-size: 13px; color: #4b5158; }
+  .linkbtn.danger { color: #b3372a; }
+  .linkbtn:hover { color: #16181c; }
+  .linkbtn.danger:hover { color: #b3372a; text-decoration: underline; }
+
+  .crumb { font-size: 13px; color: #8a9099; margin-bottom: 20px; }
+  .crumb a { color: #8a9099; }
+  .crumb a:hover { color: #4b5158; }
+  .crumb .sep { margin: 0 4px; }
+  .crumb .here { color: #16181c; font-weight: 600; }
 
   .welcome-banner { display: flex; align-items: center; gap: 11px; margin-bottom: 22px;
-    padding: 12px 14px; border-radius: 12px; background: var(--accent-tint); border: 1px solid var(--accent-tint-2); }
-  .welcome-banner .wb-spark { color: var(--accent-text); font-size: 14px; flex-shrink: 0; }
-  .welcome-banner .wb-tx { font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
-  .welcome-banner .wb-tx a { color: var(--accent-text); font-weight: 500; }
-  .welcome-banner .wb-x { margin-left: auto; flex-shrink: 0; background: none; border: none; color: var(--mute);
+    padding: 12px 14px; border-radius: 12px; background: #eef4ff; border: 1px solid #cdddfb; }
+  .welcome-banner .wb-spark { color: #2463eb; font-size: 14px; flex-shrink: 0; }
+  .welcome-banner .wb-tx { font-size: 13.5px; color: #4b5158; line-height: 1.5; }
+  .welcome-banner .wb-x { margin-left: auto; flex-shrink: 0; background: none; border: none; color: #8a9099;
     font-size: 13px; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
-  .welcome-banner .wb-x:hover { background: var(--card); color: var(--ink-2); }
+  .welcome-banner .wb-x:hover { background: #fff; color: #4b5158; }
 
   /* HEADER */
-  .det-hd { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 30px; }
-  .logo-big { width: 56px; height: 56px; border-radius: 15px; background: var(--card); object-fit: contain; padding: 8px; border: 1px solid var(--rule); flex-shrink: 0; }
-  .logo-big.letter { display: grid; place-items: center; padding: 0; color: var(--ink); font-size: 22px; font-weight: 600; background: var(--surface-2); }
-  .det-hd .meta { flex: 1; min-width: 0; }
-  .det-hd .co { font-size: 24px; font-weight: 600; letter-spacing: -0.025em; }
-  .det-hd .role { font-size: 15px; color: var(--mute); margin-top: 3px; }
-  .det-hd .sub { font-size: 12.5px; color: var(--mute-2); margin-top: 10px; display: flex; gap: 16px; flex-wrap: wrap; }
-  .det-hd .sub b { color: var(--ink-2); font-weight: 500; }
+  .hd { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 22px; }
+  .hd-logo { flex: none; }
+  .hd-main { flex: 1; min-width: 0; }
+  .hd-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .hd-row h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+  .hd-role { font-size: 14.5px; color: #4b5158; margin: 3px 0 6px; }
+  .hd-sub { font-size: 12.5px; color: #8a9099; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .hd-sub .dot { color: #b8bdc4; }
+  .hd-actions { display: flex; align-items: center; gap: 14px; flex: none; padding-top: 8px; }
 
-  /* Pills (page-scoped) */
-  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); width: max-content; flex-shrink: 0; }
-  .pill .pdot { width: 6px; height: 6px; border-radius: 50%; background: var(--mute-2); }
-  .pill.wishlist { background: var(--surface-2); color: var(--mute); }
-  .pill.applied { background: var(--surface-2); color: var(--ink-2); }
-  .pill.screen { background: var(--accent-tint); color: var(--accent-text); }
-  .pill.screen .pdot { background: var(--accent); }
-  .pill.interview { background: var(--warm-tint); color: var(--warm-text); }
-  .pill.interview .pdot { background: var(--warm); }
-  .pill.offer { background: var(--positive-tint); color: var(--positive-text); }
-  .pill.offer .pdot { background: var(--positive); }
-  .pill.rejected, .pill.withdrawn { background: var(--danger-tint); color: var(--danger-text); }
-  .pill.rejected .pdot, .pill.withdrawn .pdot { background: var(--danger); }
-  /* closed = neutral terminal (req cancelled), not a rejection — muted, not red. */
-  .pill.closed { background: var(--surface-2); color: var(--mute); }
-  .pill.closed .pdot { background: var(--mute-2); }
+  /* SOON BANNER */
+  .soon { display: flex; align-items: center; gap: 16px; background: #fff7f1; border: 1px solid #f0d9c4;
+    border-radius: 14px; padding: 16px 22px; margin-bottom: 28px; }
+  .soon-cal { flex: none; width: 44px; border: 1px solid #f0d9c4; border-radius: 9px; overflow: hidden; text-align: center; background: #fff; }
+  .sc-mon { background: #e0641f; color: #fff; font-size: 9px; font-weight: 700; letter-spacing: .08em; padding: 2px 0; }
+  .sc-day { font-size: 17px; font-weight: 700; color: #c05310; padding: 2px 0 3px; }
+  .soon-tx { flex: 1; min-width: 0; }
+  .soon-t { font-size: 15px; font-weight: 700; }
+  .soon-s { font-size: 13px; color: #6f7680; }
+  .soon-cta { background: #2463eb; color: #fff; border: 0; border-radius: 9px; padding: 10px 18px;
+    font-size: 13.5px; font-weight: 600; cursor: pointer; flex: none; font-family: inherit; }
+  .soon-cta:hover { background: #1a4fc4; }
 
   /* GRID */
-  .det-grid { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
-  .left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .grid { display: grid; grid-template-columns: 1.9fr 1fr; gap: 40px; align-items: start; }
+  .col-main { min-width: 0; }
 
-  /* PREP LEAD */
-  .prep-lead { margin-bottom: 2px; }
-  .prep-lead .ai-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border-radius: 999px; padding: 4px 11px; letter-spacing: 0.01em; }
-  .prep-lead .ai-pill .spark { font-size: 12px; }
-  .prep-lead h2 { font-size: 26px; font-weight: 600; letter-spacing: -0.028em; margin: 12px 0 6px; }
-  .prep-gen { font-family: inherit; font-size: 13px; color: var(--mute); display: inline-flex; align-items: center; gap: 7px; margin: 0; }
-  .prep-gen .sp { color: var(--accent); display: inline-flex; align-items: center; }
+  /* PLAYBOOK CARD */
+  .pb-card { background: #fff; border: 1px solid #e8e8e5; border-radius: 16px; overflow: hidden;
+    box-shadow: 0 1px 3px rgba(22,24,28,.04); }
 
-  .round-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 18px; }
-  .round-tab { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--mute); background: var(--card); border: 1px solid var(--rule); border-radius: 999px; padding: 6px 13px; cursor: pointer; white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
-  .round-tab:hover { color: var(--ink); border-color: var(--accent-tint-2); }
-  .round-tab.active { color: var(--accent-text); background: var(--accent-tint); border-color: var(--accent-tint-2); font-weight: 600; }
-  .round-tab.company { border-style: dashed; }
-  .round-tab.company.active { border-style: solid; }
-  .round-tab.add { border-style: dashed; color: var(--mute); }
-  .round-tab.add:hover { color: var(--accent-text); border-color: var(--accent-tint-2); }
+  /* Identity strip */
+  .idbar { display: flex; align-items: center; gap: 12px; background: #fbfbf9; border-bottom: 1px solid #eeeeea; padding: 11px 20px; }
+  .id-tx { font-size: 12.5px; color: #4b5158; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .id-sum { color: #8a9099; }
+  .id-not { margin-left: auto; flex: none; font-size: 12px; color: #8a9099; }
+  .idbox { background: #fdf6ef; border-bottom: 1px solid #f0d9c4; padding: 18px 22px; }
+  .id-q { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+  .id-card { display: flex; align-items: center; gap: 14px; background: #fff; border: 1px solid #eeeeea; border-radius: 12px; padding: 14px 18px; margin-bottom: 12px; }
+  .id-card-tx { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; }
+  .id-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .id-hint { font-size: 12px; color: #8a9099; }
+  .btn-blue { background: #2463eb; color: #fff; border: 0; border-radius: 8px; padding: 8px 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .btn-blue:hover:not(:disabled) { background: #1a4fc4; }
+  .btn-blue:disabled { opacity: .5; cursor: default; }
+  .btn-ghost-warm { border: 1px solid #e2d4c4; background: #fff; color: #4b5158; border-radius: 8px; padding: 8px 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .id-fix-sub { font-size: 12.5px; color: #6f7680; margin: -8px 0 12px; }
+  .id-fix-row { display: flex; align-items: center; gap: 10px; }
+  .id-input { flex: 1; min-width: 0; border: 1px solid #e2d4c4; border-radius: 8px; padding: 9px 13px;
+    font-size: 13px; background: #fff; color: #16181c; outline: none; font-family: inherit; }
+  .id-cancel { font-size: 12.5px; color: #8a9099; flex: none; }
+  .idok { display: flex; align-items: center; gap: 10px; background: #f3faf4; border-bottom: 1px solid #cfe5d2; padding: 10px 20px; }
+  .idok span { color: #1d7a4f; font-size: 13px; font-weight: 600; }
+  .id-change { margin-left: auto; font-size: 12px; color: #8a9099; }
 
-  /* One-tap "Add round" picker */
-  .add-round { margin: -6px 0 18px; padding: 13px 15px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 11px; }
-  .add-round .ar-lbl { font-size: 12.5px; color: var(--ink-2); font-weight: 500; }
-  .add-round .ar-chips { display: flex; flex-wrap: wrap; gap: 7px; }
-  .add-round .ar-chip { font: inherit; font-size: 12.5px; color: var(--ink-2); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-  .add-round .ar-chip:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-tint); }
-  .add-round .ar-custom { display: flex; gap: 8px; }
-  .add-round .ar-input { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 10px; outline: none; }
-  .add-round .ar-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+  /* Playbook header + tabs */
+  .pb-hd { padding: 18px 22px 0; }
+  .pb-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .pb-title { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  .pb-ago { font-size: 12px; color: #8a9099; }
+  .informed-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500;
+    color: #1d7a4f; background: #f3faf4; border: 1px solid #cfe5d2; border-radius: 99px; padding: 3px 10px; }
+  .informed-chip .ic-dot { width: 5px; height: 5px; border-radius: 50%; background: #16a34a; }
+  .tabs { display: flex; align-items: center; gap: 7px; padding-bottom: 14px; border-bottom: 1px solid #f0f0ed; flex-wrap: wrap; }
+  .tab { display: flex; align-items: center; gap: 6px; border-radius: 9px; padding: 8px 15px; font-size: 13px;
+    cursor: pointer; font-family: inherit; background: #fff; border: 1px solid #e8e8e5; color: #4b5158; font-weight: 500; }
+  .tab.done { color: #1d7a4f; }
+  .tab.company.active { background: #eef4ff; border-color: #cdddfb; color: #2463eb; font-weight: 700; }
+  .tab.round.active { background: #fff7f1; border-color: #f0d9c4; color: #c05310; font-weight: 700; }
+  .tab.add { border: 1px dashed #e2e2de; color: #b8bdc4; }
+  .tab.add:hover { color: #4b5158; border-color: #b8bdc4; }
 
-  /* Stage-done → debrief prompt (rides pipeline completion) */
-  .stage-debrief { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--accent-tint); border: 1px solid var(--accent-tint-2); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .stage-debrief .sd-tx { font-size: 12.5px; color: var(--ink-2); } .stage-debrief .sd-tx b { color: var(--ink); }
-  .stage-debrief .sd-actions { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
-  .stage-debrief .sd-x { background: none; border: none; color: var(--mute); font: 500 12px/1 var(--sans); padding: 5px 8px; cursor: pointer; }
-  .stage-debrief .sd-go { background: var(--accent); color: #fff; border: none; border-radius: 7px; font: 600 12px/1 var(--sans); padding: 6px 11px; cursor: pointer; }
-  .stage-debrief .sd-go:hover { background: var(--accent-strong); }
+  .pb-body { padding: 20px 22px 24px; }
 
-  /* ── Debrief (Phase 3a) ── */
-  .informed-chip { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11.5px; font-weight: 500;
-    color: var(--positive-text); background: var(--positive-tint); border-radius: 99px; padding: 3px 10px; }
-  .informed-chip .ic-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--positive); }
+  /* One-tap add round */
+  .add-round { margin-bottom: 18px; padding: 13px 15px; border: 1px solid #e8e8e5; border-radius: 12px;
+    background: #fbfbf9; display: flex; flex-direction: column; gap: 11px; }
+  .ar-lbl { font-size: 12.5px; color: #4b5158; font-weight: 500; }
+  .ar-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .ar-chip { font: inherit; font-size: 12.5px; color: #4b5158; background: #fff; border: 1px solid #e8e8e5;
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  .ar-chip:hover { border-color: #cdddfb; color: #2463eb; background: #eef4ff; }
+  .ar-custom { display: flex; gap: 8px; }
+  .ar-input { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: #16181c; background: #fff;
+    border: 1px solid #e8e8e5; border-radius: 8px; padding: 7px 10px; outline: none; }
+  .ar-input:focus { border-color: #2463eb; }
 
-  .debrief { margin-bottom: 20px; }
-  .db-prompt { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer;
-    background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 12px; padding: 13px 15px; font-family: inherit; }
-  .db-prompt:hover { border-color: var(--accent); }
-  .db-spark { width: 28px; height: 28px; border-radius: 8px; background: var(--card); color: var(--accent-text); display: grid; place-items: center; flex-shrink: 0; }
-  .db-prompt-tx { flex: 1; min-width: 0; } .db-prompt-tx b { display: block; font-size: 13.5px; color: var(--ink); }
-  .db-prompt-tx small { display: block; font-size: 12px; color: var(--mute); margin-top: 1px; }
-  .db-prompt-cta { flex-shrink: 0; font-size: 13px; font-weight: 600; color: var(--accent-text); }
-
+  /* Debrief */
   .db-banner { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
-    background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 10px; padding: 9px 13px; font-family: inherit; margin-bottom: 12px; }
-  .db-banner:hover { border-color: var(--accent); }
-  .db-banner .db-spark { width: 22px; height: 22px; border-radius: 6px; }
-  .db-banner-tx { flex: 1; min-width: 0; font-size: 12.5px; color: var(--ink-2); }
-  .db-banner-tx b { color: var(--ink); }
-
-  .db-form { border: 1px solid var(--rule); border-radius: 12px; padding: 15px 16px; background: var(--card); display: flex; flex-direction: column; gap: 13px; }
+    background: #eef4ff; border: 1px solid #cdddfb; border-radius: 10px; padding: 9px 13px; font-family: inherit; margin-bottom: 14px; }
+  .db-banner:hover { border-color: #2463eb; }
+  .db-spark { width: 24px; height: 24px; border-radius: 7px; background: #fff; color: #2463eb;
+    display: grid; place-items: center; flex-shrink: 0; font-size: 12px; }
+  .db-banner-tx { flex: 1; min-width: 0; font-size: 12.5px; color: #4b5158; }
+  .db-banner-tx b { color: #16181c; }
+  .db-prompt-cta { flex-shrink: 0; font-size: 13px; font-weight: 600; color: #2463eb; }
+  .debrief { margin-bottom: 18px; }
+  .db-prompt { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer;
+    background: #eef4ff; border: 1px solid #cdddfb; border-radius: 12px; padding: 13px 15px; font-family: inherit; }
+  .db-prompt:hover { border-color: #2463eb; }
+  .db-prompt-tx { flex: 1; min-width: 0; }
+  .db-prompt-tx b { display: block; font-size: 13.5px; color: #16181c; }
+  .db-prompt-tx small { display: block; font-size: 12px; color: #8a9099; margin-top: 1px; }
+  .db-form { border: 1px solid #e8e8e5; border-radius: 12px; padding: 15px 16px; background: #fbfbf9;
+    display: flex; flex-direction: column; gap: 13px; }
   .db-hd { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  .db-hd h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
-  .db-hint { font-size: 12px; color: var(--mute); }
+  .db-hd h3 { margin: 0; font-size: 15px; font-weight: 600; color: #16181c; }
+  .db-hint { font-size: 12px; color: #8a9099; }
   .db-q { display: flex; flex-direction: column; gap: 7px; }
-  .db-q-lbl { font-size: 12px; font-weight: 500; color: var(--ink-2); }
+  .db-q-lbl { font-size: 12px; font-weight: 500; color: #4b5158; }
   .db-opts { display: flex; gap: 7px; flex-wrap: wrap; }
-  .db-opt { font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-2); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 14px; cursor: pointer; transition: background .12s, border-color .12s, color .12s; }
-  .db-opt:hover { border-color: var(--rule-strong); }
-  .db-opt.sel { background: var(--accent); border-color: var(--accent-strong); color: #fff; }
-  .db-input { font: inherit; font-size: 13.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 11px; outline: none; }
-  .db-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+  .db-opt { font: inherit; font-size: 13px; font-weight: 500; color: #4b5158; background: #fff;
+    border: 1px solid #e8e8e5; border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+  .db-opt:hover { border-color: #b8bdc4; }
+  .db-opt.sel { background: #2463eb; border-color: #1a4fc4; color: #fff; }
+  .db-input { font: inherit; font-size: 13.5px; color: #16181c; background: #fff; border: 1px solid #e8e8e5;
+    border-radius: 8px; padding: 9px 11px; outline: none; }
+  .db-input:focus { border-color: #2463eb; }
   .db-actions { display: flex; justify-content: flex-end; gap: 8px; }
-
-  .db-summary { display: flex; align-items: center; gap: 12px; border: 1px solid var(--rule); border-radius: 11px; padding: 11px 14px; background: var(--surface); }
-  .db-badge { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--positive-text); background: var(--positive-tint); padding: 3px 8px; border-radius: 6px; }
+  .db-summary { display: flex; align-items: center; gap: 12px; border: 1px solid #e8e8e5; border-radius: 11px;
+    padding: 11px 14px; background: #fbfbf9; }
+  .db-badge { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    color: #1d7a4f; background: #eef7ef; padding: 3px 8px; border-radius: 6px; }
   .db-sum-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
-  .db-sum-line { font-size: 13px; color: var(--ink-2); } .db-sum-line b { color: var(--ink); font-weight: 600; }
-  .db-edit { margin-left: auto; flex-shrink: 0; background: none; border: 1px solid var(--rule); color: var(--ink-2); font: 500 12px/1 var(--sans); padding: 6px 11px; border-radius: 7px; cursor: pointer; }
-  .db-edit:hover { border-color: var(--rule-strong); }
-  .db-topics { font-size: 12.5px; color: var(--mute); margin: 8px 0 0; line-height: 1.5; }
+  .db-sum-line { font-size: 13px; color: #4b5158; }
+  .db-sum-line b { color: #16181c; font-weight: 600; }
+  .db-edit { margin-left: auto; flex-shrink: 0; background: none; border: 1px solid #e8e8e5; color: #4b5158;
+    font: 500 12px/1 inherit; font-family: inherit; padding: 6px 11px; border-radius: 7px; cursor: pointer; }
+  .db-edit:hover { border-color: #b8bdc4; }
+  .db-topics { font-size: 12.5px; color: #8a9099; margin: 8px 0 0; line-height: 1.5; }
 
-  /* CARD */
-  .card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 20px 22px; box-shadow: var(--sh-1); }
-  .card-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-  .card-hd h3 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
-  .ai-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; background: var(--accent-tint); color: var(--accent-text); padding: 3px 9px; border-radius: 999px; font-weight: 500; margin-left: auto; }
-
-  /* AI TIPS BOX (baby blue) */
-  .tips { background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 13px; padding: 18px 20px; }
-  .tips-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-  .tips-spark { font-size: 14px; color: var(--accent-text); }
-  .tips-hd h3 { font-size: 15px; font-weight: 600; margin: 0; color: var(--accent-text); letter-spacing: -0.01em; }
-  .tips-ai { margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--accent-text); background: var(--card); border: 1px solid var(--accent-tint-2); padding: 2px 8px; border-radius: 999px; }
-  .tips-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
-  .tips-list li { display: grid; grid-template-columns: 14px 1fr; gap: 9px; align-items: start; font-size: 13.5px; line-height: 1.5; color: var(--accent-text); }
-  .tip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); margin-top: 8px; }
-
-  /* COMPANY BRIEF — Editorial */
-  .b1-hd { display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: start; margin-bottom: 16px; }
-  .b1-hd .logo { width: 44px; height: 44px; border-radius: 11px; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: 19px; font-weight: 600; object-fit: contain; }
-  .b1-hd .logo.letter { background: var(--surface-2); color: var(--ink); }
-  .b1-name-row { display: flex; align-items: center; gap: 10px; }
-  .b1-name-row h3 { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
-  .b1-headline { font-size: 13.5px; color: var(--mute); margin-top: 4px; line-height: 1.4; }
-  .ai-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--accent-text); background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 999px; padding: 3px 9px; letter-spacing: 0.01em; white-space: nowrap; }
-  .ai-pill .spark { font-size: 11px; }
-  .about { font-size: 14.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 18px; }
-  .b1-facts { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; margin-bottom: 18px; }
-  .b1-cell { padding: 11px 13px; }
-  .b1-cell + .b1-cell { border-left: 1px solid var(--rule); }
-  .f-lbl { font-size: 11px; color: var(--mute); font-weight: 500; }
-  .f-val { font-size: 13px; color: var(--ink); font-weight: 600; margin-top: 3px; line-height: 1.3; }
-  .proc-lbl { font-size: 11.5px; font-weight: 600; color: var(--mute); letter-spacing: 0.01em; margin-bottom: 10px; }
-  .b1-process { margin-bottom: 0; }
-  .b1-process .proc-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
-  .chip { font-size: 12px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--rule); border-radius: 7px; padding: 4px 10px; }
-  .proc-arrow { color: var(--mute-2); font-size: 12px; }
-
-  /* Researched-the-right-company assurance + re-ground */
-  .researched { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 9px 13px; margin-bottom: 14px;
-    background: var(--surface-2); border: 1px solid var(--rule); border-radius: 10px; }
-  .researched .rs-main { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; min-width: 0; font-size: 12.5px; color: var(--ink-2); }
-  .researched .rs-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); }
-  .researched .rs-name { color: var(--ink); font-weight: 600; }
-  .researched .rs-dom { color: var(--accent-text); text-decoration: none; }
-  .researched .rs-dom:hover { text-decoration: underline; }
-  .researched .rs-sum { color: var(--mute); }
-  .researched .rs-not { margin-left: auto; flex-shrink: 0; background: none; border: 1px solid var(--rule); color: var(--ink-2);
-    font: 500 12px/1 var(--sans); padding: 6px 11px; border-radius: 7px; cursor: pointer; }
-  .researched .rs-not:hover { border-color: var(--rule-strong); background: var(--card); }
-  .reground { margin: -6px 0 16px; padding: 12px 13px; background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 10px; }
-  .reground p { margin: 0 0 9px; font-size: 12.5px; color: var(--ink-2); }
-  .reground .rg-row { display: flex; gap: 8px; align-items: stretch; }
-  .reground .rg-row .gen-input { flex: 1 1 auto; min-width: 0; }
-  .reground .rg-row .btn-generate { flex: 0 0 auto; width: auto; white-space: nowrap; }
-
-  /* Company sources (citations) */
-  .b1-sources { margin-top: 16px; }
-  .b1-sources ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
-  .b1-sources a { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--accent-text); text-decoration: none; }
-  .b1-sources a:hover { text-decoration: underline; }
-  .src-favicon { border-radius: 3px; flex-shrink: 0; }
-
-  /* PERSON (hiring manager / interviewer) */
-  .person { display: grid; grid-template-columns: 52px 1fr; gap: 14px; align-items: center; margin-bottom: 12px; }
-  .p-av { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 18px; background: var(--accent-tint); color: var(--accent-text); }
-  .p-info { min-width: 0; }
-  .p-name-row { display: flex; align-items: center; gap: 10px; }
-  .p-info h4 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; }
-  .role-tag { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--warm-text); background: var(--warm-tint); padding: 2px 8px; border-radius: 5px; white-space: nowrap; }
-  .p-role { font-size: 13px; color: var(--mute); margin-top: 3px; }
-  .p-prior { font-size: 12px; color: var(--mute-2); margin-top: 2px; }
-  .p-links { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start; margin-bottom: 14px; }
-  .p-links a { font-size: 11.5px; color: var(--accent-text); text-decoration: none; border: 1px solid var(--rule); border-radius: 999px; padding: 4px 10px; }
-  .p-links a:hover { background: var(--accent-tint); border-color: var(--accent-tint-2); }
-  .snapshot { font-size: 15px; line-height: 1.55; letter-spacing: -0.008em; color: var(--ink); margin: 0 0 18px; padding-left: 14px; border-left: 2px solid var(--accent); }
-  .snapshot :global(em) { font-style: normal; font-weight: 600; }
-  .tells-block { border-top: 1px solid var(--rule); padding-top: 16px; }
-  .tells-hd { font-size: 12.5px; font-weight: 600; color: var(--mute); margin-bottom: 10px; }
-  .tells-lead { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); margin: 0 0 14px; }
-  .tells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .t-lbl { font-size: 11.5px; font-weight: 500; color: var(--mute); margin-bottom: 4px; }
-  .t-val { font-size: 13.5px; color: var(--ink); line-height: 1.4; }
-
-  /* LANDS / AVOID */
-  .la-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--rule); border-radius: 14px; background: var(--card); overflow: hidden; box-shadow: var(--sh-1); }
-  .la-col { padding: 20px 22px; }
-  .la-col + .la-col { border-left: 1px solid var(--rule); }
-  .la-col h3 { font-size: 13px; font-weight: 600; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
-  .la-col.lands h3 { color: var(--positive-text); }
-  .la-col.avoid h3 { color: var(--danger-text); }
-  .la-col h3 .glyph { width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
-  .la-col.lands h3 .glyph { background: var(--positive-tint); color: var(--positive-text); }
-  .la-col.avoid h3 .glyph { background: var(--danger-tint); color: var(--danger-text); }
-  .la-col ul { list-style: none; margin: 0; padding: 0; }
-  .la-col li { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); padding: 9px 0; border-top: 1px solid var(--rule); display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: start; }
-  .la-col li:first-child { border-top: none; padding-top: 0; }
-  .la-col li .g { font-size: 11px; margin-top: 2px; }
-  .la-col.lands li .g { color: var(--positive-text); }
-  .la-col.avoid li .g { color: var(--danger-text); }
-
-  /* SIGNALS */
-  .signals { list-style: none; padding: 0; margin: 0; }
-  .signals li { display: grid; grid-template-columns: 72px 1fr; gap: 14px; padding: 12px 0; border-top: 1px solid var(--rule); font-size: 13.5px; }
-  .signals li:first-child { border-top: none; padding-top: 0; }
-  .s-date { font-size: 12px; font-weight: 500; color: var(--mute); padding-top: 2px; }
-  .s-body { color: var(--ink-2); line-height: 1.5; }
-  .s-kind { display: inline-block; font-size: 11px; font-weight: 500; color: var(--mute); margin-right: 8px; padding: 1px 7px; background: var(--surface-2); border-radius: 4px; vertical-align: 1px; }
-  .s-source { font-size: 12px; color: var(--accent-text); margin-left: 6px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
-  .sig-favicon { border-radius: 2px; opacity: 0.7; }
-
-  /* QUESTIONS — A card design */
-  .questions { display: flex; flex-direction: column; gap: 12px; }
-  .prep-q { background: var(--surface); border: 1px solid var(--rule); border-radius: 11px; padding: 13px 15px; }
-  .prep-q .q { font-size: 14px; font-weight: 500; color: var(--ink); line-height: 1.45; }
-  .prep-q .why { font-size: 12.5px; color: var(--mute); margin-top: 5px; display: flex; align-items: baseline; gap: 6px; }
-  .why-spark { color: var(--accent-text); font-size: 11px; display: inline-flex; flex-shrink: 0; }
-
-  /* Disclaimer + refresh */
-  .prep-disclaimer { font-size: 11.5px; color: var(--mute); padding-top: 4px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .prep-refresh { display: inline-flex; align-items: center; gap: 7px; background: none; color: var(--mute); border: 1px solid var(--rule); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; transition: color 120ms, border-color 120ms, background 120ms; }
-  .prep-refresh:hover:not(:disabled) { color: var(--ink); border-color: var(--rule-strong); background: var(--surface-2); }
-  .prep-refresh:disabled { opacity: 0.5; cursor: default; }
-
-  /* ACTIVITY (full width) */
-  .activity { padding: 20px 22px; }
-  .act-hd { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
-  .act-hd h3 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
-  .act-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  .ghost-btn { font-size: 12.5px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 11px; cursor: pointer; }
-  .ghost-btn:hover { border-color: var(--rule-strong); color: var(--ink); }
-
-  /* TIMELINE — connector in a per-row rail (parts design) */
-  .timeline { list-style: none; margin: 0; padding: 0; }
-  .tl-row { display: grid; grid-template-columns: 16px 50px 1fr; gap: 14px; align-items: start; padding: 14px 0; }
-  .tl-rail { position: relative; align-self: stretch; }
-  .tl-rail::before { content: ""; position: absolute; left: 50%; transform: translateX(-50%); top: 0; bottom: 0; width: 1px; background: var(--rule); }
-  .tl-row:first-child .tl-rail::before { top: 9px; }
-  .tl-row:last-child .tl-rail::before { bottom: auto; height: 9px; }
-  .tl-dot { position: absolute; left: 50%; top: 9px; transform: translate(-50%, -50%); width: 8px; height: 8px; border-radius: 50%; background: var(--mute-2); z-index: 1; }
-  .tl-row.positive .tl-dot { background: var(--positive); box-shadow: 0 0 0 3px var(--positive-tint); }
-  .tl-row.accent .tl-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
-  .tl-row.offer .tl-dot { background: var(--positive); box-shadow: 0 0 0 3px var(--positive-tint); }
-  .tl-row.danger .tl-dot { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-tint); }
-  .tl-date { font-size: 12.5px; color: var(--mute); line-height: 18px; font-variant-numeric: tabular-nums; }
-  .tl-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .tl-title { font-size: 13.5px; font-weight: 600; color: var(--ink); line-height: 18px; display: flex; align-items: center; gap: 6px; }
-  .tl-note { font-size: 12.5px; color: var(--mute); line-height: 1.45; }
-  .tl-del { width: 20px; height: 20px; flex-shrink: 0; border: 0; background: transparent; color: var(--mute-2); border-radius: 5px; display: inline-grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity 100ms ease, background 100ms ease, color 100ms ease; }
-  .tl-row:hover .tl-del { opacity: 1; }
-  .tl-del:hover { background: var(--danger-tint); color: var(--danger-text); }
-
-  /* RIGHT RAIL */
-  .rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 20px; }
-  .next-card { background: var(--ink); border-radius: 14px; padding: 18px; box-shadow: var(--sh-1); }
-  .nc-kicker { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: rgba(255,255,255,0.7); }
-  .nc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warm); box-shadow: 0 0 0 3px rgba(255,255,255,0.12); }
-  .nc-title { font-size: 16px; font-weight: 600; color: #fff; line-height: 1.35; letter-spacing: -0.01em; margin: 12px 0 14px; }
-  .nc-rows { display: flex; flex-direction: column; gap: 7px; border-top: 1px solid rgba(255,255,255,0.14); padding-top: 12px; }
-  .nc-row { font-size: 13px; color: rgba(255,255,255,0.85); }
-  .next-empty .next-empty-line { font-size: 12.5px; color: var(--mute); line-height: 1.5; margin: 0; }
-  .next-add-btn {
-    margin-top: 12px; width: 100%; padding: 8px 12px;
-    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
-    color: var(--accent-text); background: var(--accent-tint);
-    border: 1px solid transparent; border-radius: 8px;
-  }
-  .next-add-btn:hover { border-color: var(--accent); }
-
-  .rail-card { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; box-shadow: var(--sh-1); }
-  .rc-hd { font-size: 12.5px; font-weight: 600; color: var(--mute); margin-bottom: 12px; }
-  .rc-hd-row { display: flex; align-items: center; justify-content: space-between; }
-  .rc-edit { background: transparent; border: 0; color: var(--accent-text); font-size: 12px; font-weight: 500; cursor: pointer; padding: 0; font-family: inherit; }
-  .rc-edit:hover { text-decoration: underline; }
-
-  /* Pipeline stepper */
-  .pl-prog { font-size: 12px; color: var(--mute); margin: -4px 0 12px; }
-  .pipe { list-style: none; margin: 0; padding: 0; }
-  .pipe-step { position: relative; display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: center; padding-bottom: 14px; }
-  .pipe-step:not(:last-child)::before { content: ''; position: absolute; left: 10px; top: 22px; bottom: 0; width: 1.5px; background: var(--rule); }
-  .pipe-step.done:not(:last-child)::before { background: var(--positive, oklch(0.65 0.14 152)); }
-  .pipe-dot { position: relative; z-index: 1; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--rule-strong); background: var(--card); display: grid; place-items: center; cursor: pointer; color: white; padding: 0; transition: background 100ms ease, border-color 100ms ease; }
-  .pipe-dot:hover { border-color: var(--accent); }
-  .pipe-step.done .pipe-dot { background: var(--positive, oklch(0.65 0.14 152)); border-color: var(--positive, oklch(0.65 0.14 152)); }
-  .pipe-name { font-size: 13px; color: var(--ink-2); }
-  .pipe-step.done .pipe-name { color: var(--mute); text-decoration: line-through; }
-
-  /* Pipeline edit mode */
-  .pipe-edit { display: flex; flex-direction: column; gap: 8px; }
-  .pe-row { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 4px; align-items: center; border-radius: 8px; }
-  .pe-row.pe-dragging { opacity: 0.5; background: var(--accent-tint); }
-  .pe-grip { display: grid; place-items: center; width: 20px; height: 30px; color: var(--mute-2); cursor: grab; font-size: 14px; user-select: none; }
-  .pe-grip:active { cursor: grabbing; }
-  .pe-grip:hover { color: var(--ink-2); }
-  .pe-input { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 6px 9px; outline: none; min-width: 0; }
-  .pe-input:focus { border-color: var(--accent); }
-  .pe-btn { width: 26px; height: 30px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 7px; color: var(--mute); font-size: 13px; cursor: pointer; font-family: inherit; }
-  .pe-btn:hover:not(:disabled) { border-color: var(--rule-strong); color: var(--ink); }
-  .pe-btn:disabled { opacity: 0.4; cursor: default; }
-  .pe-x:hover:not(:disabled) { color: var(--danger-text); border-color: var(--danger-tint); }
-  /* Sticky within the page scroller so Save stays reachable while the mobile
-     keyboard is up (the stage inputs sit above it in the rail card). */
-  .pe-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;
-    position: sticky; bottom: 0; z-index: 2; background: var(--card); padding: 8px 0 2px; }
-  .kv { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 9px 12px; }
-  .kv dt { font-size: 12.5px; color: var(--mute); }
-  .kv dd { margin: 0; font-size: 12.5px; color: var(--ink); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
-  .jd-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; font-size: 12.5px; font-weight: 500; color: var(--accent-text); text-decoration: none; }
-  .jd-link:hover { text-decoration: underline; }
-
-  .contact { display: grid; grid-template-columns: 36px 1fr; gap: 10px; align-items: center; margin-bottom: 12px; }
-  .c-av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 13px; background: var(--accent-tint); color: var(--accent-text); }
-  .c-name { font-size: 13.5px; font-weight: 600; }
-  .c-role { font-size: 12px; color: var(--mute); margin-top: 1px; }
-  .c-li { display: inline-flex; align-items: center; gap: 6px; width: 100%; justify-content: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 500; color: var(--ink); text-decoration: none; box-sizing: border-box; }
-  .c-li svg { color: #0a66c2; }
-  .contact-empty { font-size: 12.5px; color: var(--mute); margin: 0 0 10px; }
-  .add-hm { display: inline-flex; align-items: center; gap: 6px; width: 100%; justify-content: center; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 12px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; font-family: inherit; }
-  .add-hm:hover { border-color: var(--rule-strong); color: var(--ink); }
-  .c-av-warm { background: var(--warm-tint, var(--accent-tint)); color: var(--warm-text, var(--accent-text)); }
-  .c-links { display: flex; gap: 8px; margin-bottom: 4px; }
-  .c-links .c-li { width: auto; flex: 1; }
-  .contact-stacked { padding-top: 12px; border-top: 1px solid var(--rule); }
-
-  .jd-saved { margin-top: 12px; }
-  .jd-saved summary { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--accent-text); cursor: pointer; list-style: none; }
-  .jd-saved summary::-webkit-details-marker { display: none; }
-  .jd-saved summary:hover { text-decoration: underline; }
-  .jd-body { margin: 10px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); white-space: pre-wrap; max-height: 280px; overflow-y: auto; padding: 10px 12px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
-
-  /* FOLLOW-UP MODAL */
-  .fu-card { max-width: 460px; }
-  .fu-fields { display: flex; flex-direction: column; gap: 14px; }
-  .fu-label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--mute); }
-  .fu-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .fu-ta, .fu-input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 11px; font-size: 13.5px; outline: none; transition: border-color 100ms ease; box-sizing: border-box; width: 100%; }
-  .fu-ta { resize: vertical; line-height: 1.5; }
-  .fu-ta:focus, .fu-input:focus { border-color: var(--accent); }
-
-  /* Generate / empty state */
-  .generate-card { background: var(--card); border: 1px solid var(--rule); border-radius: 18px; padding: 32px 36px; max-width: 560px; box-shadow: var(--sh-2); text-align: center; }
-  .gen-icon { width: 56px; height: 56px; border-radius: 16px; background: var(--accent-tint); color: var(--accent-text); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
-  .generate-card h3 { font-size: 20px; font-weight: 500; letter-spacing: -0.02em; margin: 0 0 10px; }
-  .gen-sub { font-size: 14px; color: var(--mute); line-height: 1.6; margin: 0 auto 24px; max-width: 42ch; }
-  .gen-row { display: flex; gap: 10px; flex-direction: column; }
-  .gen-input { width: 100%; padding: 11px 14px; font-size: 13.5px; font-family: inherit; border: 1px solid var(--rule); border-radius: 9px; background: var(--surface-2); color: var(--ink); outline: none; transition: border-color 120ms; box-sizing: border-box; }
-  .gen-input:focus { border-color: var(--accent); background: var(--card); }
-  .gen-input::placeholder { color: var(--mute-2); }
-  .btn-generate { background: var(--ink); color: #fff; border: none; border-radius: 9px; padding: 12px 20px; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; transition: background 120ms; width: 100%; }
-  .btn-generate:hover:not(:disabled) { background: var(--ink-2); }
+  /* Generate / build / gate box */
+  .genbox { text-align: center; padding: 26px 18px 22px; }
+  .genbox h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.015em; margin: 0 0 10px; }
+  .gen-sub { font-size: 13.5px; color: #6f7680; line-height: 1.6; margin: 0 auto 20px; max-width: 46ch; }
+  .gen-row { display: flex; gap: 10px; flex-direction: column; max-width: 420px; margin: 0 auto; }
+  .gen-input { width: 100%; padding: 11px 14px; font-size: 13.5px; font-family: inherit; border: 1px solid #e8e8e5;
+    border-radius: 9px; background: #fbfbf9; color: #16181c; outline: none; box-sizing: border-box; }
+  .gen-input:focus { border-color: #2463eb; background: #fff; }
+  .gen-input::placeholder { color: #b8bdc4; }
+  .btn-generate { background: #2463eb; color: #fff; border: none; border-radius: 9px; padding: 12px 20px;
+    font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .btn-generate:hover:not(:disabled) { background: #1a4fc4; }
   .btn-generate:disabled { opacity: 0.5; cursor: default; }
-  .gen-err { color: var(--danger-text); font-size: 13px; margin: 14px 0 0; text-align: left; }
-  .credit-left { color: var(--mute); font-size: 12.5px; margin: 10px 0 0; }
-  .credit-cap { color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin: 6px auto 0; max-width: 46ch; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; }
-  .credit-cap a { color: var(--accent); font-weight: 500; }
-  .big-spinner { width: 36px; height: 36px; border: 2.5px solid var(--rule-strong); border-top-color: var(--accent); border-radius: 50%; animation: prep-spin 0.75s linear infinite; margin: 24px auto 0; }
-  .gen-eta { font-size: 12px; color: var(--mute-2); margin: 16px auto 0; max-width: 40ch; }
+  .genbox > .btn-generate { min-width: 240px; }
+  .gen-err { color: #b3372a; font-size: 13px; margin: 14px 0 0; }
+  .credit-left { color: #8a9099; font-size: 12.5px; margin: 10px 0 0; }
+  .big-spinner { width: 36px; height: 36px; border: 2.5px solid #e2e2de; border-top-color: #2463eb;
+    border-radius: 50%; animation: prep-spin 0.75s linear infinite; margin: 24px auto 0; }
+  .gen-eta { font-size: 12px; color: #8a9099; margin: 16px auto 0; max-width: 44ch; }
   @keyframes prep-spin { to { transform: rotate(360deg); } }
 
-  /* ADD-EVENT MODAL */
-  .ev-overlay { position: fixed; inset: 0; background: rgba(10,10,13,0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: grid; place-items: center; z-index: 200; padding: 24px; overflow-y: auto; }
-  .ev-card { position: relative; width: 100%; max-width: 540px; background: var(--card); border: 1px solid var(--rule); border-radius: 18px; padding: 26px 28px 24px; box-shadow: 0 24px 80px -8px rgba(10,10,13,0.30), var(--sh-1); margin: 24px auto; display: flex; flex-direction: column; }
-  .x-close { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 8px; background: transparent; border: 0; display: grid; place-items: center; color: var(--mute); cursor: pointer; transition: background 100ms ease, color 100ms ease; }
-  .x-close:hover { background: var(--surface-2); color: var(--ink); }
-  .add-hd { margin-bottom: 16px; padding-right: 26px; }
-  .add-hd h3 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.015em; }
-  .add-hd p { font-size: 13px; color: var(--mute); margin: 0; line-height: 1.5; }
-  /* Unified add-event input: one box that takes a file, screenshot, or text. */
-  .ev-input { position: relative; background: var(--surface); border: 1.5px dashed var(--rule-strong); border-radius: 12px; overflow: hidden; transition: border-color 120ms ease, background 120ms ease; }
-  .ev-input.drag { border-color: var(--accent); background: var(--accent-tint); }
-  .ev-input.loading { border-style: solid; border-color: var(--accent); }
-  .ev-ta { width: 100%; font: inherit; font-family: var(--sans); font-size: 13.5px; line-height: 1.55; color: var(--ink); background: transparent; border: 0; padding: 13px 15px 8px; outline: none; resize: none; min-height: 78px; box-sizing: border-box; display: block; }
-  .ev-ta::placeholder { color: var(--mute-2); }
-  .ev-attached { display: flex; align-items: center; gap: 10px; padding: 14px 15px 10px; font-size: 13px; }
-  .ev-att-ic { color: var(--accent-text); display: inline-flex; flex-shrink: 0; }
-  .ev-att-name { font-weight: 500; color: var(--ink); }
-  .ev-att-kind { color: var(--mute); font-size: 11.5px; }
-  .ev-att-x { margin-left: auto; background: transparent; border: 0; color: var(--mute); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
-  .ev-att-x:hover { color: var(--ink); }
-  .ev-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px 10px; border-top: 1px dashed var(--rule); }
-  .ev-browse { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mute); cursor: pointer; }
-  .ev-browse svg { color: var(--mute-2); flex-shrink: 0; }
-  .ev-browse u { color: var(--accent-text); text-decoration: none; font-weight: 500; }
-  .ev-browse:hover u { text-decoration: underline; }
-  .ev-loading { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; color: var(--accent-text); }
-  .ev-spin { width: 13px; height: 13px; border: 1.8px solid var(--accent-tint-2); border-top-color: var(--accent); border-radius: 50%; animation: ev-spin 0.7s linear infinite; flex-shrink: 0; }
-  @keyframes ev-spin { to { transform: rotate(360deg); } }
-  .ev-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
-  .ev-hint { font-size: 11.5px; color: var(--mute); }
-  .ev-hint kbd { font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px; background: var(--surface); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--ink-2); }
-  .ics-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
-  .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 6px; }
-  .prev-check { font-size: 12px; color: var(--mute); margin: 0 0 10px; }
-  .prev-when strong { font-weight: 600; }
-  .prev-row { background: var(--accent-tint); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
-  .prev-summary { font-size: 13.5px; font-weight: 600; color: var(--ink); }
-  .prev-when { font-size: 12.5px; color: var(--accent-text); margin-top: 3px; font-weight: 500; }
-  .prev-loc { font-size: 12px; color: var(--mute); margin-top: 4px; }
-  .dossier-err { color: var(--danger-text); background: var(--danger-tint); border: 1px solid var(--danger-tint); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: .75rem 0 0; }
+  /* Company brief content */
+  .cb-hd { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
+  .cb-shared { font-size: 12px; font-weight: 400; color: #8a9099; }
+  .cb-blurb { font-size: 14px; font-weight: 600; line-height: 1.55; margin: 0 0 8px; }
+  .cb-about { font-size: 13.5px; line-height: 1.6; color: #4b5158; margin: 0 0 16px; }
+  .cb-facts { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #eeeeea; border-radius: 10px;
+    overflow: hidden; margin-bottom: 16px; }
+  .cb-cell { padding: 11px 13px; }
+  .cb-cell + .cb-cell { border-left: 1px solid #eeeeea; }
+  .f-lbl { font-size: 11px; color: #8a9099; font-weight: 500; }
+  .f-val { font-size: 13px; color: #16181c; font-weight: 600; margin-top: 3px; line-height: 1.3; }
+  .cb-proc { margin-bottom: 16px; }
+  .cb-lbl { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #8a9099; margin-bottom: 9px; }
+  .cb-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+  .chip { font-size: 12px; font-weight: 500; color: #4b5158; background: #fbfbf9; border: 1px solid #e8e8e5;
+    border-radius: 7px; padding: 4px 10px; }
+  .chip-arrow { color: #b8bdc4; font-size: 12px; }
+  .grades { background: #eef4ff; border: 1px solid #cdddfb; border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; }
+  .grades-hd { font-size: 13px; font-weight: 700; color: #2463eb; margin-bottom: 8px; }
+  .grades-list { display: flex; flex-direction: column; gap: 7px; font-size: 13.5px; line-height: 1.55; color: #1e3a6e; }
+  .srcs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: #8a9099; }
+  .srcs-lbl { font-weight: 600; color: #6f7680; }
+  .src-chip { border: 1px solid #e8e8e5; border-radius: 14px; padding: 3px 10px; color: #2463eb; }
+  .src-chip:hover { border-color: #cdddfb; background: #eef4ff; }
+
+  /* Round tab — door */
+  .rd-hd { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+  .rd-when { font-size: 12.5px; font-weight: 400; color: #8a9099; }
+  .pcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 200px)); gap: 10px; margin-bottom: 16px; }
+  .pcard { border: 1px solid #eeeeea; border-radius: 12px; padding: 14px; text-align: center; color: #16181c !important; display: block; }
+  .pcard:hover { border-color: #b9c6e8; }
+  .pc-av { width: 38px; height: 38px; border-radius: 50%; background: #eef4ff; color: #2463eb;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; margin: 0 auto 8px; }
+  .pc-name { font-size: 13.5px; font-weight: 700; }
+  .pc-role { font-size: 11.5px; color: #8a9099; }
+  .doorbar { display: flex; align-items: center; gap: 14px; background: #2463eb; border-radius: 12px;
+    padding: 16px 20px; cursor: pointer; color: #fff !important; }
+  .doorbar:hover { background: #1a4fc4; }
+  .db-main { flex: 1; min-width: 0; }
+  .db-t { font-size: 14.5px; font-weight: 700; }
+  .db-s { font-size: 12px; opacity: .75; }
+  .db-arrow { font-size: 20px; }
+
+  /* Footnote */
+  .pb-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: #8a9099; flex-wrap: wrap; }
+  .pb-foot strong { color: #16181c; }
+  .foot-refresh { font-size: 12px; color: #2463eb; }
+  .foot-refresh:hover { text-decoration: underline; color: #1a4fc4; }
+  .foot-refresh:disabled { opacity: .5; cursor: default; }
+  .foot-sep { color: #d8dade; }
+  .foot-remove { margin-left: auto; font-size: 12px; color: #b8bdc4; }
+  .foot-remove:hover { color: #b3372a; }
+
+  /* RIGHT COLUMN */
+  .col-side { font-size: 13.5px; min-width: 0; }
+  .side-sec { border-top: 1px solid #e2e2de; padding-top: 18px; margin-bottom: 24px; }
+  .side-sec.first { border-top: 0; padding-top: 0; }
+  .side-lbl { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #8a9099; display: block; margin-bottom: 10px; }
+  .side-hd-row { display: flex; align-items: baseline; margin-bottom: 10px; gap: 10px; }
+  .side-hd-row .side-lbl { margin-bottom: 0; }
+  .side-act { font-size: 12px; color: #2463eb; margin-left: auto; }
+  .side-acts { margin-left: auto; display: flex; gap: 12px; }
+  .side-acts .side-act { margin-left: 0; }
+  .side-act:hover { text-decoration: underline; color: #1a4fc4; }
+  .side-prose { font-size: 13px; line-height: 1.65; color: #4b5158; }
+  .side-note { font-size: 11.5px; color: #b8bdc4; margin-top: 10px; }
+  .side-edit { font-size: 11.5px; color: #8a9099; }
+  .side-edit:hover { color: #4b5158; text-decoration: underline; }
+  .side-empty { font-size: 12.5px; color: #8a9099; margin: 0 0 10px; line-height: 1.5; }
+  .jd-saved { margin-top: 10px; }
+  .jd-saved summary { font-size: 12.5px; font-weight: 500; color: #2463eb; cursor: pointer; list-style: none; }
+  .jd-saved summary::-webkit-details-marker { display: none; }
+  .jd-saved summary:hover { text-decoration: underline; }
+  .jd-body { margin: 10px 0 0; font-size: 12.5px; line-height: 1.55; color: #4b5158; white-space: pre-wrap;
+    max-height: 280px; overflow-y: auto; padding: 10px 12px; background: #fff; border: 1px solid #e8e8e5; border-radius: 8px; }
+
+  /* Process */
+  .proc-list { display: flex; flex-direction: column; gap: 9px; font-size: 13px; }
+  .proc-row { display: flex; align-items: center; gap: 10px; color: #4b5158; }
+  .proc-row.done { color: #1d7a4f; }
+  .proc-row.done .proc-name { text-decoration: line-through; color: #8a9099; }
+  .proc-dot { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid #d8dade; background: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; flex: none; cursor: pointer;
+    color: #1d7a4f; padding: 0; font-family: inherit; }
+  .proc-dot:hover { border-color: #2463eb; }
+  .proc-dot.done { background: #eef7ef; border-color: #cfe5d2; }
+  .pipe-edit { display: flex; flex-direction: column; gap: 8px; }
+  .pe-row { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 4px; align-items: center; border-radius: 8px; }
+  .pe-row.pe-dragging { opacity: 0.5; background: #eef4ff; }
+  .pe-grip { display: grid; place-items: center; width: 20px; height: 30px; color: #b8bdc4; cursor: grab; font-size: 14px; user-select: none; }
+  .pe-grip:active { cursor: grabbing; }
+  .pe-grip:hover { color: #4b5158; }
+  .pe-input { font: inherit; font-size: 13px; color: #16181c; background: #fff; border: 1px solid #e8e8e5;
+    border-radius: 7px; padding: 6px 9px; outline: none; min-width: 0; }
+  .pe-input:focus { border-color: #2463eb; }
+  .pe-btn { width: 26px; height: 30px; display: grid; place-items: center; background: #fbfbf9; border: 1px solid #e8e8e5;
+    border-radius: 7px; color: #8a9099; font-size: 13px; cursor: pointer; font-family: inherit; }
+  .pe-btn:hover:not(:disabled) { border-color: #b8bdc4; color: #16181c; }
+  .pe-btn:disabled { opacity: 0.4; cursor: default; }
+  .pe-x:hover:not(:disabled) { color: #b3372a; border-color: #f2d4cf; }
+  .pe-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;
+    position: sticky; bottom: 0; z-index: 2; background: #f6f6f3; padding: 8px 0 2px; }
+  .add-line { background: none; border: 0; font: inherit; font-size: 12px; color: #8a9099; cursor: pointer;
+    padding: 0; text-align: left; }
+  .add-line:hover { color: #2463eb; }
+  .stage-debrief { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #eef4ff;
+    border: 1px solid #cdddfb; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .stage-debrief .sd-tx { font-size: 12.5px; color: #4b5158; }
+  .stage-debrief .sd-tx b { color: #16181c; }
+  .stage-debrief .sd-actions { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+  .stage-debrief .sd-x { background: none; border: none; color: #8a9099; font-family: inherit;
+    font-size: 12px; font-weight: 500; padding: 5px 8px; cursor: pointer; }
+  .stage-debrief .sd-go { background: #2463eb; color: #fff; border: none; border-radius: 7px; font-family: inherit;
+    font-size: 12px; font-weight: 600; padding: 6px 11px; cursor: pointer; }
+  .stage-debrief .sd-go:hover { background: #1a4fc4; }
+
+  /* People */
+  .people { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+  .pp-row { display: flex; align-items: center; gap: 10px; }
+  .pp-av { width: 26px; height: 26px; border-radius: 50%; background: #eef4ff; color: #2463eb;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex: none; }
+  .pp-av.warm { background: #fdf3ec; color: #c05310; }
+  .pp-main { flex: 1; min-width: 0; }
+  .pp-role { color: #8a9099; }
+  .pp-link { font-size: 12px; flex: none; }
+  .pp-extra { padding-left: 36px; margin-top: -4px; }
+  .add-contact { font-size: 12px; color: #8a9099; text-align: left; }
+  .add-contact:hover { color: #2463eb; }
+
+  /* Activity */
+  .tl { display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; color: #4b5158; }
+  .tl-row { display: flex; gap: 10px; align-items: baseline; }
+  .tl-date { color: #b8bdc4; width: 44px; flex: none; font-variant-numeric: tabular-nums; }
+  .tl-body { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex: 1; }
+  .tl-title { line-height: 1.45; }
+  .tl-note { color: #8a9099; }
+  .tl-del { flex: none; border: 0; background: transparent; color: #b8bdc4; border-radius: 5px; font-size: 11px;
+    cursor: pointer; opacity: 0; padding: 1px 4px; font-family: inherit; }
+  .tl-row:hover .tl-del { opacity: 1; }
+  .tl-del:hover { background: #fdf1ef; color: #b3372a; }
+
+  /* Buttons */
+  .btn { font: inherit; font-size: 13px; font-weight: 500; color: #16181c; background: #fff;
+    border: 1px solid #e8e8e5; border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+  .btn:hover:not(:disabled) { border-color: #b8bdc4; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-primary { background: #2463eb; border-color: #2463eb; color: #fff; font-weight: 600; }
+  .btn-primary:hover:not(:disabled) { background: #1a4fc4; border-color: #1a4fc4; }
 
   /* TOAST */
-  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; font-size: 13px; font-weight: 500; padding: 11px 18px; border-radius: 10px; z-index: 200; display: inline-flex; align-items: center; gap: 9px; box-shadow: 0 16px 36px -12px rgba(20,20,50,0.5); animation: rise .2s ease; }
-  .toast .ok { width: 16px; height: 16px; border-radius: 50%; background: var(--positive); display: inline-flex; align-items: center; justify-content: center; }
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: #16181c; color: #fff;
+    font-size: 13px; font-weight: 500; padding: 11px 18px; border-radius: 10px; z-index: 200;
+    display: inline-flex; align-items: center; gap: 9px; box-shadow: 0 16px 36px -12px rgba(20,20,50,0.5); animation: rise .2s ease; }
+  .toast .ok { width: 16px; height: 16px; border-radius: 50%; background: #16a34a; color: #fff; font-size: 10px;
+    display: inline-flex; align-items: center; justify-content: center; }
   @keyframes rise { from { transform: translate(-50%, 12px); opacity: 0; } }
 
-  /* STATUS MENU */
-  .status-wrap { position: relative; }
-  .status-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--sh-pop); padding: 4px; min-width: 180px; display: flex; flex-direction: column; gap: 1px; }
-  .status-menu-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 5px; background: transparent; font: inherit; font-size: 13px; color: var(--ink-2); cursor: pointer; text-align: left; width: 100%; border: 0; }
-  .status-menu-item:hover { background: var(--surface-2); }
-  .status-menu-item.current { background: var(--surface-2); }
-  .status-menu-item .check { margin-left: auto; color: var(--accent-text); font-weight: 600; font-size: 12px; }
-  .menu-scrim { position: fixed; inset: 0; z-index: 49; background: transparent; }
-
-  .btn-danger { color: var(--danger-text); border-color: var(--rule); }
-  .btn-danger:hover { background: var(--danger-tint); border-color: var(--danger-tint); }
-
-  /* EDIT MODAL */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(10,10,13,0.4); display: grid; place-items: center; z-index: 100; padding: 2rem; }
-  .modal { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 560px; max-height: calc(100dvh - 4rem); overflow-y: auto; display: flex; flex-direction: column; gap: .75rem; box-shadow: var(--sh-pop); }
-  /* Tappable source presets — mobile-reliable (datalist doesn't open on tap). */
-  .src-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
-  .src-chip { font: inherit; font-size: 11.5px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 4px 9px; cursor: pointer; }
-  .src-chip:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-tint); }
-  .modal h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.018em; margin: 0; }
-  .modal-hint { font-size: 12px; color: var(--mute); margin: 0 0 .5rem; }
+  /* MODALS */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(10,10,13,0.45); backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px); display: grid; place-items: center; z-index: 200; padding: 24px; overflow-y: auto; }
+  .modal { position: relative; background: #fff; border: 1px solid #e8e8e5; border-radius: 16px; padding: 24px 26px 22px;
+    width: 100%; max-width: 560px; max-height: calc(100dvh - 4rem); overflow-y: auto; display: flex; flex-direction: column;
+    gap: .75rem; box-shadow: 0 24px 80px -8px rgba(10,10,13,0.30); box-sizing: border-box;
+    color: #16181c; font-family: inherit; }
+  .modal h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.018em; margin: 0; }
+  .modal-hint { font-size: 12px; color: #8a9099; margin: 0 0 .5rem; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; }
   .fields .span-2 { grid-column: span 2; }
-  .field-group { grid-column: span 2; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); margin-top: .5rem; padding-top: .65rem; border-top: 1px solid var(--rule); }
-  .field-group .fg-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--mute-2); }
-  .modal label { display: flex; flex-direction: column; font-size: 12px; color: var(--mute); gap: .35rem; }
-  .modal input { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: .45rem .6rem; font-size: 13.5px; outline: none; transition: border-color 100ms ease; }
-  .modal input:focus { border-color: var(--accent); }
-  .modal .jd-area { font: inherit; font-family: var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: .45rem .6rem; font-size: 13.5px; line-height: 1.5; outline: none; resize: vertical; min-height: 72px; transition: border-color 100ms ease; }
-  .modal .jd-area:focus { border-color: var(--accent); }
+  .field-group { grid-column: span 2; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: #4b5158; margin-top: .5rem; padding-top: .65rem; border-top: 1px solid #eeeeea; }
+  .field-group .fg-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: #b8bdc4; }
+  .modal label { display: flex; flex-direction: column; font-size: 12px; color: #8a9099; gap: .35rem; }
+  .modal input, .modal select { font: inherit; color: #16181c; background: #fbfbf9; border: 1px solid #e8e8e5;
+    border-radius: 6px; padding: .45rem .6rem; font-size: 13.5px; outline: none; }
+  .modal input:focus, .modal select:focus { border-color: #2463eb; }
+  .modal .jd-area { font: inherit; color: #16181c; background: #fbfbf9; border: 1px solid #e8e8e5; border-radius: 6px;
+    padding: .45rem .6rem; font-size: 13.5px; line-height: 1.5; outline: none; resize: vertical; min-height: 72px; }
+  .modal .jd-area:focus { border-color: #2463eb; }
+  .src-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+  .src-pick { font: inherit; font-size: 11.5px; color: #4b5158; background: #fff; border: 1px solid #e8e8e5;
+    border-radius: 7px; padding: 4px 9px; cursor: pointer; }
+  .src-pick:hover { border-color: #cdddfb; color: #2463eb; background: #eef4ff; }
   /* Sticky footer so Cancel/Save stay reachable when the mobile keyboard is up. */
   .modal-actions { display: flex; justify-content: flex-end; gap: .5rem;
-    position: sticky; bottom: 0; background: var(--card); padding-top: .7rem; margin-top: .5rem; }
-  .privacy-note { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--mute); margin: 12px 0 0; line-height: 1.4; }
-  .privacy-note svg { color: var(--mute-2); flex-shrink: 0; }
+    position: sticky; bottom: 0; background: #fff; padding-top: .7rem; margin-top: .5rem; }
+  .privacy-note { font-size: 11.5px; color: #8a9099; margin: 12px 0 0; line-height: 1.4; }
+  .x-close { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 8px;
+    background: transparent; border: 0; display: grid; place-items: center; color: #8a9099; cursor: pointer;
+    font-size: 13px; font-family: inherit; }
+  .x-close:hover { background: #f0f0ed; color: #16181c; }
+  .add-hd { margin-bottom: 14px; padding-right: 26px; }
+  .add-hd h3 { font-size: 15px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.015em; }
+  .add-hd p { font-size: 13px; color: #8a9099; margin: 0; line-height: 1.5; }
 
-  .empty-tab { border: 1px dashed var(--rule); border-radius: 12px; padding: 32px; text-align: center; background: var(--card); }
-  .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
-  .empty-tab p { color: var(--mute); margin: 0; font-size: 13.5px; }
+  /* Add-event modal internals */
+  .ev-card { max-width: 540px; }
+  .ev-input { position: relative; background: #fbfbf9; border: 1.5px dashed #d8dade; border-radius: 12px; overflow: hidden; }
+  .ev-input.drag { border-color: #2463eb; background: #eef4ff; }
+  .ev-input.loading { border-style: solid; border-color: #2463eb; }
+  .ev-ta { width: 100%; font: inherit; font-size: 13.5px; line-height: 1.55; color: #16181c; background: transparent;
+    border: 0; padding: 13px 15px 8px; outline: none; resize: none; min-height: 78px; box-sizing: border-box; display: block; }
+  .ev-ta::placeholder { color: #b8bdc4; }
+  .ev-attached { display: flex; align-items: center; gap: 10px; padding: 14px 15px 10px; font-size: 13px; }
+  .ev-att-name { font-weight: 500; color: #16181c; }
+  .ev-att-kind { color: #8a9099; font-size: 11.5px; }
+  .ev-att-x { margin-left: auto; background: transparent; border: 0; color: #8a9099; font-size: 18px; line-height: 1;
+    cursor: pointer; padding: 0 4px; }
+  .ev-att-x:hover { color: #16181c; }
+  .ev-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px 10px;
+    border-top: 1px dashed #e8e8e5; }
+  .ev-browse { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: #8a9099; cursor: pointer; }
+  .ev-browse u { color: #2463eb; text-decoration: none; font-weight: 500; }
+  .ev-browse:hover u { text-decoration: underline; }
+  .ev-loading { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; color: #2463eb; }
+  .ev-spin { width: 13px; height: 13px; border: 1.8px solid #cdddfb; border-top-color: #2463eb; border-radius: 50%;
+    animation: ev-spin 0.7s linear infinite; flex-shrink: 0; }
+  @keyframes ev-spin { to { transform: rotate(360deg); } }
+  .ev-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+  .ev-hint { font-size: 11.5px; color: #8a9099; }
+  .ev-hint kbd { font-family: ui-monospace, monospace; font-size: 10.5px; background: #fbfbf9; border: 1px solid #e8e8e5;
+    border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: #4b5158; }
+  .parse-err { color: #b3372a; background: #fdf1ef; border: 1px solid #f2d4cf; border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; margin: .75rem 0 0; }
+  .ics-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid #eeeeea; }
+  .ics-preview h4 { font-size: 11.5px; font-weight: 600; color: #8a9099; text-transform: uppercase;
+    letter-spacing: 0.04em; margin: 0 0 6px; }
+  .prev-check { font-size: 12px; color: #8a9099; margin: 0 0 10px; }
+  .prev-when strong { font-weight: 600; }
+  .prev-row { background: #eef4ff; border: 1px solid #cdddfb; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .prev-summary { font-size: 13.5px; font-weight: 600; color: #16181c; }
+  .prev-when { font-size: 12.5px; color: #2463eb; margin-top: 3px; font-weight: 500; }
+  .prev-loc { font-size: 12px; color: #8a9099; margin-top: 4px; }
+
+  /* Follow-up modal */
+  .fu-card { max-width: 460px; }
+  .fu-fields { display: flex; flex-direction: column; gap: 14px; }
+  .fu-label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #8a9099; }
+  .fu-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fu-ta, .fu-input { font: inherit; color: #16181c; background: #fbfbf9; border: 1px solid #e8e8e5;
+    border-radius: 8px; padding: 9px 11px; font-size: 13.5px; outline: none; box-sizing: border-box; width: 100%; }
+  .fu-ta { resize: vertical; line-height: 1.5; }
+  .fu-ta:focus, .fu-input:focus { border-color: #2463eb; }
+
+  .empty-tab { border: 1px dashed #e2e2de; border-radius: 12px; padding: 32px; text-align: center; background: #fff; }
+  .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 600; color: #16181c; }
+  .empty-tab p { color: #8a9099; margin: 0; font-size: 13.5px; }
 
   /* MOBILE */
-  @media (max-width: 820px) {
-    .body { padding: 18px 14px; }
-    .det-grid { grid-template-columns: 1fr; gap: 24px; }
-    .det-hd { gap: 12px; }
-    .logo-big { width: 48px; height: 48px; }
-    .det-hd .co { font-size: 21px; }
+  @media (max-width: 900px) {
+    .wrap { padding: 18px 14px 60px; }
+    .grid { grid-template-columns: 1fr; gap: 28px; }
+    .hd-row h1 { font-size: 23px; }
+    .soon { flex-wrap: wrap; }
+    .cb-facts { grid-template-columns: repeat(2, 1fr); }
+    .cb-cell:nth-child(3) { border-left: none; }
+    .cb-cell:nth-child(n+3) { border-top: 1px solid #eeeeea; }
     .modal-overlay { padding: 0; }
     /* Capped scroll box (NOT min-height) — with min-height the modal grows past
        the viewport, the sticky Save footer resolves against the page, and the
        keyboard pushes it off-screen (Ayelet's vanishing-Save bug). */
-    .modal { max-width: 100%; border-radius: 0; height: 100dvh; max-height: 100dvh; padding: 1rem; padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
-    .ev-overlay { padding: 0; }
-    .ev-card { max-width: 100%; border-radius: 0; height: 100dvh; max-height: 100dvh; overflow-y: auto; margin: 0; padding: 20px 16px; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+    .modal { max-width: 100%; border-radius: 0; height: 100dvh; max-height: 100dvh; padding: 1rem;
+      padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
     .fields { grid-template-columns: 1fr; }
     .fields .span-2 { grid-column: auto; }
     .fu-row { grid-template-columns: 1fr; }
-    .rail { position: static; }
-    .b1-facts { grid-template-columns: repeat(2, 1fr); }
-    .b1-cell:nth-child(3) { border-left: none; }
-    .b1-cell:nth-child(n+3) { border-top: 1px solid var(--rule); }
-    .tells { grid-template-columns: 1fr; }
-    .la-grid { grid-template-columns: 1fr; }
-    .la-col + .la-col { border-left: none; border-top: 1px solid var(--rule); }
-  }
-  @media (max-width: 480px) {
-    .body { padding: 14px 10px; }
-    .det-hd .co { font-size: 19px; }
-    .logo-big { width: 40px; height: 40px; }
-    .modal { padding: .8rem .7rem; padding-bottom: calc(.8rem + env(safe-area-inset-bottom)); }
   }
 </style>
