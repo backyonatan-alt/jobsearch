@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api.js';
   import { isPreview, mockApi } from '$lib/preview-mode.js';
-  import { toDisplayApp, daysSince } from '$lib/app-helpers.js';
+  import { toDisplayApp, daysSince, fmtShortDate } from '$lib/app-helpers.js';
+  import CompanyLogo from '$lib/CompanyLogo.svelte';
 
   const call = isPreview() ? mockApi : api;
 
@@ -10,26 +11,19 @@
   let loading = $state(true);
 
   async function load() {
-    try {
-      apps = (await call('/api/applications')).map(toDisplayApp);
-    } catch (e) {
-      if (e.message !== 'unauthorized') console.error(e);
-    } finally {
-      loading = false;
-    }
+    try { apps = (await call('/api/applications')).map(toDisplayApp); }
+    catch (e) { if (e.message !== 'unauthorized') console.error(e); }
+    finally { loading = false; }
   }
   onMount(() => {
     load();
-    // The guided tour seeds/clears demo data and fires this so the view refetches.
     const h = () => load();
     window.addEventListener('pursuit:refresh', h);
     return () => window.removeEventListener('pursuit:refresh', h);
   });
 
-  // ── Funnel counts (cumulative reach) ──────────────────────
-  // An app at "interview" has passed through applied+screen, so counts are
-  // additive: applied = everyone who got past wishlist.
-  const funnelCounts = $derived.by(() => {
+  // ── Funnel counts (cumulative reach — an app at interview passed screen) ──
+  const counts = $derived.by(() => {
     let applied = 0, screen = 0, interview = 0, offer = 0;
     for (const a of apps) {
       const s = a.status;
@@ -41,429 +35,327 @@
     return { applied, screen, interview, offer };
   });
 
-  const funnelStages = $derived([
-    { key: 'applied',   label: 'Applied',   n: funnelCounts.applied,   color: 'oklch(0.62 0.19 258)' },
-    { key: 'screen',    label: 'Screen',    n: funnelCounts.screen,    color: 'oklch(0.62 0.19 258 / 0.78)' },
-    { key: 'interview', label: 'Interview', n: funnelCounts.interview, color: 'oklch(0.7 0.16 50)' },
-    { key: 'offer',     label: 'Offer',     n: funnelCounts.offer,     color: 'oklch(0.65 0.14 152)' }
-  ]);
-
-  const activeCount = $derived(
-    apps.filter(a => !['wishlist', 'rejected', 'withdrawn', 'closed'].includes(a.status)).length
-  );
-
-  // ── Outcomes: where applications end up ────────────────────
-  // The funnel above is cumulative reach, so a "no" is invisible — it stays
-  // folded into the Applied count. Make the exits explicit instead.
-  // `closed` (req cancelled by the company) is a NEUTRAL exit — shown here but
-  // deliberately kept out of funnelCounts/replyRate so it never drags conversion
-  // down like a rejection would.
-  const outcomeCounts = $derived.by(() => {
-    let offer = 0, rejected = 0, withdrawn = 0, closed = 0;
-    for (const a of apps) {
-      if (a.status === 'offer') offer++;
-      else if (a.status === 'rejected') rejected++;
-      else if (a.status === 'withdrawn') withdrawn++;
-      else if (a.status === 'closed') closed++;
+  const CHART_H = 180;
+  const stages = $derived.by(() => {
+    const c = counts;
+    const defs = [
+      { key: 'applied',   label: 'Applied',   n: c.applied,   sub: 'applications' },
+      { key: 'screen',    label: 'Screen',    n: c.screen },
+      { key: 'interview', label: 'Interview', n: c.interview },
+      { key: 'offer',     label: 'Offer',     n: c.offer }
+    ];
+    const max = Math.max(1, c.applied);
+    return defs.map((d, i) => {
+      const h = Math.max(d.n > 0 ? 12 : 4, Math.round((d.n / max) * CHART_H));
+      const pct = Math.round((d.n / max) * 100);
+      return { ...d, h, sub: d.sub || `${pct}% of all`, cluster: apps.filter(a => a.status === d.key).slice(0, 3), clusterN: apps.filter(a => a.status === d.key).length };
+    });
+  });
+  // Connector between stage i and i+1: trapezoid sloping from the top of bar i
+  // down to the top of bar i+1, drawn inside a container as tall as bar i.
+  const drops = $derived.by(() => {
+    const out = [];
+    for (let i = 0; i < stages.length - 1; i++) {
+      const a = stages[i], b = stages[i + 1];
+      const dropPct = a.n > 0 ? Math.round((1 - b.n / a.n) * 100) : 0;
+      const topPct = a.h > 0 ? Math.round((1 - b.h / a.h) * 100) : 0;
+      out.push({ h: a.h, topPct, dropPct, bad: dropPct >= 60 });
     }
-    return { offer, rejected, withdrawn, closed };
+    return out;
   });
+  const overallPct = $derived(counts.applied ? Math.round((counts.offer / counts.applied) * 100) : 0);
 
-  // ── KPI 1: Reply rate ──────────────────────────────────────
-  // Numerator: apps that reached screen or further (screen, interview, offer, rejected after screen)
-  // We only have current status, so: screen + interview + offer counts as "got a reply".
-  // Denominator: all apps that were at least "applied" (exclude wishlist only).
-  const replyRate = $derived.by(() => {
-    const denom = funnelCounts.applied; // applied+screen+interview+offer+rejected+withdrawn
-    const numer = funnelCounts.screen;  // screen+interview+offer (cumulative)
-    if (!denom) return null;
-    return Math.round((numer / denom) * 100);
-  });
-
-  // ── KPI 2: Avg. time to first reply ───────────────────────
-  // Proxy: avg days from applied_at to now for apps that reached screen or further.
-  // Not a true "days to reply" but the best honest estimate from available data.
+  // ── Headline stats ──────────────────────────────────────────
+  const replyRate = $derived(counts.applied ? Math.round((counts.screen / counts.applied) * 100) : null);
   const avgReplyDays = $derived.by(() => {
-    const replied = apps.filter(a =>
-      ['screen', 'interview', 'offer'].includes(a.status) && a.raw.applied_at
-    );
+    const replied = apps.filter(a => ['screen', 'interview', 'offer'].includes(a.status) && a.raw.applied_at);
     if (!replied.length) return null;
-    const sum = replied.reduce((s, a) => s + (daysSince(a.raw.applied_at) ?? 0), 0);
-    return Math.round(sum / replied.length);
+    return Math.round(replied.reduce((s, a) => s + (daysSince(a.raw.applied_at) ?? 0), 0) / replied.length);
   });
-
-  // ── KPI 3: Furthest stage reached ──────────────────────────
-  const stageRank = { offer: 4, interview: 3, screen: 2, applied: 1, wishlist: 0, rejected: 0, withdrawn: 0, closed: 0 };
-  const furthestStage = $derived.by(() => {
-    const ORDER = ['offer', 'interview', 'screen', 'applied'];
-    for (const s of ORDER) {
-      const matching = apps.filter(a => a.status === s);
-      if (matching.length) {
-        return {
-          label: s.charAt(0).toUpperCase() + s.slice(1),
-          count: matching.length,
-          company: matching.length === 1 ? matching[0].co : null
-        };
-      }
+  const furthest = $derived.by(() => {
+    for (const s of ['offer', 'interview', 'screen', 'applied']) {
+      const m = apps.filter(a => a.status === s);
+      if (m.length) return { label: s.charAt(0).toUpperCase() + s.slice(1), app: m[0], green: s === 'offer' };
     }
     return null;
   });
 
-  // ── Activity histogram: last 12 weeks ─────────────────────
-  // Buckets applied_at (or created_at) into ISO weeks.
-  const activityWeeks = $derived.by(() => {
-    const now = new Date();
-    const buckets = Array.from({ length: 12 }, (_, i) => {
-      // week 0 = current week, week 11 = 11 weeks ago
-      const start = new Date(now);
-      start.setDate(start.getDate() - (11 - i) * 7 - start.getDay());
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 7);
-      return { start, end, count: 0, label: '' };
-    });
-
-    // Label only when the month changes relative to the previous bucket
-    let lastMonth = -1;
-    for (const b of buckets) {
-      const m = b.start.getMonth();
-      if (m !== lastMonth) {
-        b.label = b.start.toLocaleDateString('en-US', { month: 'short' });
-        lastMonth = m;
-      }
-    }
-
+  // ── Exits ───────────────────────────────────────────────────
+  const exits = $derived.by(() => {
+    let rejected = 0, withdrawn = 0, closed = 0;
     for (const a of apps) {
-      const d = a.raw.applied_at ? new Date(a.raw.applied_at) : null;
-      if (!d) continue;
-      for (const b of buckets) {
-        if (d >= b.start && d < b.end) { b.count++; break; }
-      }
+      if (a.status === 'rejected') rejected++;
+      else if (a.status === 'withdrawn') withdrawn++;
+      else if (a.status === 'closed') closed++;
     }
-    return buckets;
+    return { rejected, withdrawn, closed, any: rejected + withdrawn + closed > 0 };
   });
 
-  const activityMax = $derived(Math.max(1, ...activityWeeks.map(b => b.count)));
-
-  // ── Sources breakdown ──────────────────────────────────────
-  // Group by raw source field; null/"—" → "Direct". Show count + % of total.
-  // Sorted by count desc.
-  const sourceRows = $derived.by(() => {
-    const total = apps.filter(a => a.status !== 'wishlist').length;
+  // ── Sources with conversion ─────────────────────────────────
+  const SRC_COLORS = { referral: '#16a34a', linkedin: '#2463eb' };
+  const sources = $derived.by(() => {
+    const inPlay = apps.filter(a => a.status !== 'wishlist');
     const map = {};
-    for (const a of apps) {
-      if (a.status === 'wishlist') continue;
-      const src = (a.source && a.source !== '—') ? a.source : 'Direct';
-      map[src] = (map[src] || 0) + 1;
+    for (const a of inPlay) {
+      const src = (a.source && a.source !== '—') ? a.source : 'Direct / other';
+      (map[src] ||= []).push(a);
     }
-    const maxN = Math.max(1, ...Object.values(map));
-    return Object.entries(map)
-      .map(([src, n]) => ({
-        src,
-        n,
-        pct: total ? Math.round((n / total) * 100) : 0,
-        barWidth: Math.round((n / maxN) * 100)
-      }))
-      .sort((a, b) => b.n - a.n);
+    const maxN = Math.max(1, ...Object.values(map).map(v => v.length));
+    return Object.entries(map).map(([src, list]) => {
+      const past = { screen: 0, interview: 0, offer: 0 };
+      for (const a of list) if (past[a.status] !== undefined) past[a.status]++;
+      const conv = [];
+      if (past.screen) conv.push(`${past.screen} screen`);
+      if (past.interview) conv.push(`${past.interview} interview`);
+      if (past.offer) conv.push(`${past.offer} offer`);
+      const key = src.toLowerCase();
+      const color = SRC_COLORS[Object.keys(SRC_COLORS).find(k => key.includes(k))] || '#8fabef';
+      return { src, n: list.length, conv: conv.join(', '), w: Math.round((list.length / maxN) * 100), color };
+    }).sort((a, b) => b.n - a.n);
+  });
+  const sourceInsight = $derived.by(() => {
+    const ref = sources.find(s => s.src.toLowerCase().includes('referral'));
+    if (ref?.conv && sources.length > 1) return { lead: 'Referrals convert best for you', rest: ` — ${ref.n} sent, ${ref.conv}.` };
+    if (sources[0]) return { lead: `${sources[0].src} carries your volume`, rest: ` — ${sources[0].n} of ${apps.filter(a => a.status !== 'wishlist').length} applications.` };
+    return null;
   });
 
-  // ── Insight callout ────────────────────────────────────────
-  // Pick the most interesting honest one-liner from the data.
-  const insightLine = $derived.by(() => {
-    // Referral conversion: how many referral apps reached screen or further
-    const referralApps = apps.filter(a =>
-      (a.source || '').toLowerCase().includes('referral') && a.status !== 'wishlist'
-    );
-    const referralProgressed = referralApps.filter(a =>
-      ['screen', 'interview', 'offer'].includes(a.status)
-    );
-    if (referralApps.length >= 2 && referralProgressed.length >= 1) {
-      return `Your ${referralProgressed.length} referral application${referralProgressed.length > 1 ? 's' : ''} reached a screen or further. Cold apps stall at the inbox — lean on intros.`;
+  // ── Noticing — live observations from the same heuristics as Home ──
+  const noticed = $derived.by(() => {
+    const out = [];
+    const inPlay = apps.filter(a => !['wishlist', 'rejected', 'withdrawn', 'closed'].includes(a.status));
+    const quiet = apps.filter(a => a.stale);
+    const referral = inPlay.filter(a => (a.source || '').toLowerCase().includes('referral'));
+    const refProg = referral.filter(a => ['screen', 'interview', 'offer'].includes(a.status));
+    if (refProg.length) out.push({ lead: 'Referrals are working.', rest: `${refProg.length} of ${referral.length} reached a screen or further — ask for one more intro this week.` });
+    if (quiet.length >= 2) out.push({ lead: `${quiet[0].co} and ${quiet[1].co} have gone quiet.`, rest: 'No reply in over a week — a direct nudge beats waiting.' });
+    else if (quiet.length === 1) out.push({ lead: `${quiet[0].co} has gone quiet.`, rest: 'No reply in over a week — a direct nudge beats waiting.' });
+    if (counts.screen > 0 && counts.interview > 0) {
+      const r = Math.round((counts.interview / counts.screen) * 100);
+      if (r >= 50) out.push({ lead: `Your screen → interview rate is strong (${r}%).`, rest: 'The bottleneck is getting replies, not passing rounds.' });
     }
-    // Most active source
-    if (sourceRows.length >= 2) {
-      const top = sourceRows[0];
-      return `${top.pct}% of your applications came via ${top.src} — ${top.n} in total.`;
-    }
-    // Fallback: funnel note
-    if (funnelCounts.applied > 0) {
-      return `${funnelCounts.applied} applications tracked. Keep the pipeline moving — add a few more this week.`;
-    }
-    return 'Add your first application to see insights here.';
+    return out.slice(0, 4);
+  });
+
+  // Date range line — from the earliest applied_at to today.
+  const rangeLine = $derived.by(() => {
+    const dates = apps.map(a => a.raw.applied_at).filter(Boolean).map(d => new Date(d));
+    if (!dates.length) return '';
+    const min = new Date(Math.min(...dates));
+    return `${fmtShortDate(min)} – ${fmtShortDate(new Date())}`;
   });
 </script>
 
 <svelte:head><title>Insights — Pursuit</title></svelte:head>
 
-<div class="topbar">
-  <div class="crumb"><span class="here">Insights</span></div>
-</div>
+<div class="pg">
+  <div class="head">
+    <div>
+      <h1>Insights.</h1>
+      <div class="sub">How your search is actually going{rangeLine ? ` · ${rangeLine}` : ''}</div>
+    </div>
+  </div>
 
-<div class="body">
-  <div class="body-inner">
-    <div class="ins-header">
-      <h1>Insights</h1>
-      <div class="sub">How your search is actually going · last 12 weeks</div>
+  {#if loading}
+    <p class="loading">Loading…</p>
+  {:else if counts.applied === 0}
+    <div class="empty">
+      <h3>No data to chart yet</h3>
+      <p>Once you add an application or two, the funnel and sources appear here.</p>
+    </div>
+  {:else}
+    <!-- headline numbers -->
+    <div class="stats">
+      <div class="st">
+        <div class="st-v">{replyRate ?? '—'}{#if replyRate !== null}%{/if}</div>
+        <div class="st-l">reply rate</div>
+        <div class="st-s">{counts.screen} of {counts.applied} got a reply</div>
+      </div>
+      <div class="st">
+        <div class="st-v">{avgReplyDays !== null ? `${avgReplyDays}d` : '—'}</div>
+        <div class="st-l">to first reply</div>
+        <div class="st-s">proxy: days since applied, replied apps</div>
+      </div>
+      <div class="st">
+        <div class="st-v" style={furthest?.green ? 'color:#16a34a' : ''}>{furthest?.label ?? '—'}</div>
+        <div class="st-l">furthest stage</div>
+        {#if furthest?.app}
+          <div class="st-s chip-line"><CompanyLogo app={furthest.app} size={20} radius={6} />{furthest.app.co}{furthest.app.raw.salary_note ? ` · ${furthest.app.raw.salary_note}` : ''}</div>
+        {:else}
+          <div class="st-s">keep applying</div>
+        {/if}
+      </div>
     </div>
 
-    {#if loading}
-      <p class="loading-msg">Loading…</p>
-    {:else if funnelCounts.applied === 0}
-      <div class="empty-tab">
-        <h3>No data to chart yet</h3>
-        <p>Once you add an application or two, the funnel and activity appear here.</p>
+    <!-- funnel -->
+    <div class="card" data-tour="funnel">
+      <div class="card-hd">
+        <span class="ch-t">Pipeline funnel</span>
+        <span class="ch-s">every application, by furthest stage reached</span>
+        <span class="ch-ov"><b>{overallPct}%</b> overall · applied → offer</span>
       </div>
-    {:else}
-      <!-- KPI ROW: 3 cards -->
-      <div class="ins-kpis">
-        <!-- Reply rate -->
-        <div class="kpi">
-          <div class="kpi-l">Reply rate</div>
-          <div class="kpi-v">{replyRate ?? '—'}{#if replyRate !== null}<span class="kpi-unit">%</span>{/if}</div>
-          <div class="kpi-delta flat">based on your {funnelCounts.applied} application{funnelCounts.applied !== 1 ? 's' : ''}</div>
-        </div>
 
-        <!-- Avg time to first reply -->
-        <div class="kpi">
-          <div class="kpi-l">Avg. time to first reply</div>
-          {#if avgReplyDays !== null}
-            <div class="kpi-v">{avgReplyDays}<span class="kpi-unit">d</span></div>
-            <div class="kpi-delta flat">proxy: days from applied to screen</div>
-          {:else}
-            <div class="kpi-v">—</div>
-            <div class="kpi-delta flat">not enough data yet</div>
-          {/if}
-        </div>
-
-        <!-- Furthest stage reached -->
-        <div class="kpi">
-          <div class="kpi-l">Furthest stage reached</div>
-          {#if furthestStage}
-            <div class="kpi-v kpi-v-stage">{furthestStage.label} <span class="kpi-count">×{furthestStage.count}</span></div>
-            {#if furthestStage.company}
-              <div class="kpi-delta flat">{furthestStage.company}</div>
-            {:else}
-              <div class="kpi-delta flat">{furthestStage.count} application{furthestStage.count !== 1 ? 's' : ''} at this stage</div>
+      <div class="chart">
+        <div class="grid" style="height:{CHART_H}px">
+          {#each stages as s, i (s.key)}
+            <div class="bar-col">
+              <div class="bar-n">{s.n} <span class="bar-sub">{s.sub}</span></div>
+              <div class="bar" style="height:{s.h}px"></div>
+            </div>
+            {#if i < stages.length - 1}
+              <div class="conn" style="height:{drops[i].h}px">
+                <div class="slope" style="clip-path:polygon(0 0, 100% {drops[i].topPct}%, 100% 100%, 0 100%)"></div>
+                <span class="drop" class:ok={!drops[i].bad} style="top:{Math.min(drops[i].h - 24, Math.max(-14, Math.round(drops[i].h * drops[i].topPct / 100 / 2)))}px">↓ {drops[i].dropPct}%</span>
+              </div>
             {/if}
-          {:else}
-            <div class="kpi-v">—</div>
-            <div class="kpi-delta flat">keep applying</div>
-          {/if}
+          {/each}
+        </div>
+        <div class="labels">
+          {#each stages as s, i (s.key)}
+            <div class="lab">
+              <div class="lab-t">{s.label}</div>
+              <div class="lab-logos">
+                {#each s.cluster as a, j (a.id)}
+                  <span class="lab-chip" style="margin-left:{j ? '-6px' : '0'}"><CompanyLogo app={a} size={20} radius={6} /></span>
+                {/each}
+                {#if s.clusterN > 3}<span class="lab-extra">+{s.clusterN - 3}</span>{/if}
+              </div>
+            </div>
+            {#if i < stages.length - 1}<div></div>{/if}
+          {/each}
         </div>
       </div>
 
-      <!-- MAIN GRID: 1.3fr | 1fr -->
-      <div class="ins-grid">
-        <!-- LEFT PANEL -->
-        <div class="panel">
-          <!-- Pipeline funnel -->
-          <div class="ph">Pipeline funnel</div>
-          <div class="psub">Where your {activeCount} active application{activeCount !== 1 ? 's' : ''} sit today</div>
-          <div class="funnel" data-tour="funnel">
-            {#each funnelStages as s}
-              {@const width = funnelCounts.applied ? Math.max(4, (s.n / funnelCounts.applied) * 100) : 0}
-              {@const pct = funnelCounts.applied ? Math.round((s.n / funnelCounts.applied) * 100) : 0}
-              <div class="fn">
-                <span class="fn-l">{s.label}</span>
-                <span class="fn-bar" style="width: {width}%; background: {s.color};"></span>
-                <span class="fn-n">{s.n}</span>
-                <span class="fn-pct">{pct}%</span>
-              </div>
-            {/each}
-          </div>
-
-          <!-- Outcomes: where applications leave the funnel -->
-          <div class="outcomes">
-            <div class="oc oc-offer">
-              <span class="oc-dot"></span>
-              <span class="oc-n">{outcomeCounts.offer}</span>
-              <span class="oc-l">Offer{outcomeCounts.offer !== 1 ? 's' : ''}</span>
-            </div>
-            <div class="oc oc-rej">
-              <span class="oc-dot"></span>
-              <span class="oc-n">{outcomeCounts.rejected}</span>
-              <span class="oc-l">Rejected</span>
-            </div>
-            <div class="oc oc-wd">
-              <span class="oc-dot"></span>
-              <span class="oc-n">{outcomeCounts.withdrawn}</span>
-              <span class="oc-l">Withdrawn</span>
-            </div>
-            {#if outcomeCounts.closed > 0}
-              <div class="oc oc-cl" title="Req cancelled by the company — not counted against your conversion">
-                <span class="oc-dot"></span>
-                <span class="oc-n">{outcomeCounts.closed}</span>
-                <span class="oc-l">Closed</span>
-              </div>
-            {/if}
-          </div>
-          <p class="oc-note">
-            {#if outcomeCounts.rejected > 0}
-              {outcomeCounts.rejected} application{outcomeCounts.rejected !== 1 ? 's' : ''} got a “no” — they leave the funnel here. Every search has them.
-            {:else}
-              No rejections logged yet. When a “no” comes in, set the app to <strong>Rejected</strong> and it lands here.
-            {/if}
-          </p>
-
-          <div class="divider"></div>
-
-          <!-- Application activity -->
-          <div class="ph">Application activity</div>
-          <div class="psub">New applications per week</div>
-          <div class="act-bars">
-            {#each activityWeeks as week, i}
-              {@const h = Math.max(6, (week.count / activityMax) * 100)}
-              <div
-                class="act-col"
-                title="{week.count} application{week.count !== 1 ? 's' : ''}"
-              >
-                {#if week.count > 0}
-                  <span class="act-val">{week.count}</span>
-                {/if}
-                <div
-                  class="act-bar"
-                  class:act-bar-current={i === activityWeeks.length - 1}
-                  style="height: {h}%;"
-                ></div>
-              </div>
-            {/each}
-          </div>
-          <div class="act-x">
-            {#each activityWeeks as week}
-              <span>{week.label}</span>
-            {/each}
-          </div>
+      {#if counts.applied > counts.screen}
+        <div class="card-ft">
+          <span>The applied → screen step is where you lose the most — <strong>{Math.round((1 - counts.screen / counts.applied) * 100)}% never reply</strong>.</span>
+          <a href="/app/applications">See the quiet ones →</a>
         </div>
+      {/if}
+    </div>
 
-        <!-- RIGHT PANEL -->
-        <div class="panel">
-          <div class="ph">Where they come from</div>
-          <div class="psub">Sorted by volume</div>
-          <div class="src-list">
-            {#each sourceRows as row}
-              <div class="src-row">
-                <div class="src-meta">
-                  <span class="src-nm">{row.src}</span>
-                  <span class="src-track"><i style="width: {row.barWidth}%;"></i></span>
-                </div>
-                <span class="src-cnt">{row.n}</span>
-                <span class="src-pct">{row.pct}%</span>
-              </div>
-            {/each}
-          </div>
-
-          <!-- Insight callout -->
-          <div class="insight-callout">
-            <span class="spark-icon">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"
-                  fill="currentColor" opacity="0.9"/>
-              </svg>
-            </span>
-            <span class="insight-txt">{insightLine}</span>
-          </div>
-        </div>
+    <!-- exits strip -->
+    {#if exits.any}
+      <div class="exits">
+        <span><strong class="red">{exits.rejected}</strong> rejected</span>
+        <span><strong>{exits.closed}</strong> position closed</span>
+        <span><strong>{exits.withdrawn}</strong> withdrawn</span>
+        <span class="ex-note">exits live in <a href="/app/applications">Applications → No longer in play</a></span>
       </div>
     {/if}
-  </div>
+
+    <!-- sources + noticing -->
+    <div class="two">
+      <div>
+        <div class="sec-t">Where they come from</div>
+        <div class="srcs">
+          {#each sources as s (s.src)}
+            <div class="src">
+              <div class="src-hd"><span class="src-n">{s.src}</span><span class="src-m">{s.n}{s.conv ? ` · ${s.conv}` : ''}</span></div>
+              <div class="track"><i style="width:{s.w}%;background:{s.color}"></i></div>
+            </div>
+          {/each}
+        </div>
+        {#if sourceInsight}
+          <div class="src-insight"><strong>{sourceInsight.lead}</strong>{sourceInsight.rest}</div>
+        {/if}
+      </div>
+      <div>
+        <div class="sec-t orange">✦ What we've noticed <span class="sec-s">computed live from your pipeline · the freshest one shows on Home</span></div>
+        <div class="notes">
+          {#if noticed.length === 0}
+            <div class="n-empty">Nothing notable yet — observations appear as your pipeline moves.</div>
+          {:else}
+            {#each noticed as n, i (i)}
+              <div class="note"><strong>{n.lead}</strong> {n.rest}</div>
+            {/each}
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
-  .body { padding: 28px; }
-  .body-inner { max-width: 1080px; margin: 0 auto; }
+  .pg { max-width: 1000px; margin: 0 auto; padding: 36px 32px 80px; width: 100%; box-sizing: border-box; }
+  .head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 26px; }
+  .head h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 6px; }
+  .sub { font-size: 13.5px; color: #6f7680; }
+  .loading { color: #8a9099; font-size: 13.5px; }
 
-  /* Header */
-  .ins-header { margin-bottom: 28px; }
-  .ins-header h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.03em; margin: 0 0 6px; }
-  .sub { font-size: 13.5px; color: var(--mute); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; border-top: 1px solid #e2e2de; margin-bottom: 44px; }
+  .st { padding: 24px 26px 0; border-right: 1px solid #eeeeea; }
+  .st:last-child { border-right: 0; }
+  .st-v { font-size: 40px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+  .st-l { font-size: 13px; font-weight: 600; margin: 9px 0 4px; }
+  .st-s { font-size: 12px; color: #8a9099; }
+  .chip-line { display: flex; align-items: center; gap: 7px; }
 
-  .loading-msg { color: var(--mute); font-size: 13.5px; }
+  .card { background: #fff; border: 1px solid #e8e8e5; border-radius: 16px; padding: 26px 30px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(22,24,28,.04); }
+  .card-hd { display: flex; align-items: baseline; gap: 10px; margin-bottom: 26px; flex-wrap: wrap; }
+  .ch-t { font-size: 16px; font-weight: 700; }
+  .ch-s { font-size: 12.5px; color: #8a9099; }
+  .ch-ov { margin-left: auto; font-size: 12.5px; font-weight: 600; color: #6f7680; }
+  .ch-ov b { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: #16a34a; margin-right: 4px; }
 
-  /* KPI row */
-  .ins-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 28px; }
-  .kpi { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 20px 22px; box-shadow: var(--sh-1); }
-  .kpi-l { font-size: 12px; color: var(--mute); margin-bottom: 10px; }
-  .kpi-v { font-size: 34px; font-weight: 400; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .kpi-v-stage { font-size: 26px; }
-  .kpi-count { font-size: 20px; opacity: 0.7; }
-  .kpi-unit { font-size: 18px; opacity: 0.5; margin-left: 2px; }
-  .kpi-delta { font-size: 12px; margin-top: 9px; display: inline-flex; align-items: center; gap: 5px; }
-  .kpi-delta.flat { color: var(--mute); }
-  .kpi-delta.up { color: var(--positive-text); }
-
-  /* Main grid */
-  .ins-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
-
-  /* Panel */
-  .panel { background: var(--card); border: 1px solid var(--rule); border-radius: 16px; padding: 22px 24px; box-shadow: var(--sh-1); }
-  .ph { font-size: 13.5px; font-weight: 500; margin-bottom: 4px; }
-  .psub { font-size: 12px; color: var(--mute); margin-bottom: 20px; }
-
-  /* Funnel bars */
-  .funnel { display: flex; flex-direction: column; gap: 12px; }
-  .fn { display: grid; grid-template-columns: 78px 1fr 28px 44px; gap: 12px; align-items: center; }
-  .fn-l { font-size: 12.5px; color: var(--ink-2); }
-  .fn-bar { height: 30px; border-radius: 8px; display: flex; align-items: center; min-width: 30px; transition: width 280ms ease; }
-  .fn-n { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; font-family: var(--mono, ui-monospace, monospace); text-align: right; }
-  .fn-pct { font-size: 12.5px; color: var(--mute); font-variant-numeric: tabular-nums; text-align: right; }
-
-  /* Outcomes — where applications exit the funnel */
-  .outcomes { display: flex; gap: 10px; margin-top: 20px; }
-  .oc { flex: 1; display: flex; align-items: baseline; gap: 7px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 11px; background: var(--surface); }
-  .oc-dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; flex-shrink: 0; }
-  .oc-n { font-size: 19px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-  .oc-l { font-size: 12px; color: var(--mute); }
-  .oc-offer .oc-dot { background: oklch(0.65 0.14 152); }
-  .oc-rej .oc-dot { background: var(--danger, oklch(0.62 0.2 25)); }
-  .oc-wd .oc-dot { background: var(--mute-2); }
-  .oc-cl .oc-dot { background: var(--mute-2); }
-  .oc-note { font-size: 12px; color: var(--mute); margin: 10px 0 0; line-height: 1.5; }
-
-  /* Divider between funnel and activity */
-  .divider { height: 1px; background: var(--rule); margin: 24px 0; }
-
-  /* Activity bars */
-  .act-bars {
-    display: flex; align-items: flex-end; gap: 6px; height: 120px;
-    background-image: repeating-linear-gradient(to top, transparent 0, transparent calc(25% - 1px), var(--rule) calc(25% - 1px), var(--rule) 25%);
+  .chart { position: relative; }
+  .grid {
+    display: grid; grid-template-columns: 1fr 56px 1fr 56px 1fr 56px 1fr;
+    align-items: end; position: relative;
+    background-image: repeating-linear-gradient(to top, transparent 0, transparent calc(50% - 1px), #f0f0ed calc(50% - 1px), #f0f0ed 50%);
   }
-  .act-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; min-width: 0; }
-  .act-val { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; line-height: 1; color: var(--mute-2); font-variant-numeric: tabular-nums; text-align: center; margin-bottom: 4px; }
-  .act-bar { width: 100%; background: var(--accent-tint-2); border-radius: 5px 5px 2px 2px; min-height: 6px; transition: background .12s; }
-  .act-col:hover .act-bar { background: var(--accent); }
-  .act-bar-current { background: var(--accent) !important; }
-  .act-x { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--mute-2); }
-
-  /* Sources */
-  .src-list { margin-bottom: 0; }
-  .src-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 11px 0; border-top: 1px solid var(--rule); }
-  .src-row:first-child { border-top: none; }
-  .src-meta { display: flex; flex-direction: column; gap: 6px; }
-  .src-nm { font-size: 13px; font-weight: 400; }
-  .src-track { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; width: 160px; display: block; }
-  .src-track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
-  .src-cnt { font-size: 12.5px; color: var(--mute); font-variant-numeric: tabular-nums; font-family: var(--mono, ui-monospace, monospace); text-align: right; }
-  .src-pct { font-size: 12.5px; color: var(--mute-2); font-variant-numeric: tabular-nums; min-width: 32px; text-align: right; }
-
-  /* Insight callout */
-  .insight-callout { margin-top: 18px; padding: 14px 16px; background: var(--accent-tint); border-radius: 12px; display: flex; gap: 10px; align-items: flex-start; }
-  .spark-icon { color: var(--accent-text); flex-shrink: 0; margin-top: 1px; }
-  .insight-txt { font-size: 12.5px; line-height: 1.5; color: var(--accent-text); }
-
-  /* Empty state */
-  .empty-tab { border: 1px dashed var(--rule); border-radius: 12px; padding: 32px; text-align: center; background: var(--card); }
-  .empty-tab h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; color: var(--ink); }
-  .empty-tab p { color: var(--mute); margin: 0; font-size: 13.5px; }
-
-  /* Mobile */
-  @media (max-width: 768px) {
-    .body { padding: 18px 14px; }
-    .ins-kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
-    .ins-grid { grid-template-columns: 1fr; }
-    .panel { padding: 16px 18px; }
-    .kpi-v { font-size: 26px; }
+  .bar-col { display: flex; flex-direction: column; justify-content: flex-end; }
+  .bar-n { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+  .bar-sub { font-size: 12px; font-weight: 600; color: #8a9099; }
+  .bar { background: linear-gradient(180deg, #2463eb, #4d7bee); border-radius: 9px 9px 0 0; }
+  .conn { position: relative; align-self: end; }
+  .slope { position: absolute; inset: 0; background: #eef4ff; }
+  .drop {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    font-size: 11px; font-weight: 700; color: #b3372a; background: #fff;
+    border: 1px solid #f2d4cf; border-radius: 5px; padding: 2px 6px; white-space: nowrap;
+    box-shadow: 0 1px 2px rgba(22,24,28,.06);
   }
-  @media (max-width: 480px) {
-    .ins-kpis { grid-template-columns: 1fr; }
+  .drop.ok { color: #1d7a4f; border-color: #cfe5d2; }
+  .labels { display: grid; grid-template-columns: 1fr 56px 1fr 56px 1fr 56px 1fr; border-top: 2px solid #e2e2de; padding-top: 10px; }
+  .lab-t { font-size: 14.5px; font-weight: 700; margin-bottom: 8px; }
+  .lab-logos { display: flex; align-items: center; min-height: 20px; }
+  .lab-chip { display: inline-flex; border-radius: 7px; box-shadow: 0 0 0 2px #fff; }
+  .lab-extra { font-size: 11px; font-weight: 600; color: #8a9099; margin-left: 5px; }
+  .card-ft { display: flex; align-items: center; gap: 16px; margin-top: 16px; font-size: 12.5px; color: #6f7680; }
+  .card-ft strong { color: #16181c; }
+  .card-ft a { margin-left: auto; flex: none; color: #2463eb; text-decoration: none; }
+
+  .exits { display: flex; align-items: center; gap: 20px; border: 1px solid #e8e8e5; background: #fff; border-radius: 12px; padding: 12px 20px; margin-bottom: 40px; font-size: 13px; color: #4b5158; flex-wrap: wrap; }
+  .exits .red { color: #b3372a; }
+  .ex-note { color: #8a9099; margin-left: auto; }
+  .ex-note a { color: #2463eb; text-decoration: none; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .sec-t { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #8a9099; margin-bottom: 14px; }
+  .sec-t.orange { color: #e0641f; }
+  .sec-s { font-size: 12px; color: #8a9099; letter-spacing: 0; text-transform: none; font-weight: 400; margin-left: 8px; }
+  .srcs { display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+  .src-hd { display: flex; align-items: baseline; margin-bottom: 5px; }
+  .src-n { font-weight: 600; }
+  .src-m { margin-left: auto; color: #8a9099; }
+  .track { height: 6px; background: #f0f0ed; border-radius: 3px; }
+  .track i { display: block; height: 6px; border-radius: 3px; }
+  .src-insight { font-size: 12.5px; color: #6f7680; margin-top: 14px; line-height: 1.55; }
+  .src-insight strong { color: #16181c; }
+  .notes { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: #4b5158; }
+  .note { line-height: 1.55; }
+  .note strong { color: #16181c; }
+  .n-empty { font-size: 12.5px; color: #8a9099; }
+
+  .empty { border: 1px dashed #e2e2de; border-radius: 12px; padding: 32px; text-align: center; background: #fff; }
+  .empty h3 { margin: 0 0 .5rem; font-size: 16px; font-weight: 500; }
+  .empty p { color: #8a9099; margin: 0; font-size: 13.5px; }
+
+  @media (max-width: 900px) {
+    .pg { padding: 24px 16px 60px; }
+    .stats { grid-template-columns: 1fr; }
+    .st { border-right: 0; border-bottom: 1px solid #eeeeea; padding-bottom: 18px; }
+    .two { grid-template-columns: 1fr; }
   }
 </style>

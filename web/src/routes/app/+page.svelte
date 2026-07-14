@@ -2,34 +2,22 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
-  import {
-    STATUS_LABEL, toDisplayApp, daysSince, fmtRelativeDate
-  } from '$lib/app-helpers.js';
+  import { STATUS_LABEL, toDisplayApp, daysSince, fmtRelativeDate } from '$lib/app-helpers.js';
   import { logEvent } from '$lib/analytics.js';
-  import AddApplication from '$lib/AddApplication.svelte';
-  import StatusPill from '$lib/StatusPill.svelte';
+  import CompanyLogo from '$lib/CompanyLogo.svelte';
 
-  // `api` self-routes to the in-memory mock when ?preview=1 is on (see
-  // $lib/api.js → preview-mode.js), so the Brief renders with no backend.
   const call = api;
 
-  let apps = $state([]);          // display apps
+  let apps = $state([]);
   let me = $state(null);
   let loading = $state(true);
-  let showNewModal = $state(false);
 
-  // Per-app interview events + dossier, keyed by app id. Loaded lazily for the
-  // "live" statuses so the Brief can find the soonest upcoming interview and a
-  // sourced framing without N round-trips for the whole pipeline.
-  let eventsByApp = $state({});   // id -> [{starts_at, ends_at, summary, location, medium, panel, interviewer}]
-  let dossierByApp = $state({});  // id -> dossier DTO (content + meeting + interviewer_name)
-  let debriefsByApp = $state({}); // id -> [{interview_id, feel, prep_accuracy, topics, updated_at}]
+  // Per-app interview events + debriefs, for the prep rows + debrief banner.
+  let eventsByApp = $state({});
+  let debriefsByApp = $state({});
 
   onMount(() => {
     refresh();
-    // The guided tour seeds/clears demo data and fires this so the view refetches.
-    // The detail page fires it too after adding/removing an interview, and we
-    // refetch on tab focus so coming back to Today never shows a stale brief.
     const h = () => refresh();
     const onVis = () => { if (document.visibilityState === 'visible') refresh(); };
     window.addEventListener('pursuit:refresh', h);
@@ -44,108 +32,58 @@
 
   async function refresh() {
     try {
-      const [meRes, raw] = await Promise.all([
-        call('/api/me'),
-        call('/api/applications')
-      ]);
+      const [meRes, raw] = await Promise.all([call('/api/me'), call('/api/applications')]);
       me = meRes;
       apps = raw.map(toDisplayApp);
       loading = false;
-      await hydrateBrief(raw);
+      await hydrate(raw);
     } catch (e) {
       if (e.message !== 'unauthorized') console.error(e);
       loading = false;
     }
   }
 
-  // Pull interviews + dossier for the live-pipeline apps so the Brief can name
-  // today's interview and surface a sourced inference. Soft-fails per app.
-  async function hydrateBrief(raw) {
+  async function hydrate(raw) {
     const live = raw.filter(a => ['screen', 'interview', 'offer'].includes(a.status));
     await Promise.all(live.map(async (a) => {
-      const [ivs, doss, dbs] = await Promise.all([
+      const [ivs, dbs] = await Promise.all([
         call(`/api/applications/${a.id}/interviews`).catch(() => []),
-        call(`/api/applications/${a.id}/dossier`).catch(() => null),
         call(`/api/applications/${a.id}/debriefs`).catch(() => [])
       ]);
       if (Array.isArray(ivs) && ivs.length) eventsByApp[a.id] = ivs;
-      if (doss) dossierByApp[a.id] = doss;
       if (Array.isArray(dbs) && dbs.length) debriefsByApp[a.id] = dbs;
     }));
-    // reassign to trigger reactivity
     eventsByApp = { ...eventsByApp };
-    dossierByApp = { ...dossierByApp };
     debriefsByApp = { ...debriefsByApp };
-    seedTasks();
   }
 
-  // ⌘N / Ctrl+N opens the new-application modal from anywhere on Today.
-  function onKeydown(e) {
-    if ((e.metaKey || e.ctrlKey) && (e.key === 'n' || e.key === 'N') && !showNewModal) {
-      e.preventDefault();
-      showNewModal = true;
-    }
-  }
-
-  // ── Brief: find the soonest upcoming interview ──────────────
-  // An app's interview events come from /interviews; the dossier may also carry
-  // a linked `meeting` (set when an .ics is attached). We merge both, keep only
-  // future-dated ones, and pick the soonest.
-  const upcomingEvents = $derived.by(() => {
+  // ── Upcoming interview per app ──────────────────────────────
+  const upcomingByApp = $derived.by(() => {
     const now = Date.now();
-    const out = [];
+    const out = {};
     for (const a of apps) {
-      if (!['screen', 'interview', 'offer'].includes(a.status)) continue;
-      const doss = dossierByApp[a.id];
-      const ivs = eventsByApp[a.id] || [];
-      for (const ev of ivs) {
+      for (const ev of (eventsByApp[a.id] || [])) {
         if (!ev.starts_at) continue;
         const t = new Date(ev.starts_at).getTime();
         if (isNaN(t) || t < now) continue;
-        out.push({
-          app: a, startsAt: ev.starts_at, endsAt: ev.ends_at,
-          summary: ev.summary || `${a.co} interview`,
-          medium: ev.location || doss?.meeting?.medium || '',
-          interviewer: pickInterviewer(ev.attendees) || doss?.interviewer_name || '',
-          panel: doss?.meeting?.panel || ''
-        });
-      }
-      // Dossier-linked meeting (if it has a real timestamp).
-      const m = doss?.meeting;
-      if (m?.starts_at) {
-        const t = new Date(m.starts_at).getTime();
-        if (!isNaN(t) && t >= now) {
-          out.push({
-            app: a, startsAt: m.starts_at, endsAt: m.ends_at,
-            summary: doss.interviewer_name ? `${a.co} · ${m.panel || 'interview'}` : `${a.co} interview`,
-            medium: m.medium || '', interviewer: doss.interviewer_name || '', panel: m.panel || ''
-          });
-        }
+        if (!out[a.id] || t < new Date(out[a.id].starts_at).getTime()) out[a.id] = ev;
       }
     }
-    // De-dupe identical (app, startsAt) pairs — a linked meeting often mirrors
-    // an interview event — then sort soonest-first.
-    const seen = new Set();
-    const deduped = out.filter(e => {
-      const k = `${e.app.id}|${e.startsAt}`;
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
-    deduped.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
-    return deduped;
+    return out;
   });
 
-  function pickInterviewer(attendees) {
-    if (!attendees) return '';
-    const arr = Array.isArray(attendees) ? attendees : [attendees];
-    const named = arr.find(x => x && typeof x === 'object' && x.name && !/recruit/i.test(x.name || ''));
-    return named?.name || '';
+  function fmtWhen(iso) {
+    const d = new Date(iso);
+    const now = new Date();
+    const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const days = Math.floor((d - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+    if (days === 0) return `today ${time}`;
+    if (days === 1) return `tomorrow ${time}`;
+    if (days < 7) return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   }
 
-  // ── Debrief loop (Phase 3b) ─────────────────────────────────
-  // A past (or undated one-tap) round with no debrief yet → proactive prompt.
-  // Same debrief-able semantics as the detail page.
+  // ── Debrief loop (Phase 3b) — unchanged semantics ───────────
   const pendingDebrief = $derived.by(() => {
     const now = Date.now();
     const due = [];
@@ -171,206 +109,95 @@
       logEvent('debrief_prompt_view', { app_id: Number(p.app.id), surface: 'today' });
     }
   });
-  function openDebrief(p) { goto(`/app/${p.app.id}?debrief=${p.iv.id}`); }
 
-  // "What we learned" — the two most recent saved debriefs, joined to their round.
-  const feelWord = (f) => ({ strong: 'went strong', mixed: 'went so-so', rough: 'was rough' }[f] || '');
-  const accWord = (a) => ({ spot_on: 'prep was spot-on', partly: 'prep was partly right', off: 'prep was off' }[a] || '');
-  const learned = $derived.by(() => {
+  // ── The five pulse categories ───────────────────────────────
+  const EXITS = ['rejected', 'withdrawn', 'closed'];
+  const toPrep   = $derived(apps.filter(a => upcomingByApp[a.id])
+    .sort((a, b) => new Date(upcomingByApp[a.id].starts_at) - new Date(upcomingByApp[b.id].starts_at)));
+  const toDecide = $derived(apps.filter(a => a.status === 'offer' && !upcomingByApp[a.id]));
+  const toNudge  = $derived(apps.filter(a => a.stale && !upcomingByApp[a.id] && a.status !== 'offer')
+    .sort((a, b) => (daysSince(b.raw.applied_at) ?? 0) - (daysSince(a.raw.applied_at) ?? 0)));
+  const waiting  = $derived(apps.filter(a =>
+    !EXITS.includes(a.status) && !upcomingByApp[a.id] && a.status !== 'offer' && !a.stale
+  ).sort((a, b) => (a.status === 'wishlist') - (b.status === 'wishlist')));
+  const exits    = $derived(apps.filter(a => EXITS.includes(a.status)));
+
+  const cats = $derived([
+    { count: toPrep.length,   label: 'to prep',   color: '#e0641f', labelColor: '#16181c', note: toPrep[0] ? fmtWhen(upcomingByApp[toPrep[0].id].starts_at) : 'no interviews booked', group: toPrep },
+    { count: toDecide.length, label: 'to decide', color: '#16a34a', labelColor: '#16181c', note: toDecide[0]?.raw.salary_note || (toDecide.length ? 'offer on the table' : 'no offers yet'), group: toDecide },
+    { count: toNudge.length,  label: 'to nudge',  color: '#b3372a', labelColor: '#16181c', note: toNudge.length ? 'quiet over a week' : 'nothing stalled', group: toNudge },
+    { count: waiting.length,  label: 'waiting',   color: '#16181c', labelColor: '#6f7680', note: 'nothing to do yet', group: waiting },
+    { count: exits.length,    label: 'closed',    color: '#9aa1ab', labelColor: '#6f7680', note: 'kept for the record', group: exits, gray: true }
+  ]);
+
+  // ── One-line rows, in priority order ────────────────────────
+  const rows = $derived.by(() => {
     const out = [];
-    for (const a of apps) {
-      for (const d of (debriefsByApp[a.id] || [])) {
-        const iv = (eventsByApp[a.id] || []).find(x => x.id === d.interview_id);
-        out.push({ app: a, round: (iv?.summary || 'Interview').trim() || 'Interview', d });
-      }
+    for (const a of toPrep) {
+      const ev = upcomingByApp[a.id];
+      out.push({ app: a, kind: 'act', meta: `${a.role} · ${(ev.summary || 'interview').trim()}`,
+        hot: fmtWhen(ev.starts_at), hotColor: '#c05310', border: '#cdddfb',
+        btn: 'Prep now →', btnBg: '#2463eb', btnColor: '#fff', btnBorder: '#2463eb',
+        go: () => goto(`/app/${a.id}#interview-prep`) });
     }
-    out.sort((x, y) => new Date(y.d.updated_at || y.d.created_at) - new Date(x.d.updated_at || x.d.created_at));
-    return out.slice(0, 2);
-  });
-
-  const nextInterview = $derived(upcomingEvents[0] || null);
-  // Dossier for the soonest interview — the source for the insight + tips.
-  const nextDossier = $derived(nextInterview ? dossierByApp[nextInterview.app.id] : null);
-  const nextContent = $derived(nextDossier?.content || null);
-
-  // One-line sourced framing for the insight box (from dossier snapshot).
-  const insightText = $derived.by(() => {
-    const c = nextContent;
-    if (!c) return '';
-    return c.snapshot || c.style?.lead || c.background || '';
-  });
-
-  // "Worth reviewing" — the things that land with this person (3 max).
-  const worthReviewing = $derived.by(() => {
-    const c = nextContent;
-    if (!c || !Array.isArray(c.lands) || c.lands.length === 0) return [];
-    return c.lands.slice(0, 3);
-  });
-
-  // Two quick tips — prefer company watch_fors (grounded loop advice), else
-  // fall back to the remaining "lands". Empty → block omitted.
-  const quickTips = $derived.by(() => {
-    const c = nextContent;
-    if (!c) return [];
-    const wf = c.company?.watch_fors;
-    if (Array.isArray(wf) && wf.length >= 2) return wf.slice(0, 2);
-    if (Array.isArray(c.lands) && c.lands.length >= 5) return c.lands.slice(3, 5);
-    return [];
-  });
-
-  // Meta line: "60 min · Google Meet · Final round".
-  const metaBits = $derived.by(() => {
-    const e = nextInterview;
-    if (!e) return [];
-    const bits = [];
-    if (e.startsAt && e.endsAt) {
-      const mins = Math.round((new Date(e.endsAt) - new Date(e.startsAt)) / 60000);
-      if (mins > 0) bits.push(mins >= 60 && mins % 60 === 0 ? `${mins / 60} hr` : `${mins} min`);
+    for (const a of toDecide) {
+      out.push({ app: a, kind: 'act', meta: `${a.role} · offer`,
+        hot: a.raw.salary_note || 'awaiting your decision', hotColor: '#1d7a4f', border: '#cfe5d2',
+        btn: 'Decide →', btnBg: '#16a34a', btnColor: '#fff', btnBorder: '#16a34a',
+        go: () => goto(`/app/${a.id}`) });
     }
-    if (e.medium) bits.push(e.medium);
-    if (e.panel) bits.push(e.panel);
-    else if (e.summary && !e.panel) bits.push(e.summary);
-    return bits;
+    for (const a of toNudge) {
+      out.push({ app: a, kind: 'act', meta: `${a.role} ·`,
+        hot: `quiet ${daysSince(a.raw.applied_at) ?? 0} days`, hotColor: '#b3372a', border: '#f2d4cf',
+        btn: 'Follow up', btnBg: '#fff', btnColor: '#2463eb', btnBorder: '#cdddfb',
+        go: () => goto(`/app/${a.id}`) });
+    }
+    for (const a of waiting) {
+      const wish = a.status === 'wishlist';
+      out.push({ app: a, kind: 'quiet',
+        meta: wish ? `${a.role} · saved ${fmtRelativeDate(a.raw.created_at)}`
+          : `${a.role} ·${a.status !== 'applied' ? ` ${STATUS_LABEL[a.status].toLowerCase()} ·` : ''} applied ${a.appliedRel}${a.source && a.source !== '—' ? ` via ${a.source}` : ''}`,
+        quiet: wish ? 'apply when ready' : ((daysSince(a.raw.applied_at) ?? 99) < 3 ? 'too early' : 'waiting'),
+        go: () => goto(`/app/${a.id}`) });
+    }
+    for (const a of exits) {
+      const label = a.status === 'closed' ? 'position closed' : a.status;
+      out.push({ app: a, kind: 'exit',
+        meta: `${a.role} · ${label} · ${daysSince(a.raw.updated_at || a.raw.applied_at) ?? 0}d`,
+        go: () => goto(`/app/${a.id}`) });
+    }
+    return out;
   });
 
-  // Agenda — the upcoming events AFTER the lede one (so "later this week" reads
-  // as the rest of the schedule), up to 3. With no lede interview we show the
-  // soonest 3 directly.
-  const agenda = $derived(
-    nextInterview ? upcomingEvents.slice(1, 4) : upcomingEvents.slice(0, 3)
-  );
-
-  function fmtAgendaWhen(iso) {
-    const d = new Date(iso);
-    const day = d.toLocaleDateString(undefined, { weekday: 'short' });
-    const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    return { day, time };
+  async function reopen(e, a) {
+    e.stopPropagation();
+    await api(`/api/applications/${a.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'applied' }) });
+    logEvent('archive_reopened', { app_id: Number(a.id), from: a.status });
+    try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
+    refresh();
   }
 
-  // ── No-interview "What you can do today" suggestions ────────
-  // Built from real signals, priority order, capped at 4. Only includes ones
-  // that actually apply. Each: {spark?, title, sub, cta, go()}.
-  const suggestions = $derived.by(() => {
-    const out = [];
-    // 1) Screen/interview apps with no dossier yet → the AI prep moment.
-    for (const a of apps) {
-      if (!['screen', 'interview'].includes(a.status)) continue;
-      if (dossierByApp[a.id]) continue;
-      out.push({
-        spark: true,
-        title: `Build your ${a.co} playbook`,
-        sub: `${a.role} · ${STATUS_LABEL[a.status].toLowerCase()}`,
-        cta: 'Build playbook',
-        go: () => goto(`/app/${a.id}#interview-prep`)
-      });
+  // ── Noticing card — one honest observation from the data ────
+  const noticing = $derived.by(() => {
+    if (!apps.length) return null;
+    const inPlay = apps.filter(a => !['wishlist', ...EXITS].includes(a.status));
+    const referral = inPlay.filter(a => (a.source || '').toLowerCase().includes('referral'));
+    const refProgressed = referral.filter(a => ['screen', 'interview', 'offer'].includes(a.status));
+    if (referral.length >= 1 && refProgressed.length >= 1) {
+      return { lead: 'Referrals are working:', rest: `${refProgressed.length} of your ${referral.length} referral ${referral.length === 1 ? 'application' : 'applications'} reached a screen or further. Worth asking for one more intro this week.` };
     }
-    // 2) Stale / quiet apps → nudge a follow-up.
-    for (const a of apps) {
-      if (!a.stale) continue;
-      const d = daysSince(a.raw.applied_at);
-      out.push({
-        title: `Follow up on ${a.co}`,
-        sub: `Quiet ${d ?? 0} days — it might be time to reach out`,
-        cta: 'Log a follow-up',
-        go: () => goto(`/app/${a.id}`)
-      });
+    if (toNudge.length >= 2) {
+      return { lead: `${toNudge[0].co} and ${toNudge[1].co} have gone quiet.`, rest: 'No reply in over a week — a direct nudge beats waiting.' };
     }
-    // 3) Offers awaiting a decision.
-    for (const a of apps) {
-      if (a.status !== 'offer') continue;
-      out.push({
-        title: `Decide on the ${a.co} offer`,
-        sub: a.raw.salary_note || 'Waiting on you',
-        cta: 'Review',
-        go: () => goto(`/app/${a.id}`)
-      });
+    if (toNudge.length === 1) {
+      return { lead: `${toNudge[0].co} has gone quiet.`, rest: 'No reply in over a week — a direct nudge beats waiting.' };
     }
-    // 4) Screen/interview apps still missing a hiring manager.
-    for (const a of apps) {
-      if (!['screen', 'interview'].includes(a.status)) continue;
-      if (a.raw.hiring_manager_name) continue;
-      out.push({
-        title: `Add the hiring manager for ${a.co}`,
-        sub: 'We can build your playbook once we know who',
-        cta: 'Add',
-        go: () => goto(`/app/${a.id}`)
-      });
+    const screens = inPlay.filter(a => ['screen', 'interview', 'offer'].includes(a.status)).length;
+    if (inPlay.length >= 3 && screens > 0) {
+      return { lead: `${Math.round((screens / inPlay.length) * 100)}% of your applications got a reply.`, rest: 'The bottleneck is getting replies, not passing rounds — keep the volume up.' };
     }
-    return out.slice(0, 4);
+    return { lead: `${inPlay.length} ${inPlay.length === 1 ? 'application' : 'applications'} in play.`, rest: 'Keep the pipeline moving — add a few more this week.' };
   });
-
-  // ── No-interview "Recently added" — newest apps by created_at ──
-  const recentApps = $derived.by(() => {
-    return [...apps]
-      .filter(a => a.raw.created_at)
-      .sort((a, b) => new Date(b.raw.created_at) - new Date(a.raw.created_at))
-      .slice(0, 5);
-  });
-
-  // ── Pulse (right pane) ──────────────────────────────────────
-  const activeApps = $derived(apps.filter(a => ['applied', 'screen', 'interview', 'offer'].includes(a.status)));
-  const quietApps  = $derived(apps.filter(a => a.stale));
-  // Awaiting = applied/screen with no upcoming event linked.
-  const awaitingApps = $derived(apps.filter(a =>
-    ['applied', 'screen'].includes(a.status) &&
-    !upcomingEvents.some(e => e.app.id === a.id)
-  ));
-
-  const activeCount   = $derived(activeApps.length);
-  const awaitingCount = $derived(awaitingApps.length);
-  const quietCount    = $derived(quietApps.length);
-
-  // Waiting list — longest first (by days since applied).
-  const waiting = $derived(
-    [...awaitingApps].sort((a, b) =>
-      (daysSince(b.raw.applied_at) ?? 0) - (daysSince(a.raw.applied_at) ?? 0)
-    )
-  );
-  function waitDays(a) { return daysSince(a.raw.applied_at) ?? 0; }
-
-  // ── "Your move" tasks — local only, persisted to localStorage ──
-  const TASKS_KEY = 'pursuit_tasks';
-  let tasks = $state([]);
-  let tasksLoaded = false;
-
-  function seedTasks() {
-    if (tasksLoaded) return;
-    tasksLoaded = true;
-    let stored = null;
-    try { stored = JSON.parse(localStorage.getItem(TASKS_KEY) || 'null'); } catch {}
-    if (Array.isArray(stored) && stored.length) { tasks = stored; return; }
-    // Seed from upcoming interviews + the most pressing pipeline facts.
-    const seeded = [];
-    const e = upcomingEvents[0];
-    if (e) {
-      const who = e.interviewer ? e.interviewer.split(' ')[0] : e.app.co;
-      seeded.push({ id: 't-prep', b: `Prep 3 questions for ${who}`, s: `${e.summary} · ${e.app.co}`, due: 'Today', hot: true, done: false });
-    }
-    const offer = apps.find(a => a.status === 'offer');
-    if (offer) seeded.push({ id: 't-offer', b: `Decide on the ${offer.co} offer`, s: offer.raw.salary_note || offer.role, due: 'Soon', hot: true, done: false });
-    const q = quietApps[0];
-    if (q) seeded.push({ id: 't-quiet', b: `Follow up on ${q.co}`, s: `Quiet ${waitDays(q)} days · log it once you reach out`, due: `${waitDays(q)}d`, hot: false, done: false });
-    if (seeded.length === 0) {
-      seeded.push({ id: 't-empty', b: 'Add your next application', s: 'Press ⌘N to log a role you just applied to', due: '', hot: false, done: false });
-    }
-    tasks = seeded;
-    persistTasks();
-  }
-  function persistTasks() {
-    try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); } catch {}
-  }
-  function toggleTask(id) {
-    tasks = tasks.map(t => t.id === id ? { ...t, done: !t.done } : t);
-    persistTasks();
-  }
-  const openTaskCount = $derived(tasks.filter(t => !t.done).length);
-
-  // Advisory footer — only when something has gone quiet.
-  const advisoryNames = $derived(quietApps.slice(0, 2).map(a => a.co));
-  const advisoryLabel = $derived(
-    advisoryNames.length === 2 ? `${advisoryNames[0]} and ${advisoryNames[1]}`
-    : advisoryNames.length === 1 ? advisoryNames[0] : ''
-  );
 
   // ── Greeting ────────────────────────────────────────────────
   const firstName = $derived.by(() => {
@@ -384,7 +211,6 @@
     if (h < 18) return 'Good afternoon';
     return 'Good evening';
   });
-  // "Wednesday · 20 May 2026" — sans, never mono.
   const dateLine = $derived.by(() => {
     const d = new Date();
     const dow = d.toLocaleDateString('en-US', { weekday: 'long' });
@@ -392,474 +218,200 @@
     return `${dow} · ${rest}`;
   });
 
-  function openDetail(id) { goto(`/app/${id}`); }
-  function openBoard() { goto('/app/board'); }
-  function openPlaybook(id) { goto(`/app/${id}#interview-prep`); }
+  function scrollToList() {
+    document.getElementById('list')?.scrollIntoView({ behavior: 'smooth' });
+  }
+  function openDebrief(p) { goto(`/app/${p.app.id}?debrief=${p.iv.id}`); }
+  function openNewApp() { try { window.dispatchEvent(new CustomEvent('pursuit:new-app')); } catch {} }
 </script>
 
-<svelte:head>
-  <title>Today — Pursuit</title>
-</svelte:head>
+<svelte:head><title>Home — Pursuit</title></svelte:head>
 
-<svelte:window onkeydown={onKeydown} />
-
-<div class="topbar">
-  <div class="crumb"><span class="here">Today</span></div>
-  <div class="right">
-    <div class="search">
-      <svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-        <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L13 13"/>
-      </svg>
-      <span>Search applications, people…</span>
-      <span class="kbd">⌘K</span>
-    </div>
-    <button class="btn btn-primary" data-tour="new-app" onclick={() => (showNewModal = true)}>
-      New application <span class="kbd">⌘N</span>
-    </button>
-  </div>
-</div>
-
-<div class="ob ob-alt ob-swap">
-  <!-- ══ LEFT — The Brief ══════════════════════════════════ -->
-  <div class="brief">
-    <div class="brief-in">
-      <div class="brief-date">{dateLine}</div>
-      <div class="brief-head">
-        <h1>{greeting}, <b>{firstName}.</b></h1>
-        {#if !loading}
-          <div class="brief-stats" data-tour="stats">
-            <button class="bstat" onclick={openBoard} title="Applications still active — applied through offer">
-              <span class="bstat-n">{activeCount}</span>
-              <span class="bstat-l">In progress</span>
-            </button>
-            <button class="bstat" onclick={openBoard} title="Applied and waiting to hear back">
-              <span class="bstat-n">{awaitingCount}</span>
-              <span class="bstat-l">Awaiting reply</span>
-            </button>
-            <button class="bstat" class:warn={quietCount > 0} onclick={openBoard} title="No reply in over a week">
-              <span class="bstat-n">{quietCount}</span>
-              <span class="bstat-l">Gone quiet</span>
-            </button>
-          </div>
-        {/if}
+{#if loading}
+  <div class="pg"><p class="loading">Loading your day…</p></div>
+{:else if apps.length === 0}
+  <!-- Empty state — first run, nothing tracked yet -->
+  <div class="empty">
+    <div class="e-date">{dateLine}</div>
+    <h1>{greeting}, {firstName}.</h1>
+    <p class="e-sub">Track your first application and Pursuit starts working — reply nudges, interview prep, the whole picture in one place.</p>
+    <div class="e-cta">
+      <button class="e-drop" onclick={openNewApp}>
+        <span class="e-d1">Paste a job URL, drop a screenshot, or describe the role</span>
+        <span class="e-d2">We fill in the company, role and source for you · ⌘V works right here</span>
+      </button>
+      <div class="e-btns">
+        <button class="e-new" onclick={openNewApp}>New application <span class="nk">⌘N</span></button>
       </div>
-
-      {#if !loading && pendingDebrief}
-        <button type="button" class="db-banner" onclick={() => openDebrief(pendingDebrief)}>
-          <span class="db-spark">✦</span>
-          <span class="db-banner-tx">How did the <b>{(pendingDebrief.iv.summary || 'last').trim() || 'last'}</b> round at <b>{pendingDebrief.app.co}</b> go? A 20-second debrief sharpens your next round's prep.</span>
-          <span class="db-cta">Debrief {@render Arrow()}</span>
-        </button>
-      {/if}
-
-      {#if loading}
-        <p class="lede">Loading your day…</p>
-      {:else if nextInterview}
-        <p class="lede">
-          Today it's your
-          <span class="hot">interview at {nextInterview.app.co}</span>
-          — the {nextInterview.app.role} role{#if nextInterview.interviewer}, one-on-one with {nextInterview.interviewer}{/if}.
-          {#if upcomingEvents.length > 1}{upcomingEvents.length - 1} more {upcomingEvents.length - 1 === 1 ? 'event follows' : 'events follow'} later this week.{/if}
-        </p>
-
-        <div class="kick">{@render Spark()}&nbsp;Prep for today</div>
-
-        {#if insightText}
-          <div class="insight" data-tour="prep">
-            <span class="ic">{@render Spark(15)}</span>
-            <span class="tx">{@html insightText}</span>
-          </div>
-        {/if}
-
-        {#if worthReviewing.length}
-          <div class="brief-sub">Worth reviewing</div>
-          <ul class="brief-review">
-            {#each worthReviewing as item}
-              <li>{@html item}</li>
-            {/each}
-          </ul>
-        {/if}
-
-        {#if quickTips.length}
-          <div class="brief-sub">Two quick tips</div>
-          {#each quickTips as tip}
-            <div class="brief-tip"><span class="sp">{@render Spark()}</span><span>{@html tip}</span></div>
-          {/each}
-        {/if}
-
-        {#if metaBits.length}
-          <div class="meta">
-            {#each metaBits as b, i}
-              {#if i === 0}<b>{b}</b>{:else}<span class="dot"></span>{b}{/if}
-            {/each}
-          </div>
-        {/if}
-
-        <button class="cta" onclick={() => openPlaybook(nextInterview.app.id)}>Open playbook {@render Arrow()}</button>
-      {:else}
-        <p class="lede">Nothing on the calendar today — here's what's worth doing.</p>
-
-        {#if suggestions.length}
-          <div class="kick">{@render Spark()}&nbsp;What you can do today</div>
-          <div class="suggest" data-tour="prep">
-            {#each suggestions as s}
-              <div class="sg" onclick={s.go} role="button" tabindex="0">
-                <span class="sg-ic" class:plain={!s.spark}>
-                  {#if s.spark}{@render Spark(14)}{:else}{@render Dot()}{/if}
-                </span>
-                <span class="sg-tx">
-                  <b>{s.title}</b>
-                  <small>{s.sub}</small>
-                </span>
-                <span class="sg-go">{s.cta} {@render Arrow()}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        {#if recentApps.length}
-          <div class="kick recent-kick">Recently added</div>
-          <div class="recent">
-            {#each recentApps as r (r.id)}
-              <div class="rrow" onclick={() => openDetail(r.id)} role="button" tabindex="0">
-                {#if r.logoSrc}
-                  <img class="row-logo" src={r.logoSrc} alt="" />
-                {:else}
-                  <span class={`row-logo letter ${r.logoCls}`}>{r.coShort}</span>
-                {/if}
-                <span class="rx"><b>{r.co}</b><small>{r.role}</small></span>
-                <StatusPill id={r.id} status={r.status} surface="today_recent" />
-                <span class="ago">added {fmtRelativeDate(r.raw.created_at)}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      {/if}
-
-      {#if !loading && agenda.length}
-        <div class="agenda">
-          <div class="kick">Later this week</div>
-          {#each agenda as e}
-            {@const w = fmtAgendaWhen(e.startsAt)}
-            <div class="ag-row" onclick={() => openDetail(e.app.id)} role="button" tabindex="0">
-              <span class="when"><b>{w.day}</b> {w.time}</span>
-              <span><span class="co">{e.app.co}</span> <span class="role">· {e.app.role}</span></span>
-              <StatusPill id={e.app.id} status={e.app.status} surface="today_agenda" />
-            </div>
-          {/each}
-        </div>
-      {/if}
-
-      {#if !loading}
-        <div class="foot">
-          <button class="foot-link" onclick={openBoard}>View all {apps.length} {apps.length === 1 ? 'application' : 'applications'} {@render Arrow()}</button>
-        </div>
-      {/if}
+    </div>
+    <div class="e-legend">
+      <span>Then this page becomes:</span>
+      <span class="e-li"><span class="dot" style="background:#e0641f"></span>what to prep</span>
+      <span class="e-li"><span class="dot" style="background:#16a34a"></span>what to decide</span>
+      <span class="e-li"><span class="dot" style="background:#b3372a"></span>who to nudge</span>
     </div>
   </div>
-
-  <!-- ══ RIGHT — Where things stand (pulse) ════════════════ -->
-  <div class="pulse-stage">
-    <div class="pulse-tag"><span class="d"></span>Where things stand</div>
-
-
-    <div class="tasks">
-      <div class="pulse-sec">
-        <span class="t">Your move</span>
-        <span class="c">{openTaskCount} to do</span>
-      </div>
-      {#each tasks as t (t.id)}
-        <div class={`task ${t.done ? 'done' : ''}`} onclick={() => toggleTask(t.id)} role="button" tabindex="0">
-          <span class="box"></span>
-          <span class="tx"><b>{t.b}</b><small>{t.s}</small></span>
-          {#if t.due}<span class={`due ${t.hot && !t.done ? 'hot' : ''}`}>{t.due}</span>{/if}
-        </div>
-      {/each}
-      <div class="tasks-note">Personal checklist · stays on this device.</div>
-    </div>
-
-    {#if learned.length}
-      <div class="learned">
-        <div class="pulse-sec">
-          <span class="t">What we learned</span>
-          <span class="c">from your debriefs</span>
-        </div>
-        {#each learned as l (l.d.id)}
-          <div class="ln-row" onclick={() => openDetail(l.app.id)} role="button" tabindex="0">
-            <span class="ln-tx">
-              <b>{l.app.co} · {l.round}</b>
-              <small>{feelWord(l.d.feel)}{l.d.feel && l.d.prep_accuracy ? ' — ' : ''}{accWord(l.d.prep_accuracy)}</small>
-              {#if l.d.topics}<small class="ln-topics">Came up: {l.d.topics}</small>{/if}
+{:else}
+  <!-- 3a header band -->
+  <div class="band">
+    <div class="band-in">
+      <div class="b-date">{dateLine}</div>
+      <h1>{greeting}, {firstName}.</h1>
+      <div class="cells" data-tour="stats">
+        {#each cats as cat (cat.label)}
+          <button class="cell" onclick={scrollToList}>
+            <span class="c-top"><span class="c-n" style="color:{cat.color}">{cat.count}</span><span class="c-l" style="color:{cat.labelColor}">{cat.label}</span></span>
+            <span class="c-logos">
+              {#each cat.group.slice(0, 3) as a, i (a.id)}
+                <span class="c-chip" style="margin-left:{i ? '-7px' : '0'}"><CompanyLogo app={a} size={24} gray={cat.gray || false} /></span>
+              {/each}
+              {#if cat.group.length > 3}<span class="c-extra">+{cat.group.length - 3}</span>{/if}
             </span>
-            <span class="ln-go">{@render Arrow()}</span>
-          </div>
+            <span class="c-note">{cat.note}</span>
+          </button>
         {/each}
-        <div class="tasks-note">Feeds straight into your next round's playbook.</div>
       </div>
-    {/if}
-
-    {#if advisoryLabel}
-      <div class="pulse-foot">
-        <span class="fic">{@render Spark(15)}</span>
-        <span class="ftx"><b>{advisoryLabel} {quietApps.length > 1 ? 'have' : 'has'} gone quiet</b><small>No reply in over a week — it might be a good time to reach out to them directly.</small></span>
-        <button class="pulse-link" onclick={openBoard}>{quietApps.length > 1 ? 'See both' : 'See it'} {@render Arrow()}</button>
-      </div>
-    {/if}
-
-    <div class="pulse-sec waiting-sec">
-      <span class="t">Waiting to hear back</span>
-      <span class="c">longest first</span>
-    </div>
-    <div class="pulse-list">
-      {#if waiting.length === 0}
-        <div class="pulse-empty">Nothing waiting — every open thread has a next step.</div>
-      {:else}
-        {#each waiting as w (w.id)}
-          <div class={`pulse-row ${w.stale ? 'quiet' : ''}`} onclick={() => openDetail(w.id)} role="button" tabindex="0">
-            {#if w.logoSrc}
-              <img class="row-logo" src={w.logoSrc} alt="" />
-            {:else}
-              <span class={`row-logo letter ${w.logoCls}`}>{w.coShort}</span>
-            {/if}
-            <span class="wx"><b>{w.co}</b><small>{STATUS_LABEL[w.status]}</small></span>
-            <span class="days">{waitDays(w)}d</span>
-            <span class="ok"><span class={`okdot ${w.stale ? 'warn' : ''}`}></span></span>
-          </div>
-        {/each}
-      {/if}
     </div>
   </div>
-</div>
 
-<AddApplication bind:open={showNewModal} onCreated={refresh} />
+  <div class="pg">
+    {#if pendingDebrief}
+      <button type="button" class="db-banner" onclick={() => openDebrief(pendingDebrief)}>
+        <span class="db-spark">✦</span>
+        <span class="db-tx">How did the <b>{(pendingDebrief.iv.summary || 'last').trim() || 'last'}</b> round at <b>{pendingDebrief.app.co}</b> go? A 20-second debrief sharpens your next round's prep.</span>
+        <span class="db-cta">Debrief →</span>
+      </button>
+    {/if}
 
-{#snippet Spark(s)}
-  <svg width={s ?? 13} height={s ?? 13} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1l1.5 4.2L14 7l-4.5 1.8L8 13l-1.5-4.2L2 7l4.5-1.8z"/></svg>
-{/snippet}
-{#snippet Arrow()}
-  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 8h9M8 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-{/snippet}
-{#snippet Dot()}
-  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/></svg>
-{/snippet}
+    {#if noticing}
+      <div class="noticing" data-tour="prep">
+        <span class="n-spark">✦</span>
+        <span class="n-tx"><strong>{noticing.lead}</strong> {noticing.rest}</span>
+        <a href="/app/funnel" class="n-more">More in Insights →</a>
+      </div>
+    {/if}
+
+    <div id="list" class="list-hd">
+      <span class="lh-t">Everything · {apps.length}</span>
+      <span class="lh-s">one line each · a button means it needs you · exits at the end</span>
+    </div>
+
+    <div class="rows">
+      {#each rows as r (r.app.id)}
+        {#if r.kind === 'act'}
+          <div class="row act" style="border-color:{r.border}" onclick={r.go} role="button" tabindex="0">
+            <CompanyLogo app={r.app} size={26} />
+            <span class="r-tx"><strong>{r.app.co}</strong> <span class="r-meta">· {r.meta}</span> <strong style="color:{r.hotColor}">{r.hot}</strong></span>
+            <button class="r-btn" style="background:{r.btnBg};color:{r.btnColor};border-color:{r.btnBorder}" onclick={(e) => { e.stopPropagation(); r.go(); }}>{r.btn}</button>
+          </div>
+        {:else if r.kind === 'quiet'}
+          <div class="row quiet" onclick={r.go} role="button" tabindex="0">
+            <CompanyLogo app={r.app} size={22} />
+            <span class="r-tx sm"><strong class="q-co">{r.app.co}</strong> <span class="r-meta">· {r.meta}</span></span>
+            <span class="r-quiet">{r.quiet}</span>
+          </div>
+        {:else}
+          <div class="row exit" onclick={r.go} role="button" tabindex="0">
+            <CompanyLogo app={r.app} size={22} gray />
+            <span class="r-tx sm ex"><strong>{r.app.co}</strong> <span class="r-meta">· {r.meta}</span></span>
+            <button class="r-btn reopen" onclick={(e) => reopen(e, r.app)}>Reopen</button>
+          </div>
+        {/if}
+      {/each}
+    </div>
+  </div>
+{/if}
 
 <style>
-  /* ════ Two-pane Today (Option B, swapped) ════════════════ */
-  /* The page is a flex child of .main (column, overflow hidden). We fill the
-     remaining height and let each pane scroll independently. */
-  .ob {
-    flex: 1; min-height: 0;
-    display: grid; grid-template-columns: 0.92fr 1.08fr;
-    font-family: var(--sans); color: var(--ink);
+  .pg { max-width: 1100px; margin: 0 auto; padding: 32px; width: 100%; box-sizing: border-box; }
+  .loading { color: #8a9099; font-size: 13.5px; }
+
+  /* header band */
+  .band { background: #fff; border-bottom: 1px solid #e8e8e5; }
+  .band-in { max-width: 1100px; margin: 0 auto; padding: 34px 32px 6px; }
+  .b-date { font-size: 13px; color: #8a9099; margin-bottom: 4px; }
+  .band h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 22px; }
+  .cells { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid #eeeeea; }
+  .cell {
+    display: block; padding: 18px 20px 16px; border-right: 1px solid #f0f0ed;
+    background: none; border-top: 0; border-bottom: 0; border-left: 0; cursor: pointer;
+    text-align: left; font-family: inherit;
   }
-  .ob.ob-swap { grid-template-columns: 1.32fr 0.68fr; }
-  .ob.ob-swap .brief { border-right: 1px solid var(--rule); }
+  .cell:last-child { border-right: 1px solid #f0f0ed; }
+  .cell:hover { background: #fafaf8; }
+  .c-top { display: flex; align-items: baseline; gap: 8px; }
+  .c-n { font-size: 30px; font-weight: 700; letter-spacing: -0.03em; }
+  .c-l { font-size: 12.5px; font-weight: 600; }
+  .c-logos { display: flex; align-items: center; margin: 10px 0 5px; min-height: 24px; }
+  .c-chip { display: inline-flex; border-radius: 8px; box-shadow: 0 0 0 2px #fff; }
+  .c-extra { font-size: 11px; font-weight: 600; color: #8a9099; margin-left: 6px; }
+  .c-note { display: block; font-size: 11px; color: #8a9099; }
 
-  /* ── Topbar (matches shell convention) ── */
-  .topbar { display: flex; justify-content: space-between; align-items: center; padding: 0 20px; height: 48px; border-bottom: 1px solid var(--rule); background: var(--surface); flex-shrink: 0; }
-  .crumb .here { font-weight: 500; font-size: 14px; }
-  .right { display: flex; align-items: center; gap: 8px; }
-  .search { display: flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--rule); border-radius: 7px; padding: 5px 10px; font-size: 13px; color: var(--mute); min-width: 280px; }
-  .search .ico { width: 14px; height: 14px; }
-  .search .kbd { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--mute-2); }
-  .btn { background: var(--card); border: 1px solid var(--rule); border-radius: 7px; padding: 6px 11px; font-size: 13px; font-weight: 500; color: var(--ink); cursor: pointer; }
-  .btn-primary { background: var(--accent); border-color: var(--accent-strong); color: white; display: inline-flex; align-items: center; gap: 8px; }
-  .btn-primary .kbd { font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,.75); }
+  /* debrief banner (kept from Phase 3b) */
+  .db-banner { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer;
+    background: #eef4ff; border: 1px solid #cdddfb; border-radius: 12px; padding: 13px 20px; font-family: inherit; margin: 0 0 14px; font-size: 13.5px; color: #4b5158; }
+  .db-banner:hover { border-color: #2463eb; }
+  .db-spark { color: #2463eb; flex: none; }
+  .db-tx { flex: 1; min-width: 0; line-height: 1.4; }
+  .db-tx b { color: #16181c; }
+  .db-cta { flex: none; font-size: 13px; font-weight: 600; color: #2463eb; }
 
-  /* ── LEFT: editorial brief ── */
-  .brief { overflow-y: auto; }
-  .brief-in { max-width: 640px; padding: 44px 40px 56px; }
-  .brief-date { font-size: 13px; color: var(--mute); margin-bottom: 16px; letter-spacing: -0.003em; }
-  .brief h1 { font-size: 26px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.12; margin: 0 0 12px; }
-  .brief h1 b { font-weight: 500; }
-  .lede { font-size: 14.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 30px; max-width: 50ch; }
-  .lede .hot { color: var(--warm-text); font-weight: 500; }
+  /* noticing card */
+  .noticing { display: flex; align-items: center; gap: 12px; border: 1px solid #e8e8e5; background: #fff; border-radius: 12px; padding: 13px 20px; margin-bottom: 32px; font-size: 13.5px; color: #4b5158; }
+  .n-spark { color: #e0641f; flex: none; }
+  .n-tx { min-width: 0; }
+  .n-tx strong { color: #16181c; }
+  .n-more { margin-left: auto; flex: none; font-size: 13px; font-weight: 500; color: #2463eb; text-decoration: none; }
 
-  .brief-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 30px; flex-wrap: nowrap; }
-  .brief-head h1 { margin: 0; white-space: nowrap; }
-  .brief-stats { display: flex; align-items: center; flex-shrink: 0; }
-  .brief-stats .bstat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; cursor: pointer; padding: 0 14px; transition: opacity .12s; }
-  .brief-stats .bstat:first-child { padding-left: 0; }
-  .brief-stats .bstat:last-child { padding-right: 0; }
-  .brief-stats .bstat + .bstat { border-left: 1px solid var(--rule); }
-  .brief-stats .bstat:hover { opacity: 0.65; }
-  .brief-stats .bstat-n { font-size: 23px; font-weight: 500; line-height: 1; letter-spacing: -0.022em; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .brief-stats .bstat-l { font-size: 11px; color: var(--mute); letter-spacing: -0.003em; white-space: nowrap; }
-  .brief-stats .bstat.warn .bstat-n { color: var(--warm-text); }
-
-  .kick { font-size: 11.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mute-2); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
-  .kick::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
-  /* The kicker already draws a hairline — don't double it with the first row's top border. */
-  .suggest .sg:first-child, .recent .rrow:first-child, .agenda .ag-row:first-child { border-top: 0; }
-  .recent-kick { margin-top: 34px; }
-
-  /* No-interview: "What you can do today" — flat hairline rows, same family
-     as the Brief's agenda/tip rows (not chunky cards). */
-  .suggest { display: flex; flex-direction: column; }
-  .sg {
-    display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: center;
-    padding: 13px 2px; border-top: 1px solid var(--rule); cursor: pointer;
-    border-radius: 8px; transition: background .12s;
+  /* list */
+  .list-hd { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .lh-t { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #8a9099; }
+  .lh-s { font-size: 12px; color: #8a9099; }
+  .rows { display: flex; flex-direction: column; gap: 6px; }
+  .row {
+    display: flex; align-items: center; gap: 12px; background: #fff;
+    border: 1px solid #eeeeea; border-radius: 10px; padding: 9px 16px; cursor: pointer;
   }
-  .sg:hover { background: var(--surface-2); }
-  .sg-ic { display: grid; place-items: center; color: var(--accent-text); }
-  .sg-ic.plain { color: var(--mute-2); }
-  .sg-tx { line-height: 1.35; min-width: 0; }
-  .sg-tx b { font-size: 13.5px; font-weight: 500; color: var(--ink); }
-  .sg-tx small { display: block; font-size: 12.5px; color: var(--mute); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sg-go { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 12.5px; font-weight: 500; color: var(--accent-text); }
-
-  /* No-interview: recently added — same hairline-row treatment as .ag-row */
-  .recent { display: flex; flex-direction: column; }
-  .rrow {
-    display: grid; grid-template-columns: 30px 1fr auto auto; gap: 13px; align-items: center;
-    padding: 13px 2px; border-top: 1px solid var(--rule); cursor: pointer;
-    border-radius: 8px; transition: background .12s;
+  .row:hover { border-color: #b9c6e8 !important; }
+  .row.act { padding: 11px 16px; }
+  .row.exit { background: #fbfbf9; opacity: .75; }
+  .r-tx { flex: 1; min-width: 0; font-size: 13.5px; color: #16181c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .r-tx.sm { font-size: 13px; color: #4b5158; }
+  .r-tx .q-co { color: #4b5158; }
+  .r-tx.ex strong { color: #8a9099; }
+  .r-tx.ex { color: #8a9099; }
+  .r-meta { color: #8a9099; }
+  .r-btn {
+    border: 1px solid; border-radius: 8px; padding: 7px 14px; font-size: 12.5px;
+    font-weight: 600; min-width: 126px; text-align: center; flex: none; cursor: pointer;
+    font-family: inherit;
   }
-  .rrow:hover { background: var(--surface-2); }
-  .rx { line-height: 1.3; min-width: 0; }
-  .rx b { font-size: 13.5px; font-weight: 500; }
-  .rx small { display: block; font-size: 12.5px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ago { font-size: 12px; color: var(--mute-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .r-btn.reopen { background: #fbfbf9; color: #8a9099; border-color: #e2e2de; }
+  .r-btn.reopen:hover { color: #4b5158; border-color: #b8bdc4; }
+  .r-quiet { font-size: 11.5px; color: #b8bdc4; min-width: 126px; text-align: center; flex: none; }
 
-  .insight { display: flex; gap: 12px; padding: 15px 16px; background: var(--accent-tint); border-radius: 13px; margin-bottom: 14px; }
-  .insight .ic { color: var(--accent-text); flex-shrink: 0; margin-top: 1px; }
-  .insight .tx { font-size: 13.5px; line-height: 1.55; color: var(--accent-text); }
-  .insight .tx :global(b), .insight .tx :global(em) { font-weight: 600; font-style: normal; }
+  /* empty state */
+  .empty { max-width: 720px; margin: 0 auto; padding: 64px 32px 72px; text-align: center; }
+  .e-date { font-size: 13px; color: #8a9099; margin-bottom: 6px; }
+  .empty h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .e-sub { font-size: 15px; line-height: 1.6; color: #4b5158; margin: 0 auto 28px; max-width: 440px; }
+  .e-cta { display: inline-flex; flex-direction: column; gap: 10px; width: 460px; max-width: 100%; }
+  .e-drop { border: 1.5px dashed #c8ccd2; background: #fff; border-radius: 14px; padding: 28px 24px; cursor: pointer; font-family: inherit; }
+  .e-drop:hover { border-color: #2463eb; }
+  .e-d1 { display: block; font-size: 14.5px; font-weight: 600; margin-bottom: 4px; color: #16181c; }
+  .e-d2 { display: block; font-size: 12.5px; color: #8a9099; }
+  .e-btns { display: flex; align-items: center; gap: 10px; justify-content: center; }
+  .e-new { background: #2463eb; color: #fff; border: 0; border-radius: 9px; padding: 10px 20px; font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .e-new:hover { background: #1a4fc4; }
+  .e-new .nk { opacity: .65; font-weight: 400; }
+  .e-legend { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 44px; font-size: 12.5px; color: #b8bdc4; flex-wrap: wrap; }
+  .e-li { display: flex; align-items: center; gap: 6px; }
+  .e-li .dot { width: 7px; height: 7px; border-radius: 50%; }
 
-  .brief-sub { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); margin: 24px 0 13px; }
-  .brief-review { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
-  .brief-review li { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); padding-left: 25px; position: relative; }
-  .brief-review li :global(b) { font-weight: 600; }
-  .brief-review li::before {
-    content: ""; position: absolute; left: 4px; top: 4px; width: 6px; height: 10px;
-    border: solid var(--accent-text); border-width: 0 1.7px 1.7px 0; transform: rotate(42deg);
-  }
-  .brief-tip { display: flex; gap: 11px; font-size: 13px; line-height: 1.55; color: var(--mute); margin-top: 11px; }
-  .brief-tip .sp { color: var(--warm-text); flex-shrink: 0; margin-top: 2px; }
-  .brief-tip :global(b) { color: var(--ink-2); font-weight: 500; }
-
-  .meta { font-size: 13px; color: var(--mute); margin: 24px 0 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .meta b { color: var(--ink-2); font-weight: 500; }
-  .meta .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--mute-2); }
-
-  .cta { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--ink); color: white; border: none; font-size: 13.5px; font-weight: 500; padding: 11px 18px; border-radius: 10px; cursor: pointer; transition: background .12s; }
-  .cta:hover { background: var(--ink-2); }
-
-  .agenda { margin-top: 36px; }
-  .ag-row { display: grid; grid-template-columns: 70px 1fr auto; gap: 14px; align-items: center; padding: 13px 2px; border-top: 1px solid var(--rule); font-size: 13.5px; cursor: pointer; transition: background .12s; }
-  .ag-row:hover { background: var(--surface-2); }
-  .ag-row .when { font-variant-numeric: tabular-nums; color: var(--mute); }
-  .ag-row .when b { color: var(--ink-2); font-weight: 500; }
-  .ag-row .co { font-weight: 500; }
-  .ag-row .role { color: var(--mute); font-size: 12.5px; }
-
-  .foot { margin-top: 28px; display: flex; justify-content: flex-end; }
-  .foot-link { background: none; border: none; padding: 4px 0; font-family: inherit; font-size: 12.5px; color: var(--mute); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: color .12s; }
-  .foot-link:hover { color: var(--accent-text); }
-
-  /* status pills (agenda) */
-  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); width: max-content; }
-  .pill .pdot { width: 5px; height: 5px; border-radius: 50%; background: var(--mute-2); }
-  .pill.screen { background: var(--accent-tint); color: var(--accent-text); }
-  .pill.screen .pdot { background: var(--accent); }
-  .pill.interview { background: var(--warm-tint); color: var(--warm-text); }
-  .pill.interview .pdot { background: var(--warm); }
-  .pill.offer { background: var(--positive-tint); color: var(--positive-text); }
-  .pill.offer .pdot { background: var(--positive); }
-
-  /* ── RIGHT: pulse ── */
-  .pulse-stage {
-    overflow-y: auto;
-    background:
-      radial-gradient(72% 50% at 50% 0%, oklch(0.97 0.028 258), transparent 70%),
-      var(--surface);
-    display: flex; flex-direction: column; justify-content: flex-start;
-    padding: 40px 40px 46px;
-  }
-  .pulse-tag { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warm-text); display: inline-flex; align-items: center; gap: 7px; margin-bottom: 20px; }
-  .pulse-tag .d { width: 6px; height: 6px; border-radius: 50%; background: var(--warm); box-shadow: 0 0 0 3px var(--warm-tint); }
-
-  .pulse-stats { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--card); border: 1px solid var(--rule); border-radius: 14px; box-shadow: 0 12px 30px -16px rgba(40,40,90,0.22); margin-bottom: 30px; overflow: hidden; }
-  .pulse-stats .st { padding: 18px 16px 16px; text-align: center; position: relative; cursor: pointer; transition: background .12s; }
-  .pulse-stats .st:hover { background: var(--surface-2); }
-  .pulse-stats .st + .st::before { content: ""; position: absolute; left: 0; top: 16px; bottom: 16px; width: 1px; background: var(--rule); }
-  .pulse-stats .num { display: block; font-size: 34px; font-weight: 400; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .pulse-stats .st.warn .num { color: var(--warm-text); }
-  .pulse-stats .lbl { display: block; font-size: 11.5px; color: var(--mute); margin-top: 7px; }
-
-  .pulse-sec { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
-  .pulse-sec .t { font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute-2); }
-  .pulse-sec .c { font-size: 11px; color: var(--mute-2); }
-
-  .pulse-list { display: flex; flex-direction: column; }
-  .pulse-empty { font-size: 12.5px; color: var(--mute); padding: 14px 4px; border-top: 1px solid var(--rule); }
-  .pulse-row { display: grid; grid-template-columns: 30px 1fr auto auto; gap: 12px; align-items: center; padding: 12px 4px; border-top: 1px solid var(--rule); cursor: pointer; border-radius: 8px; transition: background .12s; }
-  .pulse-row:hover { background: var(--surface-2); }
-  .row-logo { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-2); object-fit: contain; padding: 4px; }
-  .row-logo.letter { display: grid; place-items: center; padding: 0; color: var(--ink-2); font-size: 12px; font-weight: 600; }
-  .pulse-row .wx { line-height: 1.3; min-width: 0; }
-  .pulse-row .wx b { font-size: 13.5px; font-weight: 500; }
-  .pulse-row .wx small { display: block; font-size: 12px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pulse-row .days { font-family: var(--mono); font-size: 12.5px; color: var(--mute); font-variant-numeric: tabular-nums; }
-  .pulse-row.quiet .days { color: var(--warm-text); font-weight: 500; }
-  .pulse-row .ok { width: 28px; display: flex; justify-content: center; }
-  .pulse-row .okdot { width: 7px; height: 7px; border-radius: 50%; background: var(--positive); box-shadow: 0 0 0 3px var(--positive-tint); }
-  .pulse-row .okdot.warn { background: var(--warm); box-shadow: 0 0 0 3px var(--warm-tint); }
-
-  .tasks { margin-top: 0; }
-  .tasks .pulse-sec { margin-bottom: 10px; }
-  .waiting-sec { margin-top: 32px; }
-  .task { display: grid; grid-template-columns: 22px 1fr auto; gap: 12px; align-items: center; padding: 11px 4px; border-top: 1px solid var(--rule); cursor: pointer; border-radius: 8px; transition: background .12s; }
-  .task:hover { background: var(--surface-2); }
-  .task .box { width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--rule-strong); background: var(--card); flex-shrink: 0; position: relative; }
-  .task.done .box { background: var(--positive); border-color: var(--positive); }
-  .task.done .box::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid #fff; border-width: 0 1.6px 1.6px 0; transform: rotate(42deg); }
-  .task .tx { line-height: 1.35; min-width: 0; }
-  .task .tx b { font-size: 13.5px; font-weight: 500; }
-  .task.done .tx b { color: var(--mute); text-decoration: line-through; }
-  .task .tx small { display: block; font-size: 12px; color: var(--mute); }
-  .task .due { font-family: var(--mono); font-size: 11.5px; color: var(--mute); white-space: nowrap; }
-  .task .due.hot { color: var(--warm-text); }
-  .tasks-note { font-size: 11px; color: var(--mute-2); margin-top: 12px; padding-left: 4px; }
-
-  .db-banner { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
-    background: var(--accent-tint); border: 1px solid var(--accent-tint-2); border-radius: 10px; padding: 10px 14px; font-family: inherit; margin: 0 0 18px; }
-  .db-banner:hover { border-color: var(--accent); }
-  .db-spark { width: 22px; height: 22px; border-radius: 6px; background: var(--card); color: var(--accent-text); display: grid; place-items: center; flex-shrink: 0; }
-  .db-banner-tx { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-2); line-height: 1.4; }
-  .db-banner-tx b { color: var(--ink); }
-  .db-cta { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--accent-text); }
-
-  .learned { margin-top: 28px; }
-  .ln-row { display: flex; align-items: center; gap: 10px; padding: 11px 4px; border-top: 1px solid var(--rule); cursor: pointer; border-radius: 8px; transition: background .12s; }
-  .ln-row:hover { background: var(--surface-2); }
-  .ln-tx { flex: 1; min-width: 0; line-height: 1.35; }
-  .ln-tx b { font-size: 13.5px; font-weight: 500; }
-  .ln-tx small { display: block; font-size: 12px; color: var(--mute); }
-  .ln-tx .ln-topics { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ln-go { flex-shrink: 0; color: var(--mute-2); display: inline-flex; }
-
-  .pulse-foot { display: flex; align-items: center; gap: 13px; margin-top: 24px; padding: 13px 14px; background: var(--card); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--sh-1); }
-  .pulse-foot .fic { flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: var(--warm-tint); color: var(--warm-text); }
-  .pulse-foot .ftx { flex: 1; font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
-  .pulse-foot .ftx b { font-weight: 600; }
-  .pulse-foot .ftx small { display: block; color: var(--mute); font-size: 11.5px; margin-top: 1px; }
-  .pulse-foot .pulse-link { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12.5px; font-weight: 500; color: var(--ink-2); background: none; border: none; padding: 6px 4px; cursor: pointer; }
-  .pulse-foot .pulse-link:hover { color: var(--ink); }
-
-  /* Mobile — stack the two panes. */
-  @media (max-width: 860px) {
-    .ob, .ob.ob-swap { grid-template-columns: 1fr; }
-    .ob.ob-swap .brief { border-right: 0; border-bottom: 1px solid var(--rule); }
-    .search { display: none; }
-    .brief-in { padding: 28px 22px 40px; }
-    .pulse-stage { padding: 28px 22px 40px; }
-    /* stats were clipped off-screen: let the head wrap and give stats their own row */
-    .brief-head { flex-wrap: wrap; }
-    .brief-head h1 { white-space: normal; }
-    .brief-stats { width: 100%; justify-content: space-between; }
-    .brief-stats .bstat { padding: 0 8px; }
-    .brief-stats .bstat:first-child { padding-left: 0; }
+  @media (max-width: 900px) {
+    .band-in, .pg { padding-left: 16px; padding-right: 16px; }
+    .cells { grid-template-columns: repeat(2, 1fr); }
+    .cell { border-bottom: 1px solid #f0f0ed; }
+    .r-btn, .r-quiet { min-width: 0; }
   }
 </style>

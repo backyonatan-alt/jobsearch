@@ -7,6 +7,7 @@
   import { track, logEvent } from '$lib/analytics.js';
   import GuidedTour from '$lib/GuidedTour.svelte';
   import PrepFirstOnboarding from '$lib/PrepFirstOnboarding.svelte';
+  import AddApplication from '$lib/AddApplication.svelte';
 
   // Beta feedback channel — a pre-addressed email so first users have an
   // obvious way to send notes (Michal's first ask).
@@ -21,6 +22,7 @@
   let onboardMode = $state(null); // 'tour' | 'prep' | null
   let onboardDismissed = $state(false);
   let variantTracked = false;
+  let showNewModal = $state(false);
   // Desktop-only notice for the beta (CSS hides it ≥820px). Dismissal sticks.
   let narrowDismissed = $state(true);
   function dismissNarrow() {
@@ -29,11 +31,15 @@
   }
   $effect(() => { previewMode = isPreview(); });
 
-  // Keep the sidebar count (applications.length) fresh: any mutation anywhere
-  // dispatches `pursuit:refresh`, and we also refetch on tab focus. Without this
-  // the count was fetched once on mount and went stale after add/delete.
+  // Keep the nav count (applications.length) fresh: any mutation anywhere
+  // dispatches `pursuit:refresh`, and we also refetch on tab focus.
   async function refreshApplications() {
     try { applications = await api('/api/applications'); } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+    }
+  }
+  async function refreshMe() {
+    try { me = await api('/api/me'); } catch (e) {
       if (e.message !== 'unauthorized') console.error(e);
     }
   }
@@ -65,17 +71,28 @@
   onMount(() => {
     init();
     try { narrowDismissed = localStorage.getItem('pursuit_narrow_dismissed') === '1'; } catch { narrowDismissed = false; }
-    const onRefresh = () => refreshApplications();
-    const onVis = () => { if (document.visibilityState === 'visible') refreshApplications(); };
+    const onRefresh = () => { refreshApplications(); refreshMe(); };
+    const onVis = () => { if (document.visibilityState === 'visible') onRefresh(); };
+    const onNewApp = () => { showNewModal = true; };
     window.addEventListener('pursuit:refresh', onRefresh);
+    window.addEventListener('pursuit:new-app', onNewApp);
     window.addEventListener('focus', onRefresh);
     document.addEventListener('visibilitychange', onVis);
     return () => {
       window.removeEventListener('pursuit:refresh', onRefresh);
+      window.removeEventListener('pursuit:new-app', onNewApp);
       window.removeEventListener('focus', onRefresh);
       document.removeEventListener('visibilitychange', onVis);
     };
   });
+
+  // ⌘N / Ctrl+N opens the new-application modal from anywhere in the app.
+  function onKeydown(e) {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'n' || e.key === 'N') && !showNewModal) {
+      e.preventDefault();
+      showNewModal = true;
+    }
+  }
 
   // First-run onboarding. The variant (prep-first cold start vs guided tour) comes
   // from me.onboarding_variant; ?tour=1 / ?onboard=prepfirst force one for QA.
@@ -112,87 +129,70 @@
     if (exact) return path === href;
     return path === href || path.startsWith(href + '/');
   }
+  // Detail pages carry their own primary CTA — New application drops to the
+  // outline variant there (design CTA rule: one primary per page).
+  const onDetail = $derived(/^\/app\/\d+/.test(path));
 
   const userInitials = $derived(me?.email
     ? me.email.split('@')[0].slice(0, 2).toUpperCase()
     : '—');
+  const creditsUsed = $derived(me?.prep_credits_used ?? 0);
+  const creditsLimit = $derived(me?.prep_credits_limit ?? 10);
+  const creditsLeft = $derived(Math.max(0, creditsLimit - creditsUsed));
 </script>
 
-<div class="app">
-  <aside class="sidebar">
-    <a class="brand" href="/app">
-      <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
-        <circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.4" opacity="0.65"/>
-        <circle cx="12" cy="12" r="5.5" stroke="currentColor" stroke-width="1.4" opacity="0.9"/>
-        <circle cx="17.5" cy="6.5" r="2.6" fill="currentColor"/>
-      </svg>
-      <span class="name">Pursuit</span>
-    </a>
+<svelte:window onkeydown={onKeydown} />
 
-    <a class="nav-item" class:active={isCurrent('/app', true)} href="/app">
-      <span class="nav-icon">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-          <rect x="2" y="2.5" width="4" height="4" rx="1"/>
-          <rect x="9" y="2.5" width="5" height="4" rx="1"/>
-          <rect x="2" y="9" width="4" height="4.5" rx="1"/>
-          <rect x="9" y="9" width="5" height="4.5" rx="1"/>
+<div class="shell">
+  <header class="topnav">
+    <div class="tn-in">
+      <a class="brand" href="/app">
+        <svg class="brand-mark" viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" stroke="#16181c" stroke-width="2.5"/>
+          <circle cx="12" cy="12" r="4.5" fill="#2463eb"/>
         </svg>
-      </span>
-      <span>Today</span>
-      <span class="nav-count"></span>
-    </a>
-    <a class="nav-item" class:active={isCurrent('/app/board')} href="/app/board">
-      <span class="nav-icon">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-          <rect x="2" y="3" width="3" height="10" rx="0.5"/>
-          <rect x="7" y="3" width="3" height="7" rx="0.5"/>
-          <rect x="12" y="3" width="2" height="5" rx="0.5"/>
-        </svg>
-      </span>
-      <span>Board</span>
-      <span class="nav-count">{applications.length || ''}</span>
-    </a>
-    <a class="nav-item" class:active={isCurrent('/app/funnel')} href="/app/funnel">
-      <span class="nav-icon">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
-          <path d="M2 3h12l-5 6v5l-2-1V9z"/>
-        </svg>
-      </span>
-      <span>Insights</span>
-      <span class="nav-count"></span>
-    </a>
+        <span class="name">Pursuit</span>
+      </a>
 
-    <div class="sidebar-footer">
-      <a class="nav-item feedback-link" href={feedbackHref} onclick={() => logEvent('feedback_click', { surface: 'sidebar' })}>
-        <span class="nav-icon">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+      <nav class="pills">
+        <a class="pill-link" class:active={isCurrent('/app', true)} href="/app">Home</a>
+        <a class="pill-link" class:active={isCurrent('/app/applications') || onDetail} href="/app/applications">
+          Applications {#if applications.length}<span class="ct">{applications.length}</span>{/if}
+        </a>
+        <a class="pill-link" class:active={isCurrent('/app/funnel')} href="/app/funnel">Insights</a>
+      </nav>
+
+      <div class="tn-right">
+        <div class="search" role="presentation">
+          <span class="ico">⌕</span>Search…
+          <span class="kbd">⌘K</span>
+        </div>
+        <button class="new-app" class:outline={onDetail} data-tour="new-app" onclick={() => (showNewModal = true)}>
+          New application <span class="nk">⌘N</span>
+        </button>
+        <div class="credits" title="Prep credits — 1 per generated round brief">
+          ✦ <strong>{creditsLeft}</strong><span class="of">/{creditsLimit}</span>
+        </div>
+        <a class="fb" href={feedbackHref} title="Send feedback" onclick={() => logEvent('feedback_click', { surface: 'topnav' })}>
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
             <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7l-3 2.5V11H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
           </svg>
-        </span>
-        <span>Send feedback</span>
-        <span class="nav-count"></span>
-      </a>
-      <button class="profile" onclick={signOut} title="Sign out">
-        {#if me?.picture_url}
-          <img class="av av-img" src={me.picture_url} alt={me.email ?? ''} referrerpolicy="no-referrer" />
-        {:else}
-          <span class="av">{userInitials}</span>
-        {/if}
-        <span class="who">
-          {me?.email?.split('@')[0] ?? 'Signed in'}
-          <small>{me?.email ?? ''}</small>
-        </span>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.5">
-          <path d="M6 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
+        </a>
+        <button class="avatar" onclick={signOut} title={me?.email ? `${me.email} — sign out` : 'Sign out'}>
+          {#if me?.picture_url}
+            <img src={me.picture_url} alt={me.email ?? ''} referrerpolicy="no-referrer" />
+          {:else}
+            {userInitials}
+          {/if}
+        </button>
+      </div>
     </div>
-  </aside>
+  </header>
 
   <section class="main">
     {#if !narrowDismissed}
       <div class="narrow-note" role="note">
-        <span><strong>Tip:</strong> the full board and editing experience is roomier on a laptop — but prep works great right here.</span>
+        <span><strong>Tip:</strong> the full editing experience is roomier on a laptop — but prep works great right here.</span>
         <button class="nn-x" onclick={dismissNarrow} aria-label="Dismiss">✕</button>
       </div>
     {/if}
@@ -208,6 +208,8 @@
   </section>
 </div>
 
+<AddApplication bind:open={showNewModal} onCreated={refreshApplications} />
+
 {#if onboardMode === 'tour'}
   <GuidedTour onDone={finishOnboarding} seedDemo={(me != null && !me.onboarded_at) || (page.url.searchParams.get('preview') === '1' && forceTour)} />
 {:else if onboardMode === 'prep'}
@@ -215,57 +217,91 @@
 {/if}
 
 <style>
+  .shell {
+    min-height: 100vh; display: flex; flex-direction: column;
+    background: #f6f6f3; color: #16181c;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+  .topnav { background: #fff; border-bottom: 1px solid #e8e8e5; flex-shrink: 0; }
+  .tn-in {
+    max-width: 1160px; margin: 0 auto; display: flex; align-items: center;
+    gap: 20px; padding: 12px 32px;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; flex: none; text-decoration: none; color: #16181c; }
+  .brand .name { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+
+  .pills { display: flex; align-items: center; gap: 4px; }
+  .pill-link {
+    display: flex; align-items: center; gap: 6px; border-radius: 8px;
+    padding: 7px 14px; font-size: 13.5px; color: #4b5158; text-decoration: none;
+    white-space: nowrap;
+  }
+  .pill-link:hover { background: #f0f0ed; }
+  .pill-link.active { background: #16181c; color: #fff; font-weight: 600; }
+  .pill-link .ct { font-size: 11.5px; color: #8a9099; }
+  .pill-link.active .ct { color: #fff; opacity: .6; }
+
+  .tn-right { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
+  .search {
+    display: flex; align-items: center; gap: 8px; border: 1px solid #e8e8e5;
+    border-radius: 8px; padding: 7px 12px; width: 210px; color: #8a9099; font-size: 13px;
+  }
+  .search .kbd { margin-left: auto; font-size: 11px; border: 1px solid #e8e8e5; border-radius: 4px; padding: 1px 5px; }
+  .new-app {
+    background: #2463eb; color: #fff; border: 1px solid #2463eb; border-radius: 8px;
+    padding: 8px 15px; font-size: 13px; font-weight: 600; cursor: pointer;
+    flex: none; font-family: inherit; white-space: nowrap;
+  }
+  .new-app:hover { background: #1a4fc4; }
+  .new-app .nk { opacity: .65; font-weight: 400; margin-left: 3px; }
+  .new-app.outline { background: #fff; color: #4b5158; border-color: #e8e8e5; }
+  .new-app.outline:hover { border-color: #b9c6e8; color: #2463eb; background: #fff; }
+  .new-app.outline .nk { opacity: .55; }
+  .credits { border: 1px solid #e8e8e5; border-radius: 8px; padding: 7px 11px; font-size: 12px; color: #6f7680; flex: none; white-space: nowrap; }
+  .credits strong { color: #16181c; }
+  .credits .of { color: #8a9099; }
+  .fb { color: #8a9099; display: flex; padding: 6px; border-radius: 6px; }
+  .fb:hover { color: #2463eb; background: #f0f0ed; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%; background: #e0641f; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 12px;
+    font-weight: 700; flex: none; border: 0; cursor: pointer; padding: 0; overflow: hidden;
+    font-family: inherit;
+  }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+
   /* Desktop-only beta notice — only shown on narrow viewports. */
   .narrow-note { display: none; }
   @media (max-width: 820px) {
     .narrow-note {
       display: flex; align-items: center; gap: 10px;
-      background: var(--warm-tint); color: var(--warm-text);
-      border-bottom: 1px solid var(--rule);
+      background: #fff7f1; color: #c05310;
+      border-bottom: 1px solid #f0d9c4;
       padding: 9px 14px; font-size: 12.5px; line-height: 1.4;
     }
     .narrow-note strong { font-weight: 600; }
     .narrow-note .nn-x { margin-left: auto; flex-shrink: 0; background: none; border: none;
-      color: var(--warm-text); font-size: 13px; cursor: pointer; padding: 2px 6px; border-radius: 5px; }
+      color: #c05310; font-size: 13px; cursor: pointer; padding: 2px 6px; border-radius: 5px; }
   }
 
   .preview-banner {
-    background: var(--warm-tint);
-    color: var(--warm-text);
-    border-bottom: 1px solid var(--rule);
-    padding: 6px 16px;
-    font-size: 12.5px;
-    display: flex; align-items: center; gap: 8px;
-    font-weight: 500;
+    background: #fff7f1; color: #c05310; border-bottom: 1px solid #f0d9c4;
+    padding: 6px 16px; font-size: 12.5px;
+    display: flex; align-items: center; gap: 8px; font-weight: 500;
   }
-  .preview-banner .pb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warm); flex-shrink: 0; }
+  .preview-banner .pb-dot { width: 8px; height: 8px; border-radius: 50%; background: #e0641f; flex-shrink: 0; }
   .preview-banner strong { font-weight: 600; }
-  .preview-banner .pb-exit { margin-left: auto; color: var(--warm-text); font-weight: 600; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--warm); }
-  .preview-banner .pb-exit:hover { background: var(--warm); color: white; }
+  .preview-banner .pb-exit { margin-left: auto; color: #c05310; font-weight: 600; padding: 2px 10px; border-radius: 99px; border: 1px solid #e0641f; text-decoration: none; }
+  .preview-banner .pb-exit:hover { background: #e0641f; color: white; }
 
-  /* Brand mark: target-style SVG paired with the wordmark, swapping out the
-     old square + dot. The SVG colors itself via currentColor. */
-  :global(.sidebar .brand) {
-    grid-template-columns: 22px 1fr;
-    text-decoration: none;
-  }
-  :global(.sidebar .brand .brand-mark) { color: var(--accent); }
-  :global(.sidebar .brand .name) { color: var(--ink); }
-
-  /* When we have the Google profile picture, render it where the gradient
-     initials square used to live. Same dimensions, just an <img>. */
-  :global(.sidebar .profile .av.av-img) {
-    background: var(--surface-2);
-    object-fit: cover;
-    padding: 0;
-  }
-
-  /* Disabled-looking nav items for the not-yet-built screens. */
-  :global(.sidebar .nav-item[aria-disabled="true"]) {
-    cursor: not-allowed;
-    color: var(--mute);
-  }
-  :global(.sidebar .nav-item[aria-disabled="true"]:hover) {
-    background: transparent;
+  /* Narrow screens: hide the search stub, tighten paddings. */
+  @media (max-width: 900px) {
+    .tn-in { padding: 10px 14px; gap: 10px; flex-wrap: wrap; }
+    .search { display: none; }
+    .credits { display: none; }
+    .brand .name { display: none; }
   }
 </style>
