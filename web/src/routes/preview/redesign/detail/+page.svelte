@@ -20,9 +20,9 @@
     return `background:${bg};border:1px solid ${border};color:${color};font-weight:${active ? 700 : 500}`;
   };
   const PANELISTS = [
-    { init: 'RB', bg: '#eef4ff', color: '#2463eb', name: 'Rotem Bar', role: 'VP Engineering', note: 'Will probe how you partner with platform eng — expect a prioritization case.' },
-    { init: 'NG', bg: '#eef7ef', color: '#1d7a4f', name: 'Nadav Gil', role: 'Head of Design', note: 'Cares about discovery craft — bring one real research-to-ship story.' },
-    { init: 'TA', bg: '#fdf3ec', color: '#c05310', name: 'Tal Amir', role: 'Group PM · peer', note: 'Published on outcome roadmaps — mirror that language.' }
+    { init: 'RB', bg: '#eef4ff', color: '#2463eb', name: 'Rotem Bar', role: 'VP Engineering' },
+    { init: 'NG', bg: '#eef7ef', color: '#1d7a4f', name: 'Nadav Gil', role: 'Head of Design' },
+    { init: 'TA', bg: '#fdf3ec', color: '#c05310', name: 'Tal Amir', role: 'Group PM · peer' }
   ];
 </script>
 
@@ -60,7 +60,7 @@
         <div style="font-size:15px;font-weight:700">Panel tomorrow at 10:00 — 3 interviewers, 90 minutes.</div>
         <div style="font-size:13px;color:#6f7680">Your briefs are ready below. 20 focused minutes tonight is enough.</div>
       </div>
-      <button style="background:#2463eb;color:#fff;border:0;border-radius:9px;padding:10px 18px;font-size:13.5px;font-weight:600;cursor:pointer;flex:none;font-family:inherit" onclick={() => (tab = 'panel')}>Review panel prep →</button>
+      <a href="/preview/redesign/brief" style="background:#2463eb;color:#fff;border-radius:9px;padding:10px 18px;font-size:13.5px;font-weight:600;cursor:pointer;flex:none;display:block">Review panel prep →</a>
     </div>
 
     <div style="display:grid;grid-template-columns:1.9fr 1fr;gap:40px;align-items:start">
@@ -139,28 +139,23 @@
             {:else}
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
                 <div style="font-size:15px;font-weight:700">Panel — 3 interviewers · 90 min</div>
-                <a href="#top" style="margin-left:auto;font-size:13px;font-weight:600;flex:none">Full brief →</a>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
                 {#each PANELISTS as p (p.init)}
-                  <div class="pcard" style="border:1px solid #eeeeea;border-radius:12px;padding:14px">
-                    <div style="width:38px;height:38px;border-radius:50%;background:{p.bg};color:{p.color};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;margin-bottom:10px">{p.init}</div>
+                  <a href="/preview/redesign/brief" class="pcard" style="border:1px solid #eeeeea;border-radius:12px;padding:14px;text-align:center;color:#16181c;display:block">
+                    <div style="width:38px;height:38px;border-radius:50%;background:{p.bg};color:{p.color};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;margin:0 auto 8px">{p.init}</div>
                     <div style="font-size:13.5px;font-weight:700">{p.name}</div>
-                    <div style="font-size:11.5px;color:#8a9099;margin:2px 0 8px">{p.role}</div>
-                    <div style="font-size:12.5px;line-height:1.5;color:#4b5158">{p.note}</div>
-                    <a href="#top" style="display:inline-block;margin-top:10px;font-size:12.5px;font-weight:600">Brief →</a>
-                  </div>
+                    <div style="font-size:11.5px;color:#8a9099">{p.role}</div>
+                  </a>
                 {/each}
               </div>
-              <div style="background:#eef4ff;border:1px solid #cdddfb;border-radius:12px;padding:16px 20px;margin-bottom:14px">
-                <div style="font-size:13px;font-weight:700;color:#2463eb;margin-bottom:8px">✦ What this round grades for</div>
-                <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.55;color:#1e3a6e">
-                  <div>· Judgment under disagreement — the panel is built to disagree with you on purpose.</div>
-                  <div>· Scaling stories with numbers; they push past the first anecdote.</div>
-                  <div>· Asking discovery questions before proposing — their known filter.</div>
+              <a href="/preview/redesign/brief" class="doorbar" style="display:flex;align-items:center;gap:14px;background:#2463eb;border-radius:12px;padding:16px 20px;cursor:pointer;color:#fff">
+                <div style="flex:1">
+                  <div style="font-size:14.5px;font-weight:700">Open the panel brief →</div>
+                  <div style="font-size:12px;opacity:.75">Who grades what, questions to expect, your angle per interviewer, sources · 5 min read</div>
                 </div>
-              </div>
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#8a9099"><span style="font-weight:600;color:#6f7680">Sources</span><a href="#top" style="border:1px solid #e8e8e5;border-radius:14px;padding:3px 10px">Kayma eng blog</a><a href="#top" style="border:1px solid #e8e8e5;border-radius:14px;padding:3px 10px">Glassdoor · VP loop (TLV)</a><a href="#top" style="border:1px solid #e8e8e5;border-radius:14px;padding:3px 10px">Your HM debrief · Jul 8</a><a href="#top" style="border:1px solid #e8e8e5;border-radius:14px;padding:3px 10px">+ 4 more</a></div>
+                <span style="font-size:20px">→</span>
+              </a>
             {/if}
           </div>
         </div>
@@ -222,5 +217,8 @@
   .page :global(a) { color: #2463eb; text-decoration: none; }
   .linkbtn { background: none; border: 0; cursor: pointer; padding: 0; font-family: inherit; }
   .tab { border: 1px solid #e8e8e5; background: #fff; }
+  .pcard { color: #16181c !important; }
   .pcard:hover { border-color: #b9c6e8 !important; }
+  .doorbar { color: #fff !important; }
+  .doorbar:hover { background: #1a4fc4 !important; }
 </style>

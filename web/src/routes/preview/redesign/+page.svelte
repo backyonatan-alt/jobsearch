@@ -3,7 +3,8 @@
     { slug: 'ia', name: 'IA rationale', blurb: 'One home, one list, exits included — the before/after map and every decision with the feedback that drove it.' },
     { slug: 'home', name: 'Home (D v3 — top nav)', blurb: 'Sidebar gone. Pipeline pulse with logos, one noticing card, the one-line everything list with exits at the end.' },
     { slug: 'applications', name: 'Applications', blurb: 'The full list grouped by stage — no board, no chips. "No longer in play" archive at the end with Reopen.' },
-    { slug: 'detail', name: 'Application detail', blurb: 'Live playbook tabs + the "Not them?" wrong-company flow (click it — all 3 states work). Process, people, activity in the right column.' },
+    { slug: 'detail', name: 'Application detail', blurb: 'Live playbook tabs + the "Not them?" wrong-company flow (click it — all 3 states work). The round tab is now a door: name-tiles + "Open the panel brief".' },
+    { slug: 'brief', name: 'Panel brief (new)', blurb: 'The full reading page — one-thing-to-remember, per-interviewer prose with likely asks / your angle / sources, questions to ask them.' },
     { slug: 'insights', name: 'Insights', blurb: 'Mixpanel-grade funnel with drop-off pills, sources with conversion, noticing history.' },
     { slug: 'states', name: 'States', blurb: 'Empty home (first run) + at-credit-limit gate.' }
   ];

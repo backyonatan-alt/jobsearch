@@ -12,6 +12,7 @@
     <a href="/preview/redesign/home" style="color:#8ab0ff">Home</a> ·
     <a href="/preview/redesign/applications" style="color:#8ab0ff">Applications</a> ·
     <a href="/preview/redesign/detail" style="color:#8ab0ff">Detail</a> ·
+    <a href="/preview/redesign/brief" style="color:#8ab0ff">Brief</a> ·
     <a href="/preview/redesign/insights" style="color:#8ab0ff">Insights</a> ·
     <a href="/preview/redesign/states" style="color:#8ab0ff">States</a> ·
     <a href="/preview/redesign/ia" style="color:#8ab0ff">IA</a>
