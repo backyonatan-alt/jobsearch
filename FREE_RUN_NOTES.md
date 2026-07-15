@@ -38,22 +38,21 @@ the moment you notice something; triage later.
 > (all verified against the code) + a batch of ideas. The wrong-company
 > item is another live reproduction of the #1 trust problem.
 
-- `[gap]` **`closed` status is a black hole.** We added `closed` to
-  `STATUSES` but no surface lists closed apps: the board excludes
-  rejected/withdrawn/closed by design (`board/+page.svelte:18`), Today
-  doesn't show them, and the funnel only counts them. Once an app is
-  closed there is no way to see it again, reopen it, or recall what
-  happened. Same is true for rejected/withdrawn — needs an archive/all
-  list view or a board toggle.
+- ~~`[gap]` `closed` status is a black hole~~ → **Shipped Jul 15** (redesign, PR #43 — "No longer in play" archive + Reopen, see below)
 - `[bug][trust]` **Wrong same-named company from a LinkedIn link — again.**
   Pasting a LinkedIn job link still produced a brief for a different
   company with a similar name. User's words: forgivable on manual free
   text, *not* forgivable when the input is a link to a real posting.
   Second external reproduction after Ayelet (Jun 30) — direct evidence
   for the §9 grounding/disambiguation workstream; check whether the
-  Jul 13 trust rails cover this path.
+  Jul 13 trust rails cover this path. **Partially addressed Jul 15:** the
+  redesign ships the user-facing escape hatch ("Not them?" → confirm /
+  re-research with a URL, on every company brief incl. pre-identity ones)
+  — but generation-time grounding accuracy is still the open question
+  (live grounding-eval run still pending the repo API-key secret).
 - ~~`[bug]` New Application modal overflows short screens~~ → **Shipped Jul 13** (PR #41, see below)
 - ~~`[ux]` Board column `+` navigates to Today instead of adding~~ → **Shipped Jul 13** (PR #41, see below)
+- ~~`[idea]` "Maybe no board at all" / redundant right rail / visual top numbers~~ → **Shipped Jul 15** as the full tracker redesign (PR #43, see below)
 - `[idea]` **"Maybe no board at all."** One list with action buttons;
   first page = only what needs doing today, full applied/interviewing
   history at the end. Echoes his next point:
@@ -345,6 +344,36 @@ distinct status.
 ---
 
 ## Shipped (move items here once fixed)
+
+### Tracker redesign — Claude Design handoff implemented (Jul 15 2026, PRs #43 + #44)
+
+- **The whole Jul 13/Jun 30 IA critique shipped as one redesign**, built in
+  Claude Design (project "Pursuit", Fable 5) → pixel ports on
+  `/preview/redesign/*` → live implementation. Sidebar → top nav; Today →
+  Home with a five-cell pipeline pulse (to prep / to decide / to nudge /
+  waiting / closed, logo clusters) + one noticing card + the one-line
+  "Everything" list; Board removed (route redirects) in favor of
+  /app/applications grouped by stage with the **"No longer in play" archive
+  + Reopen** (`archive_reopened`); Insights rebuilt (stepped funnel with
+  drop-off pills, per-source conversion); detail page reframed (tomorrow
+  banner, right column Process/People/Activity); round briefs became a
+  full reading page `/app/[id]/brief/[iid]` (`brief_page_open`, printable).
+- **Trust affordance shipped:** identity strip "Researched for X · domain"
+  + "Not them?" → confirm / re-research (wired to `dossier/refresh
+  {company_url}`), events `identity_confirmed` / `identity_rejected` /
+  `identity_reresearch_submitted`. PR #44 fix: strip synthesizes identity
+  for pre-identity briefs (QA caught it hidden on exactly the briefs that
+  need it most) + credits chip hidden on effectively-unlimited admin
+  accounts.
+- Verified: 44 Playwright checks on a local full stack pre-merge, then
+  13/13 Claude-for-Chrome steps on prod (incl. close → archive → reopen →
+  delete round-trip). QA note for future runs: the identity strip renders
+  after the playbook loads — DOM checks need a wait.
+- Removed with the redesign: right rail ("Your move" localStorage
+  checklist + "Waiting to hear back"), weekly activity histogram.
+- **Watch:** redesign landed mid-BGU-cohort — treat the Jul 16 read's
+  funnel/UX numbers with that in mind; new events worth a look in a few
+  days: `identity_*`, `brief_page_open`, `archive_reopened`.
 
 ### Jul 13 review-session spine fixes (Jul 13 2026, PR #41)
 
