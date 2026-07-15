@@ -4,6 +4,28 @@ Active and completed experiments. Each entry: hypothesis, variants, success metr
 
 ## Active
 
+### practice fake-door (started Jul 15 2026)
+
+**Hypothesis.** Users who read a round brief want to go *deeper* — a practice
+drill built from the brief's likely questions — validating the review-session
+idea (Jul 13, FREE_RUN_NOTES) before we build anything.
+
+**Mechanics.** A fake-door card at the end of every round-brief page
+(`/app/[id]/brief/[iid]`): "✦ Practice this round … [I'd use this →]". Click →
+`practice_interest {app_id}` + a localStorage latch, and the card flips to
+"Noted — practice drills are on our list." One count per user (latch),
+hidden in print. Nothing is built behind the door.
+
+**Instrumentation.** Numerator: distinct users with `practice_interest`.
+Denominator: distinct users with `brief_page_open` (fires on the same page).
+
+**Success metric.** ≥30% of brief readers click within ~2 weeks of real
+traffic → practice drills graduate to the build list (wedge-deepening).
+Under ~10% → park the idea. In between → ask the BGU cohort directly.
+
+**Status.** Live on prod Jul 15. Zero AI cost; read via /admin/adoption
+event table or the aggregate-SQL method.
+
 ### prep-first cold start (started Jun 29 2026)
 
 **Hypothesis.** New users who hit an instant interview Playbook *before* being
