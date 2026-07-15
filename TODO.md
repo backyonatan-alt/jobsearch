@@ -11,6 +11,11 @@ the §9 gate: both trust rails shipped earlier today (PR #38/#39). The live
 grounding-eval workflow was deliberately not run (user call); the cohort tests
 grounding empirically instead.
 
+> ⚠️ **Jul 15:** the full tracker redesign (PR #43/#44 — top nav, one-list
+> Home, Applications archive, brief reading page, "Not them?" flow) deployed
+> mid-cohort. Factor the UI change into the Jul 16 read — funnel/behavior
+> shifts after Jul 15 may be redesign effect, not cohort signal.
+
 **Read plan — pinned (answer once they land):**
 1. **Activation** — of 12, how many create a real app → reach a playbook? (baseline 53%)
 2. **Grounding held live** — any wrong-company / "Not them?" signal? (this IS the live grounding proof we skipped the workflow for)
