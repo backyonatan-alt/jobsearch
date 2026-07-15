@@ -803,7 +803,14 @@
 
   // Shared company brief content — used for the identity strip + Company tab.
   const companyContent = $derived(companyDossier?.content ?? null);
-  const dosIdentity = $derived(companyContent?.identity ?? null);
+  // Pre-identity briefs (generated before the grounding schema) get a
+  // synthesized identity from the app — the "Not them?" escape hatch matters
+  // most for exactly those older briefs.
+  const dosIdentity = $derived.by(() => {
+    if (!companyContent) return null;
+    if (companyContent.identity?.name || companyContent.identity?.domain) return companyContent.identity;
+    return { name: app?.co || '', domain: app?.domain || '', summary: '' };
+  });
   const dosCompany = $derived(companyContent?.company ?? null);
   const companyBlurb = $derived(dosCompany?.blurb ?? '');
   const companyAbout = $derived(dosCompany?.direction ?? dosCompany?.about ?? '');
