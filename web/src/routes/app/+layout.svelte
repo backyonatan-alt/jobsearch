@@ -170,9 +170,11 @@
         <button class="new-app" class:outline={onDetail} data-tour="new-app" onclick={() => (showNewModal = true)}>
           New application <span class="nk">⌘N</span>
         </button>
-        <div class="credits" title="Prep credits — 1 per generated round brief">
-          ✦ <strong>{creditsLeft}</strong><span class="of">/{creditsLimit}</span>
-        </div>
+        {#if creditsLimit <= 1000}
+          <div class="credits" title="Prep credits — 1 per generated round brief">
+            ✦ <strong>{creditsLeft}</strong><span class="of">/{creditsLimit}</span>
+          </div>
+        {/if}
         <a class="fb" href={feedbackHref} title="Send feedback" onclick={() => logEvent('feedback_click', { surface: 'topnav' })}>
           <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
             <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7l-3 2.5V11H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
