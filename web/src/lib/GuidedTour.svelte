@@ -36,14 +36,14 @@
     { kind: 'welcome' },
     { sel: '[data-tour="prep"]', view: 'today', icon: 'spark', title: 'Your AI interview playbook', body: "This is the heart of Pursuit. Ahead of every interview it researches who you'll meet and the company, then builds you a playbook — how they interview, what lands, and smart questions to ask. Walk in ready, not guessing.", place: 'bottom' },
     { sel: '[data-tour="stats"]', view: 'today', icon: 'today', title: 'Your morning briefing', body: "Every day opens here. Pursuit reads your pipeline and tells you what's moving, what's waiting, and what's gone quiet — before you ask.", place: 'bottom' },
-    { sel: '[data-tour="board"]', view: 'board', icon: 'board', title: 'Your whole search, one board', body: "Each role is a card moving across stages. Drag a card to update its status — and it turns red when it's stalled for a week.", place: 'bottom' },
+    { sel: '[data-tour="board"]', view: 'board', icon: 'board', title: 'Your whole search, one list', body: "Every application lives here, grouped by stage — and the ones that leave the race stay at the end, one click from being reopened.", place: 'bottom' },
     { sel: '[data-tour="funnel"]', view: 'insights', icon: 'insights', title: "See what's actually working", body: 'Your reply rate, how far you get, and which sources convert — so you spend effort where it pays off.', place: 'right' },
     { sel: '[data-tour="new-app"]', view: 'today', icon: 'add', title: 'Add your first application', body: "This is where every role starts. Let's add your first one — it takes seconds.", place: 'bottom' },
     { modal: true, sel: '[data-tour="paste"]', view: 'today', icon: 'add', title: 'Paste a link — Pursuit does the rest', body: 'Drop a job URL or a screenshot here and Pursuit reads the company, role, and location for you. Prefer to type it? The fields are right below.', place: 'right', last: true }
   ];
   const N = STEPS.length - 1; // number of real (non-welcome) stops
 
-  const VIEW_PATH = { today: '/app', board: '/app/board', insights: '/app/funnel' };
+  const VIEW_PATH = { today: '/app', board: '/app/applications', insights: '/app/funnel' };
 
   let i = $state(0);
   let target = $state(null);
