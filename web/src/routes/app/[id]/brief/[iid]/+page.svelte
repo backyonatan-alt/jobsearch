@@ -20,6 +20,20 @@
   let refreshErr = $state('');
   let openLogged = null; // fire brief_page_open once per round viewed
 
+  // Fake-door experiment (AB_TESTS.md "practice fake-door"): measures demand
+  // for practice drills before building anything. One click per user counts.
+  const PRACTICE_KEY = 'pursuit_practice_interest';
+  let practiceClicked = $state(false);
+  $effect(() => {
+    try { practiceClicked = localStorage.getItem(PRACTICE_KEY) === '1'; } catch {}
+  });
+  function practiceInterest() {
+    if (practiceClicked) return;
+    practiceClicked = true;
+    try { localStorage.setItem(PRACTICE_KEY, '1'); } catch {}
+    logEvent('practice_interest', { app_id: Number(id) });
+  }
+
   $effect(() => {
     void id; void iid;
     load();
@@ -245,6 +259,18 @@
       </div>
     {/if}
 
+    <!-- practice fake-door (see AB_TESTS.md) -->
+    <div class="practice noprint">
+      {#if practiceClicked}
+        <span class="pr-spark">✓</span>
+        <span class="pr-tx"><strong>Noted — practice drills are on our list.</strong> Your interest helps us decide what to build next.</span>
+      {:else}
+        <span class="pr-spark">✦</span>
+        <span class="pr-tx"><strong>Practice this round.</strong> Turn the likely questions into a drill — answer out loud, get sharper before you walk in.</span>
+        <button class="pr-btn" onclick={practiceInterest}>I'd use this →</button>
+      {/if}
+    </div>
+
     {#if allSources.length}
       <div class="srcs">
         <span class="srcs-lbl">All sources</span>
@@ -334,6 +360,21 @@
   .srcs-lbl { font-weight: 600; color: #6f7680; }
   .src-chip { border: 1px solid #e8e8e5; border-radius: 14px; padding: 3px 10px; background: #fff; color: #2463eb; }
   .src-chip:hover { border-color: #cdddfb; background: #eef4ff; }
+
+  .practice {
+    display: flex; align-items: center; gap: 12px;
+    background: #fff7f1; border: 1px solid #f0d9c4; border-radius: 12px;
+    padding: 14px 20px; margin-top: 18px; font-size: 13.5px; color: #4b5158;
+  }
+  .practice .pr-spark { color: #e0641f; flex: none; }
+  .practice .pr-tx { flex: 1; min-width: 0; line-height: 1.5; }
+  .practice .pr-tx strong { color: #16181c; }
+  .practice .pr-btn {
+    background: #fff; color: #c05310; border: 1px solid #f0d9c4; border-radius: 8px;
+    padding: 7px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+    flex: none; font-family: inherit; white-space: nowrap;
+  }
+  .practice .pr-btn:hover { border-color: #e0641f; }
 
   .foot { font-size: 12.5px; color: #8a9099; margin-top: 22px; border-top: 1px solid #e2e2de; padding-top: 14px; }
   .foot.hook { border-top: 0; padding-top: 0; margin-top: 10px; }
