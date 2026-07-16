@@ -199,7 +199,7 @@
     <p>People who submitted the form on the homepage. Click <b>Invite</b> to promote them to the invite list above — once invited, they can sign in with that Gmail.</p>
   </header>
   {#if pendingInterest.length === 0 && invitedInterest.length === 0}
-    <p class="empty">No access requests yet. Share <code>https://178.105.213.124.nip.io</code> with people you want to invite — they can drop their email from the homepage.</p>
+    <p class="empty">No access requests yet. Share <code>https://pursuit-playbook.com</code> with people you want to invite — they can drop their email from the homepage.</p>
   {:else}
     {#if pendingInterest.length > 0}
       <ul class="ir-list">
