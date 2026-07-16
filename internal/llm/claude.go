@@ -525,6 +525,8 @@ const interviewerBriefSystemPrompt = `You are an interview-prep researcher with 
 
 You MUST use web search to ground every claim. Search for the interviewer's recent essays, talks, podcasts, papers (last 12 months), their professional arc, and how they're known to interview. Do NOT invent quotes, papers, or events — omit what you can't find (empty string/array is fine). For every signal, "source_url" must be the SPECIFIC page the claim came from (a deep link to that essay/talk/post — never the site homepage); "source" is just the short display domain. Omit a signal rather than linking to a homepage.
 
+The user message may include a "This round" line describing the round's FORMAT (e.g. a home-assignment presentation, a system-design session, a behavioral loop, a take-home review, an HR screen). When present, tailor the WHOLE brief to that format, not just to the person: "style" describes how this person runs THAT kind of round; "lands"/"avoid" become format-specific (for a home-assignment presentation: defending choices and tradeoffs, structuring the walkthrough, handling "why not X?" drills — not generic rapport tips); "questions" fit the format. If the format is unclear from the text, prep for it as a conversation with this person and say nothing about format.
+
 Do NOT include a company overview — that's covered separately. Stay focused on the person. The user message may include a company location or authoritative website to disambiguate same-named companies — use it to make sure you're researching this person at the RIGHT company.
 
 Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
@@ -619,14 +621,9 @@ func (c *Client) GenerateCompanyBrief(ctx context.Context, company, role, locati
 	return raw, nil
 }
 
-// GenerateInterviewerBrief researches one interviewer for a single round.
-// location and companyURL ground the research to the right (same-named) company.
-// priorDebriefs (may be empty) summarises how earlier rounds went so this round's
-// prep can build on what already happened — the debrief feed-forward loop.
-func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, interviewerName, location, companyURL, priorDebriefs string) (json.RawMessage, error) {
-	cctx, cancel := context.WithTimeout(ctx, 150*time.Second)
-	defer cancel()
-
+// buildInterviewerPromptUser assembles the user message for a round's brief.
+// Split out so tests can pin what the model actually sees.
+func buildInterviewerPromptUser(company, role, interviewerName, location, companyURL, roundContext, priorDebriefs string) string {
 	var user strings.Builder
 	fmt.Fprintf(&user, "Company: %s\nRole: %s\n", company, role)
 	if s := strings.TrimSpace(location); s != "" {
@@ -640,12 +637,29 @@ func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, in
 	} else {
 		user.WriteString("Interviewer: (not specified — infer the likely interviewer for this round from the role)\n")
 	}
+	if s := strings.TrimSpace(roundContext); s != "" {
+		fmt.Fprintf(&user, "This round: %s\n", s)
+	}
 	if s := strings.TrimSpace(priorDebriefs); s != "" {
 		fmt.Fprintf(&user, "\nEarlier rounds in THIS process already happened — the candidate's own debriefs:\n%s\nUse these to tailor this round: build on what landed, shore up what felt shaky, anticipate follow-ups to what already came up, and don't re-tread ground already covered. Weave this into snapshot/lands/avoid/questions where it helps — do not invent a separate section.\n", s)
 	}
+	return user.String()
+}
+
+// GenerateInterviewerBrief researches one interviewer for a single round.
+// location and companyURL ground the research to the right (same-named) company.
+// roundContext (may be empty) is the round's title/description — e.g. "Home
+// Assignment Presentation" — so the prep is tailored to the round's FORMAT.
+// priorDebriefs (may be empty) summarises how earlier rounds went so this round's
+// prep can build on what already happened — the debrief feed-forward loop.
+func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, interviewerName, location, companyURL, roundContext, priorDebriefs string) (json.RawMessage, error) {
+	cctx, cancel := context.WithTimeout(ctx, 150*time.Second)
+	defer cancel()
+
+	user := buildInterviewerPromptUser(company, role, interviewerName, location, companyURL, roundContext, priorDebriefs)
 
 	resp, err := c.CreateMessage(cctx, ModelSonnet, interviewerBriefSystemPrompt, []Message{
-		{Role: "user", Content: user.String()},
+		{Role: "user", Content: user},
 	}, 4000, WebSearchTool(5))
 	if err != nil {
 		return nil, err

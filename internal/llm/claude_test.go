@@ -56,3 +56,30 @@ func TestTextBlockOmitsSource(t *testing.T) {
 		t.Errorf("TextBlock leaked source field: %s", b)
 	}
 }
+
+// The round's format (e.g. "Home Assignment Presentation") must reach the
+// model — a round with a stated format that generates generic prep is the bug
+// this pins against. Also pins that an empty round context adds no line.
+func TestInterviewerPromptCarriesRoundContext(t *testing.T) {
+	got := buildInterviewerPromptUser(
+		"HiBob", "Senior Product Manager - Core HR", "Adir Nashawi",
+		"Tel Aviv", "https://www.hibob.com",
+		"Home Assignment Presentation — walk through the take-home and defend it",
+		"round 1 went strong",
+	)
+	for _, want := range []string{
+		"Company: HiBob",
+		"Interviewer: Adir Nashawi",
+		"This round: Home Assignment Presentation — walk through the take-home and defend it",
+		"round 1 went strong",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompt missing %q:\n%s", want, got)
+		}
+	}
+
+	plain := buildInterviewerPromptUser("HiBob", "PM", "Adir", "", "", "", "")
+	if strings.Contains(plain, "This round:") {
+		t.Errorf("empty round context should add no line:\n%s", plain)
+	}
+}

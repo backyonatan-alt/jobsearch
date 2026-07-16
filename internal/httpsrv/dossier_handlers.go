@@ -344,12 +344,21 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Feed-forward: fold in debriefs from rounds that happened before this one.
-	var priorDebriefs string
+	// roundContext carries the round's title/description (e.g. "Home Assignment
+	// Presentation") so the prep is tailored to the round's format, not generic.
+	var priorDebriefs, roundContext string
 	if round != nil {
 		priorDebriefs = s.priorDebriefsContext(gctx, appID, round.StartsAt)
+		roundContext = strings.TrimSpace(round.Summary)
+		if d := strings.TrimSpace(deref(round.Description)); d != "" {
+			if roundContext != "" {
+				roundContext += " — "
+			}
+			roundContext += truncateRunes(d, 500)
+		}
 	}
 
-	content, gerr := s.LLM.GenerateInterviewerBrief(gctx, app.Company, app.Role, req.InterviewerName, loc, req.CompanyURL, priorDebriefs)
+	content, gerr := s.LLM.GenerateInterviewerBrief(gctx, app.Company, app.Role, req.InterviewerName, loc, req.CompanyURL, roundContext, priorDebriefs)
 	if gerr != nil {
 		s.failGenerate(w, gctx, u.ID, start, gerr)
 		return
@@ -533,4 +542,14 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// truncateRunes caps a string at n runes — calendar-invite descriptions can be
+// long boilerplate; the round context only needs the head.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
