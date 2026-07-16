@@ -29,6 +29,28 @@ calendar days to show. Reminder trigger set to fire into the session ~Jul 16.
 Read method: read-only aggregate over the deploy key (as Jul 7/12) or the admin
 console (`/admin/adoption`, `/admin/invite-funnel`).
 
+> **⛔ Jul 16 read = ZERO.** Read-only aggregate (throwaway backup.yml override,
+> as Jul 7/12; branch deleted). **0 new signups since Jul 13 on ANY domain**
+> (BGU/Gmail/other all 0; total users still 46; no `@bgu.ac.il` user ever). Not
+> a domain-mismatch artifact — nobody came. **Go/no-go: NO-GO on widening** — but
+> it's "no signal," not "product failed."
+>
+> **Leading hypothesis: the link, not the students.** `https://178.105.213.124.nip.io`
+> is a raw IP on wildcard DNS — exactly what (a) university Google-Workspace spam
+> filters quarantine (the email may never have reached inboxes) and (b) makes a
+> student hesitate to "Sign in with Google" on an unknown raw-IP site. STRATEGY
+> already flags this raw-IP URL as a "trust contradiction" — it's now plausibly
+> suppressing *distribution*, not just payments.
+> Can't fully rule out a broken signup/OAuth after the Jul 15 redesign, BUT
+> Jul 13–14 were also zero (pre-redesign) → dominant factor is no inbound, not a
+> regression. Still worth a 30-sec "can a new Google account still sign up?" check.
+>
+> **Next steps (cheap, ordered):** (1) check delivery — ask one student "did it
+> land? check spam", or look for a bounce; (2) sanity-check signup works on prod;
+> (3) **buy the domain (~$10)** — already a §7 prerequisite; fixes deliverability
+> + trust, then re-send. Re-read armed ~Jul 20; if still zero after a confirmed
+> delivery, it's the link/domain, not the product.
+
 ## ✅ Jul 13 2026 — Phase A trust rails (§9) — first two gates shipped
 
 The Jul 12 re-read's fork said: activation holds, so the next lever is
