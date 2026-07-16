@@ -1,11 +1,9 @@
 name: backup
 
-# TEMP OVERRIDE (branch cohort-read-jul16) — read-only aggregate cohort read.
-# This is NOT the real backup; it's the Jul-16 BGU-cohort read, run the same way
-# as the Jul 7/12 reads: override backup.yml on a throwaway branch, dispatch it
-# against that branch, read the (aggregate-only) logs, delete the branch. main's
-# backup.yml is untouched. Query is strictly SELECT/COUNT — no mutations, no PII
-# in output (counts and dates only; cohort selected by university domain).
+# TEMP OVERRIDE (branch cohort-read-jul16) — read-only aggregate cohort read v2.
+# Disambiguates "no students came" from "students signed in with a personal
+# Gmail" (invite went to @post.bgu.ac.il but sign-in is Google OAuth). Aggregate
+# buckets only — no individual emails. main's backup.yml is untouched.
 
 on:
   workflow_dispatch:
@@ -21,58 +19,35 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Read-only cohort aggregates
+      - name: Read-only signup disambiguation
         run: |
           cat > /tmp/q.sql <<'SQL'
-          WITH cohort AS (
-            SELECT id, created_at, prep_credits_used, prep_credits_limit
-            FROM users
-            WHERE lower(email) LIKE '%@post.bgu.ac.il'
-              AND created_at >= '2026-07-13'
+          WITH n AS (
+            SELECT id, lower(email) em, created_at FROM users WHERE created_at >= '2026-07-13'
           )
-          SELECT 'cohort_signed_in'                 AS metric, count(*)::text AS value FROM cohort
-          UNION ALL SELECT 'signups_by_day', coalesce(string_agg(d||':'||n,' '),'-') FROM (
-            SELECT date(created_at)::text d, count(*)::text n FROM cohort GROUP BY 1 ORDER BY 1) t
-          UNION ALL SELECT 'created_real_app_users', count(DISTINCT a.user_id)::text
-            FROM applications a JOIN cohort c ON c.id=a.user_id
-            WHERE coalesce(a.notes,'') NOT LIKE '%[demo]%'
-          UNION ALL SELECT 'reached_playbook_users', count(DISTINCT a.user_id)::text
-            FROM dossiers d JOIN applications a ON a.id=d.application_id JOIN cohort c ON c.id=a.user_id
-          UNION ALL SELECT 'pf_prompt_view_users', count(DISTINCT e.user_id)::text
-            FROM events e JOIN cohort c ON c.id=e.user_id WHERE e.name='prepfirst_prompt_view'
-          UNION ALL SELECT 'pf_submit_users', count(DISTINCT e.user_id)::text
-            FROM events e JOIN cohort c ON c.id=e.user_id WHERE e.name='prepfirst_submit'
-          UNION ALL SELECT 'pf_generate_ok_users', count(DISTINCT e.user_id)::text
-            FROM events e JOIN cohort c ON c.id=e.user_id WHERE e.name='prepfirst_generate_ok'
-          UNION ALL SELECT 'pf_generate_error_events', count(*)::text
-            FROM events e JOIN cohort c ON c.id=e.user_id WHERE e.name='prepfirst_generate_error'
-          UNION ALL SELECT 'dossier_open_users', count(DISTINCT e.user_id)::text
-            FROM events e JOIN cohort c ON c.id=e.user_id WHERE e.name='dossier_open'
-          UNION ALL SELECT 'GROUNDING_notthem_users', count(DISTINCT e.user_id)::text
-            FROM events e JOIN cohort c ON c.id=e.user_id
-            WHERE e.name IN ('identity_rejected','identity_reresearch_submitted','reground')
-          UNION ALL SELECT 'GROUNDING_notthem_events', count(*)::text
-            FROM events e JOIN cohort c ON c.id=e.user_id
-            WHERE e.name IN ('identity_rejected','identity_reresearch_submitted','reground')
-          UNION ALL SELECT 'identity_confirmed_events', count(*)::text
-            FROM events e JOIN cohort c ON c.id=e.user_id WHERE e.name='identity_confirmed'
-          UNION ALL SELECT 'retention_multiday_users', count(*)::text FROM (
-            SELECT e.user_id FROM events e JOIN cohort c ON c.id=e.user_id
-            GROUP BY e.user_id HAVING count(DISTINCT date(e.created_at)) >= 2) t
-          UNION ALL SELECT 'debrief_prompt_view_users', count(DISTINCT e.user_id)::text
-            FROM events e JOIN cohort c ON c.id=e.user_id WHERE e.name='debrief_prompt_view'
-          UNION ALL SELECT 'debrief_saved_rows', count(*)::text
-            FROM debriefs d JOIN cohort c ON c.id=d.user_id
-          UNION ALL SELECT 'total_prep_credits_used', coalesce(sum(prep_credits_used),0)::text FROM cohort
-          UNION ALL SELECT 'max_prep_credits_used', coalesce(max(prep_credits_used),0)::text FROM cohort
-          UNION ALL SELECT 'users_at_credit_cap', count(*)::text FROM cohort
-            WHERE prep_credits_limit < 1000 AND prep_credits_used >= prep_credits_limit;
+          SELECT 'new_users_total_since_jul13' AS metric, count(*)::text AS value FROM n
+          UNION ALL SELECT 'new_by_day', coalesce(string_agg(d||':'||c,' '),'-') FROM (
+            SELECT date(created_at)::text d, count(*)::text c FROM n GROUP BY 1 ORDER BY 1) t
+          UNION ALL SELECT 'new_bgu_domain',  count(*)::text FROM n WHERE em LIKE '%bgu.ac.il'
+          UNION ALL SELECT 'new_gmail',       count(*)::text FROM n WHERE em LIKE '%@gmail.com'
+          UNION ALL SELECT 'new_other',       count(*)::text FROM n
+            WHERE em NOT LIKE '%bgu.ac.il' AND em NOT LIKE '%@gmail.com'
+          UNION ALL SELECT 'any_bgu_users_alltime', count(*)::text FROM users
+            WHERE lower(email) LIKE '%bgu.ac.il'
+          UNION ALL SELECT 'total_users_alltime', count(*)::text FROM users
+          UNION ALL SELECT 'new_users_created_app', count(DISTINCT a.user_id)::text
+            FROM applications a JOIN n ON n.id=a.user_id WHERE coalesce(a.notes,'') NOT LIKE '%[demo]%'
+          UNION ALL SELECT 'new_users_reached_playbook', count(DISTINCT a.user_id)::text
+            FROM dossiers d JOIN applications a ON a.id=d.application_id JOIN n ON n.id=a.user_id
+          UNION ALL SELECT 'new_users_notthem_events', count(*)::text
+            FROM events e JOIN n ON n.id=e.user_id
+            WHERE e.name IN ('identity_rejected','identity_reresearch_submitted','reground');
           SQL
           scp -o StrictHostKeyChecking=no /tmp/q.sql "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/cohort_q.sql"
-          echo "=========== BGU COHORT READ (Jul 16) ==========="
+          echo "=========== SIGNUP DISAMBIGUATION (Jul 16) ==========="
           ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             chmod 644 /tmp/cohort_q.sql
             sudo -u postgres psql jobsearch -A -F"|" -v ON_ERROR_STOP=1 -f /tmp/cohort_q.sql
             rm -f /tmp/cohort_q.sql
           '
-          echo "================================================"
+          echo "====================================================="
