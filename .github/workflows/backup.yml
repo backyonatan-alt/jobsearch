@@ -1,23 +1,17 @@
 name: backup
 
-# Nightly Postgres backup: pg_dump on the VM (last 7 kept locally for fast
-# restores) + an ENCRYPTED copy stored off-VM as a workflow artifact.
-#
-# The repo is PUBLIC, so artifacts are downloadable by anyone — the dump is
-# always encrypted before upload (AES-256, PBKDF2). The passphrase is
-# BACKUP_PASSPHRASE if that secret is set, otherwise it's derived from
-# DEPLOY_SSH_KEY (sha256 of the secret's base64 value). Restore instructions:
-# deploy/README.md "Backups & restore".
+# TEMP OVERRIDE (branch cohort-read-jul20) — read-only aggregate cohort read.
+# Jul 20 re-read of the BGU student invite: Jul 13 send (raw-IP link, zero) +
+# Jul 16 re-send (pursuit-playbook.com). Same throwaway pattern as Jul 7/12/16:
+# override backup.yml on a branch, dispatch against it, read logs, delete the
+# branch — main untouched. SELECT/COUNT only; counts and dates, no PII.
 
 on:
-  schedule:
-    - cron: '23 2 * * *'
   workflow_dispatch:
 
 jobs:
-  backup:
+  cohort_read:
     runs-on: ubuntu-latest
-    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     steps:
       - name: Install SSH key
         run: |
@@ -26,58 +20,55 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Dump on the VM + verify TOC + rotate last 7
-        # pg_restore runs on the VM (same Postgres version as pg_dump) — the
-        # runner's client can be older and unable to read the archive header.
+      - name: Read-only cohort aggregates
         run: |
+          cat > /tmp/q.sql <<'SQL'
+          WITH n AS (
+            SELECT id, lower(email) em, created_at, prep_credits_used, prep_credits_limit
+            FROM users WHERE created_at >= '2026-07-13'
+          )
+          SELECT 'new_users_since_jul13' AS metric, count(*)::text AS value FROM n
+          UNION ALL SELECT 'new_by_day', coalesce(string_agg(d||':'||c,' '),'-') FROM (
+            SELECT date(created_at)::text d, count(*)::text c FROM n GROUP BY 1 ORDER BY 1) t
+          UNION ALL SELECT 'bucket_bgu',   count(*)::text FROM n WHERE em LIKE '%bgu.ac.il'
+          UNION ALL SELECT 'bucket_gmail', count(*)::text FROM n WHERE em LIKE '%@gmail.com'
+          UNION ALL SELECT 'bucket_other', count(*)::text FROM n
+            WHERE em NOT LIKE '%bgu.ac.il' AND em NOT LIKE '%@gmail.com'
+          UNION ALL SELECT 'created_real_app_users', count(DISTINCT a.user_id)::text
+            FROM applications a JOIN n ON n.id=a.user_id
+            WHERE coalesce(a.notes,'') NOT LIKE '%[demo]%'
+          UNION ALL SELECT 'reached_playbook_users', count(DISTINCT a.user_id)::text
+            FROM dossiers d JOIN applications a ON a.id=d.application_id JOIN n ON n.id=a.user_id
+          UNION ALL SELECT 'pf_view_users', count(DISTINCT e.user_id)::text
+            FROM events e JOIN n ON n.id=e.user_id WHERE e.name='prepfirst_prompt_view'
+          UNION ALL SELECT 'pf_submit_users', count(DISTINCT e.user_id)::text
+            FROM events e JOIN n ON n.id=e.user_id WHERE e.name='prepfirst_submit'
+          UNION ALL SELECT 'pf_ok_users', count(DISTINCT e.user_id)::text
+            FROM events e JOIN n ON n.id=e.user_id WHERE e.name='prepfirst_generate_ok'
+          UNION ALL SELECT 'pf_error_events', count(*)::text
+            FROM events e JOIN n ON n.id=e.user_id WHERE e.name='prepfirst_generate_error'
+          UNION ALL SELECT 'GROUNDING_notthem_users', count(DISTINCT e.user_id)::text
+            FROM events e JOIN n ON n.id=e.user_id
+            WHERE e.name IN ('identity_rejected','identity_reresearch_submitted')
+          UNION ALL SELECT 'identity_confirmed_events', count(*)::text
+            FROM events e JOIN n ON n.id=e.user_id WHERE e.name='identity_confirmed'
+          UNION ALL SELECT 'retention_multiday_users', count(*)::text FROM (
+            SELECT e.user_id FROM events e JOIN n ON n.id=e.user_id
+            GROUP BY e.user_id HAVING count(DISTINCT date(e.created_at)) >= 2) t
+          UNION ALL SELECT 'debrief_view_users', count(DISTINCT e.user_id)::text
+            FROM events e JOIN n ON n.id=e.user_id WHERE e.name='debrief_prompt_view'
+          UNION ALL SELECT 'debrief_saved_rows', count(*)::text
+            FROM debriefs d JOIN n ON n.id=d.user_id
+          UNION ALL SELECT 'credits_used_total', coalesce(sum(prep_credits_used),0)::text FROM n
+          UNION ALL SELECT 'users_at_cap', count(*)::text FROM n
+            WHERE prep_credits_limit < 1000 AND prep_credits_used >= prep_credits_limit
+          UNION ALL SELECT 'total_users_alltime', count(*)::text FROM users;
+          SQL
+          scp -o StrictHostKeyChecking=no /tmp/q.sql "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/cohort_q.sql"
+          echo "=========== BGU COHORT RE-READ (Jul 20) ==========="
           ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
-            set -e
-            sudo install -d -o postgres -g postgres -m 700 /var/backups/pursuit
-            ts=$(date -u +%Y%m%d-%H%M%S)
-            f=/var/backups/pursuit/pursuit-$ts.dump
-            sudo -u postgres sh -c "pg_dump --format=custom jobsearch > $f"
-            sudo -u postgres pg_restore --list "$f" > /tmp/backup-toc.txt
-            for t in users applications interviews dossiers debriefs events invited_emails; do
-              grep -q "TABLE DATA public $t " /tmp/backup-toc.txt || { echo "missing table in dump: $t"; exit 1; }
-            done
-            echo "dump OK: $(grep -c "TABLE DATA" /tmp/backup-toc.txt) TABLE DATA entries"
-            rm -f /tmp/backup-toc.txt
-            sudo -u postgres sh -c "ls -1t /var/backups/pursuit/pursuit-*.dump | tail -n +8 | xargs -r rm --"
-            sudo -u postgres ls -lh /var/backups/pursuit/
+            chmod 644 /tmp/cohort_q.sql
+            sudo -u postgres psql jobsearch -A -F"|" -v ON_ERROR_STOP=1 -f /tmp/cohort_q.sql
+            rm -f /tmp/cohort_q.sql
           '
-
-      - name: Fetch latest dump
-        run: |
-          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            'sudo -u postgres sh -c "cat \$(ls -1t /var/backups/pursuit/pursuit-*.dump | head -1)"' \
-            > pursuit.dump
-          ls -l pursuit.dump
-
-      - name: Sanity-check the fetched copy
-        run: |
-          test "$(stat -c%s pursuit.dump)" -gt 10000 || { echo "dump suspiciously small"; exit 1; }
-          head -c5 pursuit.dump | grep -q "PGDMP" || { echo "not a pg_dump custom archive"; exit 1; }
-
-      - name: Encrypt (never upload plaintext — public repo)
-        env:
-          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: |
-          if [ -n "$BACKUP_PASSPHRASE" ]; then
-            PASS="$BACKUP_PASSPHRASE"
-          else
-            PASS=$(printf %s "$DEPLOY_SSH_KEY" | sha256sum | cut -d' ' -f1)
-          fi
-          export PASS
-          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
-            -in pursuit.dump -out pursuit.dump.enc -pass env:PASS
-          rm -f pursuit.dump
-          ls -l pursuit.dump.enc
-
-      - name: Upload encrypted artifact (30-day retention)
-        uses: actions/upload-artifact@v4
-        with:
-          name: db-backup-${{ github.run_id }}
-          path: pursuit.dump.enc
-          retention-days: 30
-          if-no-files-found: error
+          echo "==================================================="
