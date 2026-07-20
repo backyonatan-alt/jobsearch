@@ -51,6 +51,25 @@ console (`/admin/adoption`, `/admin/invite-funnel`).
 > + trust, then re-send. Re-read armed ~Jul 20; if still zero after a confirmed
 > delivery, it's the link/domain, not the product.
 
+> **🟢 Jul 20 re-read: the domain worked.** (Domain bought + re-send with
+> `pursuit-playbook.com` went out Jul 16 eve.) **2 new signups** — Jul 19 + Jul 20,
+> both Gmail (expected: OAuth, students use personal accounts; 0 stray "other").
+> Same email, same audience, only the link changed: raw-IP send → 0 in 3 days;
+> real-domain send → 2, landing on the first two working days after the IL
+> weekend. **1 of 2 already created a real app AND reached a playbook** (~50%,
+> in line with the 53% baseline), zero generate errors, zero wrong-company
+> signals, spend sane (1 credit). Retention/debrief: too early (they arrived
+> yesterday/today).
+>
+> **Call: cautious GO.** The delivery/trust blocker is fixed; the funnel works
+> end-to-end on the new domain. Don't blast yet — the cohort is 3 working-days
+> young and more of the 12 may still trickle in. **Widen mid-week (~Jul 22):**
+> next student batch / LinkedIn post #2 with the new domain. Watch: does signup
+> #2 (arrived today) reach a playbook; first debrief from a student.
+> Note: `prepfirst_submit`/`generate_ok` read 0 while a playbook exists —
+> post-redesign the funnel events may undercount; verify instrumentation before
+> trusting prepfirst rates.
+
 ## ✅ Jul 13 2026 — Phase A trust rails (§9) — first two gates shipped
 
 The Jul 12 re-read's fork said: activation holds, so the next lever is
