@@ -287,7 +287,7 @@ For a *new* user-owned project this constraint may not apply — but **the habit
 4. 2-minute adversarial pass: list the failure modes that would look dumb.
 5. Merge → post-deploy spot check.
 6. Add a GA4 (or equivalent) event for any user interaction worth measuring.
-7. **Every outbound production link carries a `?src=` tag** (emails, posts, DMs — e.g. `/?src=li`, `/?src=alum`). Never hand the user a bare URL for distribution; an untagged send is an unattributable cohort (Aug 4 2026: first 100-student email went out bare — cohort lost to `(direct)`).
+7. **Every outbound production link carries a `?src=` tag AND matching `utm_source`/`utm_medium`** (e.g. `/?src=alum&utm_source=alum&utm_medium=email`). `?src=` feeds the first-party `login` event; GA4 attribution only reads `utm_*`, so `src` alone never shows up in GA source dimensions (confirmed Aug 5 2026). Never hand the user a bare URL for distribution; an untagged send is an unattributable cohort (Aug 4 2026: first 100-student email went out bare — cohort lost to `(direct)`).
 8. If something ships broken, update this file's checklist so the bug class can't recur.
 
 ### Local preview is mandatory before any UI deploy (locked May 26 2026)

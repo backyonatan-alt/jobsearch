@@ -24,13 +24,28 @@ rule #7); the corrected `?src=alum` link went into the follow-up.
   `dossier_refresh` 9/5, one `debrief_save`. Zero `beta_interest`, 1
   returning pre-cohort user.
 - **Watch next (~Aug 7–8):** do the 10 no-app signups come back? Does user
-  124 (Aug 5, 1 app, 22 events, no playbook yet) convert? GA4 check still
-  open: homepage sessions Aug 4–5 vs 14 signups ⇒ click→signin drop-off.
+  124 (Aug 5, 1 app, 22 events, no playbook yet) convert? Does
+  `prepfirst_reground_submit` rescue SE7EN-class failures (recovery shipped
+  PR #51)?
 
-**Candidate next move (not decided):** prepfirst error recovery — on
-"not enough info" offer "add the company website" (the re-ground control
-already exists post-activation, but not at the cold-start step where the
-whole cohort hits it).
+**GA4 read (Aug 5, manual pull via Claude-for-Chrome):** full funnel =
+**~100 emailed → 38 first-visits (38%) → 14 signups (37%) → 3 playbooks (21%)**.
+Top + mid funnel healthy; the leak was the generate step (now patched, PR #51).
+Details: Direct 28–29 = the bare-send cohort; `accounts.google.com/referral` 9
+is the OAuth bounce artifact, not a real referrer; `google/organic` 8 =
+students searching the name; **`/privacy` read by 9/38 visitors** (the trust
+page earns its keep); GA `login` 16/13 ≈ first-party 17/14 (rails agree);
+prior week baseline was 18 users total. **No "alum" row in GA** — correct:
+GA4 attribution reads `utm_*` only, `?src=` is first-party-only (see updated
+playbook rule #7). Next lever after the re-read: the 24 visitors who bounced
+at Google sign-in (38→14).
+
+~~**Candidate next move (not decided):** prepfirst error recovery — on
+"not enough info" offer "add the company website"~~ → **SHIPPED Aug 5 (PR
+#51):** error card offers a Company-website field, retries the same app's
+brief with `company_url` (same contract as "Not them?"). Events:
+`prepfirst_reground_submit`, `prepfirst_generate_ok {reground:true}`.
+Deploy green; Claude-for-Chrome QA prompt handed off.
 
 ## 📣 Jul 13 2026 — first warm-network distribution: BGU student cohort (12)
 
