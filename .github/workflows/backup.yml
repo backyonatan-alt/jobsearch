@@ -1,10 +1,17 @@
 name: backup
 
-# THROWAWAY OVERRIDE — read-only aggregate stats for the Aug 4-5 student-cohort
-# read (same pattern as the Jul 7/12/16/20 reads). Aggregates only, no PII in
-# logs (public repo). Revert this commit after the read.
+# Nightly Postgres backup: pg_dump on the VM (last 7 kept locally for fast
+# restores) + an ENCRYPTED copy stored off-VM as a workflow artifact.
+#
+# The repo is PUBLIC, so artifacts are downloadable by anyone — the dump is
+# always encrypted before upload (AES-256, PBKDF2). The passphrase is
+# BACKUP_PASSPHRASE if that secret is set, otherwise it's derived from
+# DEPLOY_SSH_KEY (sha256 of the secret's base64 value). Restore instructions:
+# deploy/README.md "Backups & restore".
 
 on:
+  schedule:
+    - cron: '23 2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -19,49 +26,58 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Read-only aggregates
+      - name: Dump on the VM + verify TOC + rotate last 7
+        # pg_restore runs on the VM (same Postgres version as pg_dump) — the
+        # runner's client can be older and unable to read the archive header.
         run: |
-          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'sudo -u postgres psql -X -q jobsearch' <<'SQL'
-          \echo === total users ===
-          SELECT count(*) AS total_users FROM users;
-          \echo === signups per day, last 10 days ===
-          SELECT created_at::date AS day, count(*) AS signups
-          FROM users WHERE created_at >= now() - interval '10 days'
-          GROUP BY 1 ORDER BY 1;
-          \echo === new users since Aug 3 by email domain ===
-          SELECT split_part(email, '@', 2) AS domain, count(*) AS n
-          FROM users WHERE created_at >= '2026-08-03' GROUP BY 1 ORDER BY 2 DESC;
-          \echo === login events since Aug 3: day x src ===
-          SELECT created_at::date AS day, coalesce(props->>'src','(none)') AS src,
-                 count(*) AS logins, count(DISTINCT user_id) AS users
-          FROM events WHERE name = 'login' AND created_at >= '2026-08-03'
-          GROUP BY 1,2 ORDER BY 1,2;
-          \echo === all events since Aug 3 by name ===
-          SELECT name, count(*) AS n, count(DISTINCT user_id) AS users
-          FROM events WHERE created_at >= '2026-08-03'
-          GROUP BY 1 ORDER BY 2 DESC;
-          \echo === error-ish event props since Aug 3 ===
-          SELECT name, props, count(*) FROM events
-          WHERE created_at >= '2026-08-03' AND name LIKE '%error%'
-          GROUP BY 1,2;
-          \echo === new-cohort activation (users created since Aug 3) ===
-          SELECT
-            count(*) AS new_users,
-            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM applications a WHERE a.user_id = u.id)) AS with_app,
-            count(*) FILTER (WHERE EXISTS (
-              SELECT 1 FROM dossiers d JOIN applications a ON a.id = d.application_id
-              WHERE a.user_id = u.id)) AS with_playbook
-          FROM users u WHERE u.created_at >= '2026-08-03';
-          \echo === per-new-user aggregate (id only, no email) ===
-          SELECT u.id, u.created_at::date AS joined,
-            (SELECT count(*) FROM applications a WHERE a.user_id = u.id) AS apps,
-            (SELECT count(*) FROM dossiers d JOIN applications a ON a.id = d.application_id WHERE a.user_id = u.id) AS playbooks,
-            (SELECT count(*) FROM events e WHERE e.user_id = u.id) AS events
-          FROM users u WHERE u.created_at >= '2026-08-03' ORDER BY u.created_at;
-          \echo === beta_interest since Aug 3 ===
-          SELECT count(*) AS beta_interest_new FROM beta_interest WHERE created_at >= '2026-08-03';
-          \echo === returning users Aug 4-5 (created before Aug 3, active since) ===
-          SELECT count(DISTINCT e.user_id) AS returning_users
-          FROM events e JOIN users u ON u.id = e.user_id
-          WHERE e.created_at >= '2026-08-04' AND u.created_at < '2026-08-03';
-          SQL
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            set -e
+            sudo install -d -o postgres -g postgres -m 700 /var/backups/pursuit
+            ts=$(date -u +%Y%m%d-%H%M%S)
+            f=/var/backups/pursuit/pursuit-$ts.dump
+            sudo -u postgres sh -c "pg_dump --format=custom jobsearch > $f"
+            sudo -u postgres pg_restore --list "$f" > /tmp/backup-toc.txt
+            for t in users applications interviews dossiers debriefs events invited_emails; do
+              grep -q "TABLE DATA public $t " /tmp/backup-toc.txt || { echo "missing table in dump: $t"; exit 1; }
+            done
+            echo "dump OK: $(grep -c "TABLE DATA" /tmp/backup-toc.txt) TABLE DATA entries"
+            rm -f /tmp/backup-toc.txt
+            sudo -u postgres sh -c "ls -1t /var/backups/pursuit/pursuit-*.dump | tail -n +8 | xargs -r rm --"
+            sudo -u postgres ls -lh /var/backups/pursuit/
+          '
+
+      - name: Fetch latest dump
+        run: |
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            'sudo -u postgres sh -c "cat \$(ls -1t /var/backups/pursuit/pursuit-*.dump | head -1)"' \
+            > pursuit.dump
+          ls -l pursuit.dump
+
+      - name: Sanity-check the fetched copy
+        run: |
+          test "$(stat -c%s pursuit.dump)" -gt 10000 || { echo "dump suspiciously small"; exit 1; }
+          head -c5 pursuit.dump | grep -q "PGDMP" || { echo "not a pg_dump custom archive"; exit 1; }
+
+      - name: Encrypt (never upload plaintext — public repo)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -n "$BACKUP_PASSPHRASE" ]; then
+            PASS="$BACKUP_PASSPHRASE"
+          else
+            PASS=$(printf %s "$DEPLOY_SSH_KEY" | sha256sum | cut -d' ' -f1)
+          fi
+          export PASS
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in pursuit.dump -out pursuit.dump.enc -pass env:PASS
+          rm -f pursuit.dump
+          ls -l pursuit.dump.enc
+
+      - name: Upload encrypted artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: pursuit.dump.enc
+          retention-days: 30
+          if-no-files-found: error
