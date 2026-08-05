@@ -10,6 +10,7 @@
   let phase = $state('prompt'); // 'prompt' | 'generating' | 'error'
   let company = $state('');
   let role = $state('');
+  let websiteUrl = $state(''); // recovery grounding signal after a failed generate
   let createdId = $state(null); // set once the application exists, so error/skip can route there
   let createdFor = ''; // company|role the created app belongs to (guards retry reuse)
   let errMsg = $state('');
@@ -41,8 +42,14 @@
       }
       // No interview_id → the shared company brief (interviewer-optional). This is
       // the cold-start wow; round-by-round prep is added later on the detail page.
-      await api(`/api/applications/${createdId}/dossier/refresh`, { method: 'POST', body: '{}' });
-      logEvent('prepfirst_generate_ok');
+      // company_url (set on retry-after-failure) is the authoritative grounding
+      // signal — same contract as the post-activation "Not them?" flow.
+      const url = websiteUrl.trim();
+      await api(`/api/applications/${createdId}/dossier/refresh`, {
+        method: 'POST',
+        body: JSON.stringify(url ? { company_url: url } : {})
+      });
+      logEvent('prepfirst_generate_ok', url ? { reground: true } : {});
       await onDone();
       goto(`/app/${createdId}?welcome=1`);
     } catch (e) {
@@ -81,6 +88,12 @@
     await onDone();
     goto(createdId ? `/app/${createdId}` : '/app');
   }
+
+  function retryWithWebsite() {
+    if (!websiteUrl.trim()) return;
+    logEvent('prepfirst_reground_submit');
+    build();
+  }
 </script>
 
 <div class="pf-back">
@@ -111,10 +124,18 @@
     {:else}
       <div class="pf-badge err">Couldn't build it</div>
       <h1>That didn't go through</h1>
-      <p class="pf-sub">{errMsg || 'We hit a snag building your playbook.'}{#if createdId} Your {company} application was saved — you can try again from its page.{/if}</p>
       {#if createdId}
-        <button class="pf-cta" type="button" onclick={retry}>Go to {company}</button>
+        <p class="pf-sub">{errMsg || 'We hit a snag building your playbook.'} Point us at the company's website and we'll research them directly — that fixes it when a name is shared by several companies or is hard to find.</p>
+        <form onsubmit={(e) => { e.preventDefault(); retryWithWebsite(); }}>
+          <label class="pf-field">
+            <span>Company website</span>
+            <input class="pf-input" bind:value={websiteUrl} placeholder="https://" />
+          </label>
+          <button class="pf-cta" type="submit" disabled={!websiteUrl.trim()}>Retry with the website</button>
+        </form>
+        <button class="pf-skip" type="button" onclick={retry}>Or continue to {company} →</button>
       {:else}
+        <p class="pf-sub">{errMsg || 'We hit a snag building your playbook.'}</p>
         <button class="pf-cta" type="button" onclick={backToPrompt}>Try again</button>
       {/if}
       <button class="pf-skip" type="button" onclick={skip}>Skip to my dashboard →</button>
