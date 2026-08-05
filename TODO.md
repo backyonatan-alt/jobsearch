@@ -2,6 +2,36 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 📊 Aug 5 2026 — student-blast read (day 1½ after the Aug 4 ~100-student email)
+
+Read-only aggregate over the deploy key (throwaway backup.yml override, reverted).
+The Aug 4 send went out **bare** (no `?src=` — hence the new CLAUDE.md playbook
+rule #7); the corrected `?src=alum` link went into the follow-up.
+
+- **Top of funnel worked: 14 signups in ~36h** (10 on Aug 4, 4 on Aug 5;
+  total users 46→63... after zero signups since Jul 20). 9 gmail + 5
+  `post.bgu.ac.il`. Only 2 logins carry `src:alum` (the tagged follow-up);
+  the rest are unattributed as expected from the bare send.
+- **Activation is the leak: 14 → 4 with an app → 3 with a playbook (21%)** vs
+  53% baseline. Prepfirst funnel: 14 prompt-view users → 7 **skipped** → 5
+  submitted → **3 ok / 2 users hit generate errors**.
+- **Generation failed half its attempts** (3 ok vs 3 error). All 3 errors:
+  "could not find enough public information" — 2 are the **'SE7EN'
+  name-collision** (multiple unrelated orgs share the name). The grounding
+  refusal is honest but it's a dead end for the user — no recovery path
+  offered at the prepfirst step. Likely cost us ~2 activations.
+- Engagement among activators is healthy: `dossier_open` 13/6 users,
+  `dossier_refresh` 9/5, one `debrief_save`. Zero `beta_interest`, 1
+  returning pre-cohort user.
+- **Watch next (~Aug 7–8):** do the 10 no-app signups come back? Does user
+  124 (Aug 5, 1 app, 22 events, no playbook yet) convert? GA4 check still
+  open: homepage sessions Aug 4–5 vs 14 signups ⇒ click→signin drop-off.
+
+**Candidate next move (not decided):** prepfirst error recovery — on
+"not enough info" offer "add the company website" (the re-ground control
+already exists post-activation, but not at the cold-start step where the
+whole cohort hits it).
+
 ## 📣 Jul 13 2026 — first warm-network distribution: BGU student cohort (12)
 
 Sent the invite (Hebrew, leads with the playbook, laptop nudge, BCC) to **12 BGU
