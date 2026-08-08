@@ -2,6 +2,38 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 📊 Aug 8 2026 — student-cohort re-read (scheduled trigger; deploy-key aggregate)
+
+Answers to the five pinned questions (cohort = 15 users who joined Aug 4–5;
+one more, id 127, landed after the Aug 5 read):
+
+1. **No-app signups: 2 of 10 came back and activated** — ids 110 + 118 each
+   returned on a later day and reached a playbook (118 active on Aug 8). Id 121
+   returned without creating. The rest are one-visit-and-gone.
+2. **User 124 = tracker power user, zero playbooks.** 5 apps, 37 events,
+   returned Aug 7 — uses the spine heavily, hasn't touched the wedge. Watch as
+   its own signal: manual-app path may need a playbook CTA.
+3. **Reground: unexercised, not failed.** Zero `prepfirst_generate_error`
+   since the fix deployed (Aug 5 15:20 UTC) → nobody hit the error card, so
+   `prepfirst_reground_submit` = 0. The SE7EN user (119) never returned — fix
+   shipped too late for them. Proof deferred to the next cohort.
+4. **Top of funnel dried up again ~48h after the send** (3rd repetition of the
+   pattern): Aug 6 = 2 signups, Aug 7–8 = 0. No `src:alum` logins since Aug 5.
+5. **Retention is the good news: 5/15 (33%) returned on a later calendar day**
+   vs 18% July baseline. Playbook engagement continues (`dossier_open` 12/6,
+   `dossier_refresh` 8/6 since Aug 5). Pre-cohort returning users: 1. Debriefs:
+   still just the 1 save.
+
+**Cohort activation now 5/15 (33%)**, up from 3/14 (21%) at the Aug 5 read —
+still under the 53% baseline, but improving with zero nudging.
+
+**Recommendation (logged, not yet decided):** product is not the bottleneck
+this week — distribution cadence is. Next move = the next send (remainder of
+the student list / batch 2) with the full tagged link
+(`/?src=alum&utm_source=alum&utm_medium=email`); it also delivers the traffic
+that finally tests the reground path. Secondary candidate from #2: playbook
+CTA on manually-created applications (user-124 pattern).
+
 ## 📊 Aug 5 2026 — student-blast read (day 1½ after the Aug 4 ~100-student email)
 
 Read-only aggregate over the deploy key (throwaway backup.yml override, reverted).
