@@ -2,6 +2,46 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 📊 Aug 9 2026 — full-history product review (deploy-key aggregate, non-admin, no demo)
+
+User call: no more distribution pushes for now — an honest "are people using it and
+coming back, do we have a chance" review instead. Full numbers in the Aug 9 session;
+headline facts:
+
+- **Usage is occasion-driven, and within the occasion the product works.** 67%
+  of users (36/54 with any events) have exactly 1 active day. But every user who
+  was in a live interview loop (48, 59, 76, 78, and now student 113) returned
+  repeatedly over weeks and generated 5–6 playbooks. Retention tracks the
+  interview process, not the calendar — as STRATEGY's red-team predicted.
+- **The wedge is validated at small scale:** 29/65 signups (45%) ever reached a
+  playbook; playbook engagement recurs every single week; all 3 prep-accuracy
+  ratings ever are **spot_on** (n=3 — STRATEGY gate needs ≥30).
+- **The debrief loop is alive:** 3 debriefs / 3 users, incl. student 113 doing
+  prep → round → debrief within 48h of signup. Was 1 on Jul 12.
+- **The tracker spine is dead weight:** 69% of app-creating users have exactly
+  1 app; only 11 users ever changed a status. People come for prep, period.
+- **The engaged core churns terminally:** every pre-August power user is gone
+  (last seen Jul 6–29) — a user's lifetime ≈ their search length. The business
+  math therefore requires continuous inflow; WAU spikes only on sends
+  (16 launch week, 17 student week, 2–5 between).
+- **58% of signups (38/65) never spent a prep credit** — the biggest single
+  product hole. The prepfirst prompt assumes an active interview; people
+  without one skip and land in an empty tracker with nothing AI to try.
+
+**Verdict: the product has a chance — the *shape* is proven (in-loop users
+behave exactly as the thesis predicts, and trust ratings are perfect so far),
+but nothing retains between loops and inflow is founder-powered.** Product
+priorities that follow (sequenced):
+1. **Serve the occasion:** round-scheduled → pre-round email with the playbook
+   ("your round at X is tomorrow") — the retention mechanic that matches how
+   people actually use it. Needs the deferred mail decision.
+2. **Close the 58% zero-generate hole:** give the no-interview-yet signup a
+   first AI moment (e.g. "no interview yet? paste a job you want → playbook
+   anyway"), and a playbook CTA on manually created apps (user-124 pattern).
+3. **Keep accumulating trust ratings** toward the ≥30-rated gate; keep the
+   debrief loop growing (3 → density).
+4. Stop investing in tracker breadth — spine stays minimal.
+
 ## 📊 Aug 8 2026 — student-cohort re-read (scheduled trigger; deploy-key aggregate)
 
 Answers to the five pinned questions (cohort = 15 users who joined Aug 4–5;
