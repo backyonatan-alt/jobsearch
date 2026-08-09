@@ -2,6 +2,7 @@
   // New-application modal — extracted verbatim from the old Today screen so the
   // ⌘N / paste-to-parse / screenshot-vision flow stays intact and reusable.
   // Usage: <AddApplication bind:open onCreated={refresh} />  (open is bindable)
+  import { goto } from '$app/navigation';
   import { api } from '$lib/api.js';
   import { logEvent } from '$lib/analytics.js';
   import { SOURCE_SUGGESTIONS } from '$lib/app-helpers.js';
@@ -26,6 +27,12 @@
 
   // Whether AI parse was used to fill the form (drives application_create `via`).
   let parseUsed = $state(false);
+
+  // Post-create success step: surface the playbook CTA on the manual-add path
+  // (the wedge was invisible here — users built 5 apps without ever seeing it).
+  // Only for statuses where prep makes sense; terminal ones close as before.
+  const PLAYBOOK_STATUSES = ['wishlist', 'applied', 'screen', 'interview', 'offer'];
+  let created = $state(null); // {id, company} after a successful create
 
   // new-application form state
   let form = $state({ company: '', role: '', status: 'applied', source: '', jd_url: '', jd_text: '', cv_variant: '', location: '', salary_note: '' });
@@ -147,14 +154,19 @@
     if (item) setAttachedFile(item.getAsFile());
   }
 
-  function resetModal() {
-    form = { company: '', role: '', status: 'applied', source: '', jd_url: '', jd_text: '', cv_variant: '', location: '', salary_note: '' };
+  function clearForm() {
+    form = { company: '', role: '', status: initialStatus, source: '', jd_url: '', jd_text: '', cv_variant: '', location: '', salary_note: '' };
     pasteText = '';
     parseError = '';
     parsedHint = '';
     attachedImage = null;
     isDraggingFile = false;
     parseUsed = false;
+  }
+
+  function resetModal() {
+    clearForm();
+    created = null;
     open = false;
   }
 
@@ -164,21 +176,34 @@
     try {
       const payload = { ...form };
       for (const k of ['jd_url', 'jd_text', 'cv_variant', 'source', 'location', 'salary_note']) if (!payload[k]) delete payload[k];
-      await api('/api/applications', { method: 'POST', body: JSON.stringify(payload) });
-      // Confirmed-success only (after the await), before resetModal clears state.
+      const a = await api('/api/applications', { method: 'POST', body: JSON.stringify(payload) });
+      // Confirmed-success only (after the await), before the form clears state.
       logEvent('application_create', {
         via: parseUsed ? 'parse' : 'manual',
         source: form.source || 'none',
         status: form.status
       });
-      resetModal();
       onCreated?.();
       // Tell every open view (sidebar count, board, funnel) to refetch so counts
       // stay correct without a reload.
       try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
+      if (a?.id && PLAYBOOK_STATUSES.includes(form.status)) {
+        created = { id: a.id, company: form.company };
+        clearForm();
+        logEvent('playbook_cta_view', { source: 'post_create' });
+      } else {
+        resetModal();
+      }
     } finally {
       saving = false;
     }
+  }
+
+  function goToPlaybook() {
+    const id = created.id;
+    logEvent('playbook_cta_click', { source: 'post_create' });
+    resetModal();
+    goto(`/app/${id}`);
   }
 </script>
 
@@ -187,7 +212,24 @@
   onpaste={(e) => { if (open) onModalPaste(e); }}
 />
 
-{#if open}
+{#if open && created}
+  <div class="modal-overlay" onclick={resetModal} role="presentation">
+    <div class="modal done-card" onclick={(e) => e.stopPropagation()} role="presentation">
+      <div class="done-check">✓</div>
+      <h2>{created.company} added</h2>
+      <p class="done-sub">Want the head start? Pursuit can research {created.company} now — what they do, where they're headed, the typical loop, and what the team grades for.</p>
+      <button type="button" class="btn btn-primary done-cta" onclick={goToPlaybook}>
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l1.4 3.6L13 7l-3.6 1.4L8 12l-1.4-3.6L3 7l3.6-1.4L8 2z"/></svg>
+        Build the interview playbook →
+      </button>
+      <div class="done-links">
+        <button type="button" class="done-link" onclick={() => (created = null)}>Add another</button>
+        <span class="done-dot">·</span>
+        <button type="button" class="done-link" onclick={resetModal}>Close</button>
+      </div>
+    </div>
+  </div>
+{:else if open}
   <div class="modal-overlay" onclick={resetModal} role="presentation">
     <form class="modal" onclick={(e) => e.stopPropagation()} onsubmit={createApp}>
       <header class="m-head">
@@ -445,6 +487,18 @@
   .btn-primary { background: var(--accent); border-color: var(--accent-strong); color: white; }
   .btn-primary:hover { background: var(--accent-strong); }
   .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+
+  .done-card { max-width: 420px; padding: 34px 32px 24px; text-align: center; }
+  .done-check { width: 40px; height: 40px; margin: 0 auto 14px; border-radius: 50%;
+    background: var(--positive-tint); color: var(--positive-text);
+    display: grid; place-items: center; font-size: 18px; font-weight: 600; }
+  .done-card h2 { font-size: 19px; font-weight: 600; letter-spacing: -0.018em; margin: 0 0 8px; color: var(--ink); }
+  .done-sub { font-size: 13.5px; line-height: 1.55; color: var(--mute); margin: 0 0 18px; text-wrap: pretty; }
+  .done-cta { display: inline-flex; align-items: center; gap: 7px; padding: 9px 16px; font-size: 13.5px; }
+  .done-links { margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .done-link { background: none; border: none; color: var(--mute); font: 500 12.5px/1 var(--sans); cursor: pointer; padding: 4px; }
+  .done-link:hover { color: var(--ink-2); }
+  .done-dot { color: var(--mute-2); font-size: 12px; }
 
   .src-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
   .src-chip { font: inherit; font-size: 11.5px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--rule); border-radius: 7px; padding: 4px 9px; cursor: pointer; }

@@ -8,6 +8,10 @@
   let { onDone = () => {} } = $props();
 
   let phase = $state('prompt'); // 'prompt' | 'generating' | 'error'
+  // 'interviewing' = the classic prompt; 'target' = no interview yet, prep for a
+  // company they want (the 58%-never-generate hole: don't gate the wow on having
+  // a live interview). Target-mode apps land as status 'wishlist'.
+  let mode = $state('interviewing');
   let company = $state('');
   let role = $state('');
   let websiteUrl = $state(''); // recovery grounding signal after a failed generate
@@ -18,9 +22,14 @@
 
   onMount(() => logEvent('prepfirst_prompt_view'));
 
+  function toggleMode() {
+    mode = mode === 'interviewing' ? 'target' : 'interviewing';
+    logEvent('prepfirst_mode_toggle', { mode });
+  }
+
   async function build() {
     if (phase === 'generating' || !ready) return;
-    logEvent('prepfirst_submit', { has_role: !!role.trim() });
+    logEvent('prepfirst_submit', { has_role: !!role.trim(), mode });
     phase = 'generating';
     errMsg = '';
     try {
@@ -35,7 +44,7 @@
         createdFor = key;
         const a = await api('/api/applications', {
           method: 'POST',
-          body: JSON.stringify({ company: company.trim(), role: role.trim(), status: 'screen' })
+          body: JSON.stringify({ company: company.trim(), role: role.trim(), status: mode === 'target' ? 'wishlist' : 'screen' })
         });
         createdId = a.id;
         logEvent('application_create', { source: 'prepfirst' });
@@ -100,19 +109,27 @@
   <div class="pf-card">
     {#if phase === 'prompt'}
       <div class="pf-badge"><span class="spark">✦</span> AI interview prep</div>
-      <h1>Who are you interviewing with?</h1>
-      <p class="pf-sub">Name a company you're interviewing with and Pursuit builds your playbook — what they do, where they're headed, the typical loop, and what the team grades for.</p>
+      {#if mode === 'interviewing'}
+        <h1>Who are you interviewing with?</h1>
+        <p class="pf-sub">Name a company you're interviewing with and Pursuit builds your playbook — what they do, where they're headed, the typical loop, and what the team grades for.</p>
+      {:else}
+        <h1>Where do you want to interview?</h1>
+        <p class="pf-sub">Name a company you're aiming for and Pursuit builds the same playbook — what they do, where they're headed, the typical loop, and what the team grades for. Ready before the interview even exists.</p>
+      {/if}
       <form onsubmit={(e) => { e.preventDefault(); build(); }}>
         <label class="pf-field">
           <span>Company</span>
           <input class="pf-input" bind:value={company} placeholder="e.g. Stripe" autofocus />
         </label>
         <label class="pf-field">
-          <span>Role you're interviewing for</span>
+          <span>{mode === 'interviewing' ? 'Role you\'re interviewing for' : 'Role you\'d go for'}</span>
           <input class="pf-input" bind:value={role} placeholder="e.g. Staff Software Engineer" />
         </label>
         <button class="pf-cta" type="submit" disabled={!ready}>Build my playbook</button>
       </form>
+      <button class="pf-alt" type="button" onclick={toggleMode}>
+        {mode === 'interviewing' ? 'No interview yet? Prep for a company you want →' : '← I have an interview coming up'}
+      </button>
       <button class="pf-skip" type="button" onclick={skip}>I'm just exploring — skip →</button>
 
     {:else if phase === 'generating'}
@@ -180,6 +197,11 @@
   .pf-skip { margin-top: 16px; background: none; border: none; color: var(--mute); font: 500 13px/1 var(--sans);
     cursor: pointer; padding: 6px; }
   .pf-skip:hover { color: var(--ink-2); }
+
+  .pf-alt { display: block; margin: 14px auto 0; background: none; border: none; color: var(--accent-text);
+    font: 500 13px/1 var(--sans); cursor: pointer; padding: 6px; }
+  .pf-alt:hover { text-decoration: underline; }
+  .pf-alt + .pf-skip { margin-top: 2px; }
 
   .pf-spinner { width: 30px; height: 30px; margin: 6px auto 18px; border-radius: 50%;
     border: 3px solid var(--accent-tint); border-top-color: var(--accent); animation: pf-spin .8s linear infinite; }
