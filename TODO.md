@@ -34,10 +34,14 @@ but nothing retains between loops and inflow is founder-powered.** Product
 priorities that follow (sequenced):
 1. **Serve the occasion:** round-scheduled → pre-round email with the playbook
    ("your round at X is tomorrow") — the retention mechanic that matches how
-   people actually use it. Needs the deferred mail decision.
-2. **Close the 58% zero-generate hole:** give the no-interview-yet signup a
-   first AI moment (e.g. "no interview yet? paste a job you want → playbook
-   anyway"), and a playbook CTA on manually created apps (user-124 pattern).
+   people actually use it. Needs the deferred mail decision. **← next big bet.**
+2. ~~**Close the 58% zero-generate hole**~~ → **SHIPPED Aug 9 (PR #55, deploy
+   green, full prod QA 8/8 ✅):** prepfirst "No interview yet?" target mode
+   (wishlist app + same playbook; `prepfirst_mode_toggle`, `mode` on submit)
+   + post-create success card with "Build the interview playbook →" CTA on
+   active statuses (`playbook_cta_view/click {source: post_create}`).
+   **Re-read ~Aug 13–14:** does the zero-generate share move? (Discount one
+   admin `prepfirst_skip` from the Aug 9 QA run's stray click.)
 3. **Keep accumulating trust ratings** toward the ≥30-rated gate; keep the
    debrief loop growing (3 → density).
 4. Stop investing in tracker breadth — spine stays minimal.
