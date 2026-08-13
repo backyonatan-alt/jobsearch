@@ -2,6 +2,29 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 📊 Aug 13 2026 — zero-generate-fix re-read: NO DATA — funnel starved
+
+Scheduled read ran (deploy-key aggregate, non-admin). The fix is live but
+statistically untested: **2 signups since Aug 9** (both gmail, 1 spent a
+credit), 1–2 active users/day, zero traffic pushes since Aug 4. Findings at
+n≈1–3, all directional only:
+
+- **Target mode: 0 uses** (3 prompt views → 2 skips, 0 toggles, 0 submits).
+- **Playbook CTA: works, first click landed** — one bulk-adder created 7 apps,
+  saw the card 6×, clicked once. Watch for the card becoming noise on repeat
+  adds (n=1, not actionable).
+- Reground path still unexercised (0 generate errors since Aug 5).
+- Debriefs still 3; 1 returning pre-Aug-9 user; all-time zero-credit share
+  unchanged at 39/67 (58%, dominated by history).
+
+**Verdict: neither "fix was enough" nor "build the pre-round email" can be
+decided from this — both need users, and there is no inflow.** The binding
+constraint is distribution, full stop. Product work is paused on data grounds;
+the next meaningful action is a distribution decision (next warm batch /
+LinkedIn post #2 / repeated cadence per STRATEGY §8), and the fix + CTA
+instrumentation will measure itself on whatever cohort arrives. No further
+scheduled re-reads until traffic exists.
+
 ## 📊 Aug 9 2026 — full-history product review (deploy-key aggregate, non-admin, no demo)
 
 User call: no more distribution pushes for now — an honest "are people using it and
