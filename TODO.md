@@ -2,6 +2,35 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 🔨 Aug 15 2026 — build sprint before distribution round 2 (user call)
+
+User decision: flip the Aug 13 order — build a small package first, **then**
+the next distribution round, so the new cohort lands on more rails worth
+measuring. Build list (sequenced, informed by Noa's Aug 15 feedback +
+the Aug 9 review):
+
+1. **Pre-round email** — round scheduled → email with the playbook the day
+   before ("your round at X is tomorrow"). The Aug 9 "next big bet": the
+   retention mechanic that matches occasion-driven usage. **Unblocks:** the
+   deferred mail decision — pick a transactional provider (recommend
+   Resend/Postmark, API from the VM) at build time. Also unlocks v0.3
+   reminders later.
+2. **CV-aware prep** — paste/upload CV on the application (or profile) →
+   playbook gains a "what to make sure they hear" section. Twice-requested
+   (Jul 13 + Noa #1), serves the pre-interview persona, deepens the wedge.
+3. **Small, bundled:** (a) steer company-brief web_search toward
+   interview-experience sources (Glassdoor-flavored trust play — check
+   current citations first); (b) fix the ⌘N hint lie (rebind to plain `N`
+   or drop on Chrome).
+
+**Explicitly not now:** funnel-drop/rejection analysis (needs volume),
+cross-user benchmarks (needs scale), voice practice (fake-door number
+decides), mentor marketplace (off scope).
+
+**Then:** distribution round 2 (remainder of student list / LinkedIn post
+#2, fully tagged per playbook rule #7). That cohort simultaneously tests:
+target mode, playbook CTA, reground path, pre-round email, CV-aware prep.
+
 ## 📊 Aug 13 2026 — zero-generate-fix re-read: NO DATA — funnel starved
 
 Scheduled read ran (deploy-key aggregate, non-admin). The fix is live but
