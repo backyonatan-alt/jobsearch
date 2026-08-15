@@ -16,6 +16,8 @@ import (
 	"github.com/backyonatan-alt/jobsearch/internal/db"
 	"github.com/backyonatan-alt/jobsearch/internal/httpsrv"
 	"github.com/backyonatan-alt/jobsearch/internal/llm"
+	"github.com/backyonatan-alt/jobsearch/internal/mail"
+	"github.com/backyonatan-alt/jobsearch/internal/reminder"
 )
 
 func main() {
@@ -60,6 +62,18 @@ func main() {
 	if llmClient == nil {
 		logger.Warn("ANTHROPIC_API_KEY not set — AI features will return 503")
 	}
+
+	mailClient := mail.New(cfg.ResendAPIKey, cfg.EmailFrom)
+	if mailClient == nil {
+		logger.Warn("RESEND_API_KEY not set — reminder emails disabled")
+	}
+	go (&reminder.Runner{
+		Pool:        pool,
+		Mail:        mailClient,
+		Logger:      logger,
+		BaseURL:     cfg.BaseURL,
+		UnsubSecret: cfg.GoogleClientSecret,
+	}).Run(ctx)
 
 	srv := &httpsrv.Server{
 		Cfg:    cfg,

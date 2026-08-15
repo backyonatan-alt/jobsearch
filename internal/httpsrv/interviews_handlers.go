@@ -290,6 +290,7 @@ type interviewCreateRequest struct {
 	AllDay      bool       `json:"all_day"`
 	Organizer   *person    `json:"organizer,omitempty"`
 	Attendees   []person   `json:"attendees"`
+	TZ          string     `json:"tz,omitempty"` // browser IANA zone, for reminder rendering
 }
 
 // POST /api/applications/{id}/interviews — persist a parsed (or manual) event.
@@ -345,12 +346,15 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 		organizerJSON, _ = json.Marshal(in.Organizer)
 	}
 
-	var locPtr, descPtr *string
+	var locPtr, descPtr, tzPtr *string
 	if loc := strings.TrimSpace(in.Location); loc != "" {
 		locPtr = &loc
 	}
 	if desc := strings.TrimSpace(in.Description); desc != "" {
 		descPtr = &desc
+	}
+	if tz := strings.TrimSpace(in.TZ); tz != "" {
+		tzPtr = &tz
 	}
 
 	// Upsert on (application_id, uid) when uid is set. The partial unique index
@@ -360,8 +364,8 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 		err = s.Pool.QueryRow(r.Context(), `
 			INSERT INTO interviews (
 			    application_id, user_id, source, uid, summary, location,
-			    description, starts_at, ends_at, all_day, organizer, attendees, scheduled
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			    description, starts_at, ends_at, all_day, organizer, attendees, scheduled, tz
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 			ON CONFLICT (application_id, uid) WHERE uid IS NOT NULL DO UPDATE SET
 			    source      = EXCLUDED.source,
 			    summary     = EXCLUDED.summary,
@@ -373,11 +377,12 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 			    scheduled   = EXCLUDED.scheduled,
 			    organizer   = EXCLUDED.organizer,
 			    attendees   = EXCLUDED.attendees,
+			    tz          = COALESCE(EXCLUDED.tz, interviews.tz),
 			    updated_at  = now()
 			RETURNING id, application_id, source, uid, summary, location, description,
 			    starts_at, ends_at, all_day, scheduled, organizer, attendees, created_at`,
 			appID, u.ID, in.Source, uidPtr, in.Summary, locPtr,
-			descPtr, in.StartsAt, in.EndsAt, in.AllDay, organizerJSON, attendeesJSON, scheduled,
+			descPtr, in.StartsAt, in.EndsAt, in.AllDay, organizerJSON, attendeesJSON, scheduled, tzPtr,
 		).Scan(&iv.ID, &iv.ApplicationID, &iv.Source, &iv.UID, &iv.Summary, &iv.Location,
 			&iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay, &iv.Scheduled, &iv.Organizer, &iv.Attendees,
 			&iv.CreatedAt)
@@ -385,12 +390,12 @@ func (s *Server) handleInterviewCreate(w http.ResponseWriter, r *http.Request) {
 		err = s.Pool.QueryRow(r.Context(), `
 			INSERT INTO interviews (
 			    application_id, user_id, source, uid, summary, location,
-			    description, starts_at, ends_at, all_day, organizer, attendees, scheduled
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			    description, starts_at, ends_at, all_day, organizer, attendees, scheduled, tz
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 			RETURNING id, application_id, source, uid, summary, location, description,
 			    starts_at, ends_at, all_day, scheduled, organizer, attendees, created_at`,
 			appID, u.ID, in.Source, uidPtr, in.Summary, locPtr,
-			descPtr, in.StartsAt, in.EndsAt, in.AllDay, organizerJSON, attendeesJSON, scheduled,
+			descPtr, in.StartsAt, in.EndsAt, in.AllDay, organizerJSON, attendeesJSON, scheduled, tzPtr,
 		).Scan(&iv.ID, &iv.ApplicationID, &iv.Source, &iv.UID, &iv.Summary, &iv.Location,
 			&iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay, &iv.Scheduled, &iv.Organizer, &iv.Attendees,
 			&iv.CreatedAt)
@@ -476,6 +481,69 @@ func (s *Server) handleInterviewDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type interviewRescheduleRequest struct {
+	StartsAt time.Time  `json:"starts_at"`
+	EndsAt   *time.Time `json:"ends_at,omitempty"`
+	TZ       string     `json:"tz,omitempty"`
+}
+
+// PATCH /api/applications/{id}/interviews/{iid} — set (or move) a round's
+// date. This is how an undated one-tap round becomes scheduled, which is what
+// arms the pre-round reminder email.
+func (s *Server) handleInterviewReschedule(w http.ResponseWriter, r *http.Request) {
+	u, _ := userFromCtx(r.Context())
+	appID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad id")
+		return
+	}
+	iid, err := strconv.ParseInt(r.PathValue("iid"), 10, 64)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "bad interview id")
+		return
+	}
+	var in interviewRescheduleRequest
+	if err := readJSON(r, &in); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if in.StartsAt.IsZero() {
+		writeJSONError(w, http.StatusBadRequest, "starts_at is required")
+		return
+	}
+	var tzPtr *string
+	if tz := strings.TrimSpace(in.TZ); tz != "" {
+		tzPtr = &tz
+	}
+
+	var iv interviewDTO
+	err = s.Pool.QueryRow(r.Context(), `
+		UPDATE interviews SET
+		    starts_at = $1, ends_at = $2, scheduled = true,
+		    tz = COALESCE($3, tz), updated_at = now()
+		WHERE id = $4 AND application_id = $5 AND user_id = $6
+		RETURNING id, application_id, source, uid, summary, location, description,
+		    starts_at, ends_at, all_day, scheduled, organizer, attendees, created_at`,
+		in.StartsAt, in.EndsAt, tzPtr, iid, appID, u.ID,
+	).Scan(&iv.ID, &iv.ApplicationID, &iv.Source, &iv.UID, &iv.Summary,
+		&iv.Location, &iv.Description, &iv.StartsAt, &iv.EndsAt, &iv.AllDay,
+		&iv.Scheduled, &iv.Organizer, &iv.Attendees, &iv.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSONError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err != nil {
+		s.Logger.Error("interview reschedule", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	// A moved date deserves a fresh reminder; the loop re-claims if due.
+	_, _ = s.Pool.Exec(r.Context(),
+		`DELETE FROM sent_emails WHERE interview_id = $1 AND kind = 'pre_round'`, iid)
+	s.logEvent(r.Context(), u.ID, "round_date_add", map[string]any{"interview_id": iid})
+	writeJSON(w, http.StatusOK, iv)
 }
 
 // nextInterview returns the soonest upcoming interview for an application

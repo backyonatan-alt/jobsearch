@@ -32,6 +32,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /auth/google/callback", s.handleGoogleCallback)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("POST /api/beta-interest", s.handleBetaInterestCreate)
+	mux.HandleFunc("GET /unsubscribe", s.handleUnsubscribe)
 	mux.HandleFunc("GET /api/me", s.requireUser(s.handleMe))
 	mux.HandleFunc("POST /api/me/onboarded", s.requireUser(s.handleMarkOnboarded))
 	mux.HandleFunc("POST /api/events", s.requireUser(s.handleEventCreate))
@@ -53,6 +54,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/applications/{id}/interviews", s.requireUser(s.handleInterviewsList))
 	mux.HandleFunc("POST /api/applications/{id}/interviews", s.requireUser(s.handleInterviewCreate))
 	mux.HandleFunc("POST /api/applications/{id}/interviews/parse", s.requireUser(s.handleInterviewsParse))
+	mux.HandleFunc("PATCH /api/applications/{id}/interviews/{iid}", s.requireUser(s.handleInterviewReschedule))
 	mux.HandleFunc("DELETE /api/applications/{id}/interviews/{iid}", s.requireUser(s.handleInterviewDelete))
 
 	mux.HandleFunc("GET /api/applications/{id}/debriefs", s.requireUser(s.handleDebriefsList))
