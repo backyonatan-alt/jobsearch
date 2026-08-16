@@ -201,6 +201,32 @@
   function feelLabel(f) { return { strong: 'strong', mixed: 'mixed', rough: 'rough' }[f] || f; }
   function accLabel(a) { return { spot_on: 'spot on', partly: 'partly right', off: 'off' }[a] || a; }
 
+  function browserTZ() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; }
+  }
+
+  // Give an undated one-tap round a date → it becomes scheduled and arms the
+  // pre-round reminder email.
+  let dateDraft = $state('');
+  let dateSaving = $state(false);
+  async function saveRoundDate() {
+    if (dateSaving || !dateDraft || !selectedRound) return;
+    const starts = new Date(dateDraft);
+    if (isNaN(starts.getTime())) return;
+    dateSaving = true;
+    try {
+      await call(`/api/applications/${id}/interviews/${selectedRound.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ starts_at: starts.toISOString(), tz: browserTZ() })
+      });
+      dateDraft = '';
+      await loadInterviews();
+      try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
+    } catch (e) {
+      if (e.message !== 'unauthorized') console.error(e);
+    } finally { dateSaving = false; }
+  }
+
   // One-tap "Add round" (no date). Creates an unscheduled round and opens it.
   const ROUND_PRESETS = ['Recruiter screen', 'Phone screen', 'Hiring manager', 'Technical screen', 'System design', 'Onsite', 'Team match', 'Behavioral'];
   let showAddRound = $state(false);
@@ -213,7 +239,7 @@
     let iv = existing;
     if (!iv) {
       try {
-        iv = await call(`/api/applications/${id}/interviews`, { method: 'POST', body: JSON.stringify({ summary: label, source: 'manual' }) });
+        iv = await call(`/api/applications/${id}/interviews`, { method: 'POST', body: JSON.stringify({ summary: label, source: 'manual', tz: browserTZ() }) });
       } catch (e) { if (e.message !== 'unauthorized') console.error(e); return null; }
       await loadInterviews();
       try { window.dispatchEvent(new CustomEvent('pursuit:refresh')); } catch {}
@@ -625,7 +651,7 @@
     icsSaving = true;
     try {
       for (const ev of icsPreview) {
-        await call(`/api/applications/${id}/interviews`, { method: 'POST', body: JSON.stringify(ev) });
+        await call(`/api/applications/${id}/interviews`, { method: 'POST', body: JSON.stringify({ ...ev, tz: browserTZ() }) });
       }
       evText = ''; evAttach = null;
       icsPreview = [];
@@ -1169,6 +1195,16 @@
                 <span class="db-banner-tx">How did the <b>{(pendingIv?.summary || 'last').trim() || 'last'}</b> round go? A 20-second debrief sharpens this round's prep.</span>
                 <span class="db-prompt-cta">Debrief →</span>
               </button>
+            {/if}
+
+            <!-- Undated one-tap round: adding the date arms the day-before reminder email. -->
+            {#if selectedRound && selectedRound.scheduled === false}
+              <div class="date-nudge">
+                <span class="db-spark">📅</span>
+                <span class="dn-tx"><b>Coming up?</b> Add the date — we'll email you this playbook the day before.</span>
+                <input class="dn-input" type="datetime-local" bind:value={dateDraft} />
+                <button type="button" class="btn dn-btn" onclick={saveRoundDate} disabled={dateSaving || !dateDraft}>{dateSaving ? 'Saving…' : 'Set date'}</button>
+              </div>
             {/if}
 
             <!-- Debrief: capture how a past round went → feeds next round. -->
@@ -1761,6 +1797,13 @@
     display: grid; place-items: center; flex-shrink: 0; font-size: 12px; }
   .db-banner-tx { flex: 1; min-width: 0; font-size: 12.5px; color: #4b5158; }
   .db-banner-tx b { color: #16181c; }
+  .date-nudge { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: #eef4ff; border: 1px solid #cdddfb; border-radius: 10px; padding: 9px 13px; margin-bottom: 14px; }
+  .dn-tx { flex: 1; min-width: 160px; font-size: 12.5px; color: #4b5158; }
+  .dn-tx b { color: #16181c; }
+  .dn-input { border: 1px solid #cdddfb; border-radius: 8px; padding: 5px 8px; font-family: inherit;
+    font-size: 12.5px; color: #16181c; background: #fff; }
+  .dn-btn { flex-shrink: 0; }
   .db-prompt-cta { flex-shrink: 0; font-size: 13px; font-weight: 600; color: #2463eb; }
   .debrief { margin-bottom: 18px; }
   .db-prompt { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer;

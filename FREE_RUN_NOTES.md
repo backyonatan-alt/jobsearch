@@ -32,6 +32,37 @@ the moment you notice something; triage later.
 
 ---
 
+## Aug 15 2026 — email feedback from Noa (BGU student cohort, unsolicited)
+
+> Second structured external feedback after Ayelet. Meta-signal as valuable as
+> the content: she pushed the product to her friends unprompted, and she's the
+> exact 58% zero-generate persona — stuck pre-interview (drops at CV stage),
+> so her top asks are all "give me value before I have an interview". She's
+> job-hunting for a first PM role; user replying personally.
+
+- `[gap]` **CV-aware prep** — upload/paste CV → playbook tells you what to
+  emphasize in the phone screen ("don't let the call end without the recruiter
+  hearing about X"). **Second independent request** (Jul 13 session had the
+  same idea). Output is playbook content, not a CV review → on the wedge.
+- `[idea]` **Funnel-drop detection + proactive suggestion** (her case: dies at
+  CV stage → offer a CV pass). This is v0.3 "AI weekly review" — right idea,
+  needs volume we don't have (69% of app-creators have exactly 1 app). Parked.
+- `[idea]` **Rejection-pattern analysis** (applying above level? recurring
+  motif?). Same family as above — parked for volume.
+- `[idea]` **Voice mock interview.** Practice fake-door (live Jul 15) is
+  measuring exactly this demand; let the number decide. Voice is a big lift —
+  text drills would come first anyway.
+- `[idea]` **End-to-end process timing + cross-user benchmarks** ("Papaya
+  takes ~2 months"). Needs 100× our data volume. Single-user time-in-stage
+  already on Insights. Parked.
+- `[idea]` **Glassdoor for interview prep.** No API / ToS problem for
+  scraping, but the underlying ask — interview-experience reports cited in the
+  company brief — is a trust/grounding play. Cheap version: steer brief
+  web_search toward interview-experience sources. Worth checking what briefs
+  cite today.
+- `[idea]` **Industry-mentor marketplace** (advice/intros through the app).
+  Different product, off bootstrap scope. Skip.
+
 ## Aug 9 2026 — local preview session
 
 - `[ux]` The "⌘N" hint on the New-application button is a lie in Chrome —
