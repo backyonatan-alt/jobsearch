@@ -65,10 +65,9 @@ the moment you notice something; triage later.
 
 ## Aug 9 2026 — local preview session
 
-- `[ux]` The "⌘N" hint on the New-application button is a lie in Chrome —
-  the browser reserves ⌘N for a new window and pages can't intercept it
-  (user hit this live). Either rebind (e.g. plain `N` when no input is
-  focused, Linear-style) or drop the hint on Chrome.
+- ~~`[ux]` The "⌘N" hint on the New-application button is a lie in Chrome~~
+  → **Shipped Aug 16** (PR #60): rebound to plain `N` when no input is
+  focused, Linear-style; hint updated.
 
 ## Jul 13 2026 — user review session (live walkthrough with a beta user)
 

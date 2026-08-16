@@ -9,19 +9,22 @@ the next distribution round, so the new cohort lands on more rails worth
 measuring. Build list (sequenced, informed by Noa's Aug 15 feedback +
 the Aug 9 review):
 
-1. **Pre-round email** — round scheduled → email with the playbook the day
-   before ("your round at X is tomorrow"). The Aug 9 "next big bet": the
-   retention mechanic that matches occasion-driven usage. **Unblocks:** the
-   deferred mail decision — pick a transactional provider (recommend
-   Resend/Postmark, API from the VM) at build time. Also unlocks v0.3
-   reminders later.
-2. **CV-aware prep** — paste/upload CV on the application (or profile) →
-   playbook gains a "what to make sure they hear" section. Twice-requested
-   (Jul 13 + Noa #1), serves the pre-interview persona, deepens the wedge.
-3. **Small, bundled:** (a) steer company-brief web_search toward
-   interview-experience sources (Glassdoor-flavored trust play — check
-   current citations first); (b) fix the ⌘N hint lie (rebind to plain `N`
-   or drop on Chrome).
+1. ~~**Pre-round email**~~ → **SHIPPED Aug 16 (PR #58, deployed).** Resend
+   (free tier, domain verified, key on the VM), 24h-before loop with
+   idempotent send ledger, date-add nudge on one-tap rounds (new PATCH),
+   one-click unsubscribe + profile toggle. Mail decision made: **Resend**.
+   Watch: `reminder_email_sent` → `src:reminder` logins (the retention
+   number this was built for). Prod QA prompt handed to user.
+2. ~~**CV-aware prep**~~ → **SHIPPED Aug 16 (PR #59, deployed).**
+   /app/profile (CV paste + PDF/image upload via Haiku extraction),
+   "Make sure they hear" section in round briefs, add-CV hint on briefs
+   without one. Watch: `cv_save` adoption + whether CV-backed briefs move
+   prep-accuracy ratings. **First real generation with a CV = the quality
+   check** — do one personally.
+3. ~~**Small, bundled**~~ → **SHIPPED Aug 16 (PR #60):** company-brief
+   search now hunts + cites firsthand interview-experience reports
+   (Glassdoor/Reddit/Blind) for process/watch_fors; ⌘N hint fixed (plain
+   `N`, Linear-style).
 
 **Explicitly not now:** funnel-drop/rejection analysis (needs volume),
 cross-user benchmarks (needs scale), voice practice (fake-door number

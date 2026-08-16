@@ -86,12 +86,16 @@
     };
   });
 
-  // ⌘N / Ctrl+N opens the new-application modal from anywhere in the app.
+  // Plain N opens the new-application modal (Linear-style). ⌘N can't work —
+  // Chrome reserves it for a new window and pages never see it (Aug 9 note).
   function onKeydown(e) {
-    if ((e.metaKey || e.ctrlKey) && (e.key === 'n' || e.key === 'N') && !showNewModal) {
-      e.preventDefault();
-      showNewModal = true;
-    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key !== 'n' && e.key !== 'N') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (showNewModal) return;
+    e.preventDefault();
+    showNewModal = true;
   }
 
   // First-run onboarding. The variant (prep-first cold start vs guided tour) comes
@@ -172,7 +176,7 @@
           <span class="kbd">⌘K</span>
         </div>
         <button class="new-app" class:outline={onDetail} data-tour="new-app" onclick={() => (showNewModal = true)}>
-          New application <span class="nk">⌘N</span>
+          New application <span class="nk">N</span>
         </button>
         {#if creditsLimit <= 1000}
           <div class="credits" title="Prep credits — 1 per generated round brief">
