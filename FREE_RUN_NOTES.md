@@ -38,12 +38,15 @@ the moment you notice something; triage later.
 > reminder email in Gmail ~1 min after the cycle → playbook link → cleanup.
 > Wall-clock time rendered correctly (Israel tz). Two findings:
 
-- `[bug][watch]` **The reminder landed in Gmail TRASH** (labels = TRASH only,
-  no SPAM label → NOT a deliverability/spam problem; something with a
-  delete action matched it). User to check Gmail Settings → Filters and
-  Blocked Addresses. If no filter explains it, dig into Resend logs next.
-  A reminder that silently self-trashes = a reminder that never sent — do
-  not scale sends until explained.
+- ~~`[bug][watch]` **The reminder landed in Gmail TRASH**~~ → **RESOLVED
+  Aug 16, channel is clean.** Investigation: all 21 Gmail filters are
+  single-address `from:` matches (none can match), blocked list empty, no
+  SPAM label ever. Controlled re-send: reminder #2 (real AT&T round)
+  landed **INBOX + IMPORTANT** and stayed through observation. #1 was a
+  one-off — most likely a manual delete (account open on a shared
+  laptop). No code/deliverability action needed. Bonus: unsubscribe URL
+  verified well-formed in the real rendering (the earlier corruption was
+  a Gmail-API-viewer artifact).
 - ~~`[bug]` Playbook link fell back to the bare app URL~~ → **Fixed Aug 16**:
   the email always deep-linked `/app/{id}/brief/{iid}`, but with no brief
   generated the brief page 404-redirected to `/app/{id}`, dropping the
