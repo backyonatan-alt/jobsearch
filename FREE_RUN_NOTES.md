@@ -32,6 +32,28 @@ the moment you notice something; triage later.
 
 ---
 
+## Aug 16 2026 — pre-round email E2E QA (Claude-for-Chrome, prod) — 7/7 ✅
+
+> Full path verified live: create app → one-tap round → date nudge → PATCH →
+> reminder email in Gmail ~1 min after the cycle → playbook link → cleanup.
+> Wall-clock time rendered correctly (Israel tz). Two findings:
+
+- `[bug][watch]` **The reminder landed in Gmail TRASH** (labels = TRASH only,
+  no SPAM label → NOT a deliverability/spam problem; something with a
+  delete action matched it). User to check Gmail Settings → Filters and
+  Blocked Addresses. If no filter explains it, dig into Resend logs next.
+  A reminder that silently self-trashes = a reminder that never sent — do
+  not scale sends until explained.
+- ~~`[bug]` Playbook link fell back to the bare app URL~~ → **Fixed Aug 16**:
+  the email always deep-linked `/app/{id}/brief/{iid}`, but with no brief
+  generated the brief page 404-redirected to `/app/{id}`, dropping the
+  round. Now redirects to `/app/{id}?round={iid}` and the detail page
+  selects that round (verified: non-default round stays selected).
+- `[watch]` Unsubscribe link renders oddly in the Gmail-API view (likely a
+  quoted-printable double-decode in the viewer, not the mail itself — other
+  links fine). Cheap check next time someone's in Gmail: hover the link,
+  confirm it reads `/unsubscribe?u=…&t=…`.
+
 ## Aug 16 2026 — user first-use of /app/profile (live)
 
 - ~~`[ux]` CV upload has no visible AI-thinking state (button label change

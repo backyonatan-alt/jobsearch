@@ -49,7 +49,9 @@
         call(`/api/applications/${id}/interviews`).catch(() => []),
         call('/api/me').catch(() => null)
       ]);
-      if (!d) { goto(`/app/${id}`, { replaceState: true }); return; }
+      // No brief yet → land on the detail page with THIS round selected, so a
+      // reminder-email link opens the right round's generate state.
+      if (!d) { goto(`/app/${id}?round=${iid}`, { replaceState: true }); return; }
       app = toDisplayApp(a);
       dossier = d;
       me = meResp;
@@ -61,8 +63,9 @@
       }
     } catch (e) {
       if (e.message === 'unauthorized') return;
-      // No brief for this round (404) or anything else broken → back to the detail page.
-      goto(`/app/${id}`, { replaceState: true });
+      // No brief for this round (404) or anything else broken → back to the
+      // detail page, keeping THIS round selected (reminder-email links land here).
+      goto(`/app/${id}?round=${iid}`, { replaceState: true });
       return;
     } finally {
       loading = false;

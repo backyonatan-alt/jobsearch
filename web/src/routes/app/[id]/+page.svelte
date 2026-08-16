@@ -132,7 +132,8 @@
   // With no upcoming round, prefer a past round still waiting on its debrief
   // (that's when the prompt matters) before falling back to the Company tab.
   // ?debrief=<interview_id> (Today's proactive prompt) deep-links straight into
-  // that round with the debrief form open.
+  // that round with the debrief form open. ?round=<interview_id> (reminder
+  // email via the brief page's no-brief redirect) just selects that round.
   async function initPrep() {
     prepReady = false;
     await loadInterviews();
@@ -140,7 +141,9 @@
     loadCompanyBrief();
     const want = Number(page.url.searchParams.get('debrief'));
     const deepLinked = want && (interviews || []).some(iv => iv.id === want);
-    selectedTab = deepLinked ? want : (nextRoundId ?? pendingDebriefRoundId ?? 'company');
+    const wantRound = Number(page.url.searchParams.get('round'));
+    const roundLinked = !deepLinked && wantRound && (interviews || []).some(iv => iv.id === wantRound);
+    selectedTab = deepLinked ? want : roundLinked ? wantRound : (nextRoundId ?? pendingDebriefRoundId ?? 'company');
     prepReady = true;
     if (deepLinked && !debriefsByIv[want]) startDebrief();
     await loadDossier(selectedTab);
