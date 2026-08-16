@@ -7,7 +7,7 @@
   let savedChars = $state(0);
   let cvLoading = $state(true);
   let saving = $state(false);
-  let savedFlash = $state(false);
+  let justSaved = $state(false); // persistent post-save state with next steps
   let extracting = $state(false);
   let cvError = $state('');
   let reminders = $state(true);
@@ -30,10 +30,12 @@
     try {
       const r = await api('/api/me/cv', { method: 'PUT', body: JSON.stringify({ cv_text: cvText }) });
       savedChars = r.cv_chars;
-      savedFlash = true; setTimeout(() => (savedFlash = false), 2500);
+      justSaved = r.cv_chars > 0;
     } catch (e) { cvError = e.message; }
     saving = false;
   }
+  // Editing again after a save puts the emphasis back on the Save button.
+  function onCVInput() { justSaved = false; }
 
   function fileToBase64(file) {
     return new Promise((res, rej) => {
@@ -102,20 +104,41 @@
       <p class="muted">Loading…</p>
     {:else}
       <div class="upload-row">
-        <label class="btn upload">
-          {extracting ? 'Reading your CV…' : 'Upload PDF / image / .txt'}
+        <label class="btn upload" class:busy={extracting}>
+          Upload PDF / image / .txt
           <input type="file" accept=".pdf,.txt,image/*,application/pdf,text/plain" onchange={onFile} disabled={extracting} />
         </label>
         <span class="or">or paste below</span>
       </div>
-      <textarea class="cv-box" rows="14" placeholder="Paste your CV text here…" bind:value={cvText} disabled={extracting}></textarea>
-      {#if cvError}<p class="err">{cvError}</p>{/if}
-      <div class="actions">
-        <span class="privacy">Private to your account — used only to personalize your prep, never shared.</span>
-        <button class="btn btn-primary" onclick={saveCV} disabled={saving || extracting}>
-          {saving ? 'Saving…' : savedFlash ? 'Saved ✓' : 'Save CV'}
-        </button>
+      <div class="cv-wrap">
+        <textarea class="cv-box" rows="14" placeholder="Paste your CV text here…" bind:value={cvText} oninput={onCVInput} disabled={extracting}></textarea>
+        {#if extracting}
+          <div class="extract-overlay" aria-live="polite">
+            <div class="spinner"></div>
+            <div>
+              <b>Reading your CV with AI…</b>
+              <small>Extracting the text — usually 5–15 seconds. It'll appear below for you to review before saving.</small>
+            </div>
+          </div>
+        {/if}
       </div>
+      {#if cvError}<p class="err">{cvError}</p>{/if}
+      {#if justSaved}
+        <div class="saved-card">
+          <b>✓ CV saved — your prep is now personal.</b>
+          <p>Every round brief you generate from here on includes a <strong>"Make sure they hear"</strong> section:
+          the things from your background to land in that specific interview. To see it, open an application
+          and generate the prep for an upcoming round (or refresh an existing brief).</p>
+          <a class="btn btn-primary" href="/app/applications">Open your applications →</a>
+        </div>
+      {:else}
+        <div class="actions">
+          <span class="privacy">Private to your account — used only to personalize your prep, never shared.</span>
+          <button class="btn btn-primary" onclick={saveCV} disabled={saving || extracting}>
+            {saving ? 'Saving…' : 'Save CV'}
+          </button>
+        </div>
+      {/if}
     {/if}
   </section>
 
@@ -144,7 +167,20 @@
     border-radius: 9px; padding: 7px 13px; cursor: pointer; }
   .btn:hover { border-color: #b9b9b4; }
   .upload { display: inline-block; }
+  .upload.busy { opacity: 0.55; cursor: default; }
   .upload input { display: none; }
+  .cv-wrap { position: relative; }
+  .extract-overlay { position: absolute; inset: 0; background: rgba(251, 251, 249, 0.92); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; gap: 14px; padding: 20px; text-align: left; }
+  .extract-overlay b { display: block; font-size: 13.5px; color: #16181c; }
+  .extract-overlay small { display: block; font-size: 12px; color: #6b7280; margin-top: 3px; max-width: 340px; }
+  .spinner { width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%;
+    border: 3px solid #dbe6fb; border-top-color: #2463eb; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .saved-card { margin-top: 12px; background: #ecfdf3; border: 1px solid #b7e4c7; border-radius: 12px; padding: 14px 16px; }
+  .saved-card b { font-size: 13.5px; color: #166534; }
+  .saved-card p { font-size: 12.5px; color: #374151; margin: 6px 0 12px; line-height: 1.55; }
+  .saved-card .btn-primary { display: inline-block; text-decoration: none; }
   .or { font-size: 12px; color: #8a9099; }
   .cv-box { width: 100%; box-sizing: border-box; font-family: inherit; font-size: 12.5px; line-height: 1.5;
     color: #16181c; border: 1px solid #e0e0dc; border-radius: 10px; padding: 10px 12px; resize: vertical; background: #fbfbf9; }

@@ -32,6 +32,15 @@ the moment you notice something; triage later.
 
 ---
 
+## Aug 16 2026 — user first-use of /app/profile (live)
+
+- ~~`[ux]` CV upload has no visible AI-thinking state (button label change
+  too subtle) + after Save nothing says what you gained or what to do
+  next~~ → **Shipped Aug 16** (same-day): extraction overlay with spinner +
+  honest ETA over the textarea, and a persistent post-save success card
+  ("your prep is now personal" + how to see the section + "Open your
+  applications →" CTA).
+
 ## Aug 15 2026 — email feedback from Noa (BGU student cohort, unsolicited)
 
 > Second structured external feedback after Ayelet. Meta-signal as valuable as
