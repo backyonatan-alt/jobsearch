@@ -124,6 +124,10 @@
     goto('/', { replaceState: true });
   }
 
+  let avatarMenu = $state(false);
+  // Any navigation closes the menu.
+  $effect(() => { void page.url.pathname; avatarMenu = false; });
+
   const path = $derived(page.url.pathname);
   function isCurrent(href, exact = false) {
     if (exact) return path === href;
@@ -180,13 +184,22 @@
             <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7l-3 2.5V11H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
           </svg>
         </a>
-        <button class="avatar" onclick={signOut} title={me?.email ? `${me.email} — sign out` : 'Sign out'}>
-          {#if me?.picture_url}
-            <img src={me.picture_url} alt={me.email ?? ''} referrerpolicy="no-referrer" />
-          {:else}
-            {userInitials}
+        <div class="avatar-wrap">
+          <button class="avatar" onclick={() => (avatarMenu = !avatarMenu)} title={me?.email ?? ''} aria-haspopup="menu" aria-expanded={avatarMenu}>
+            {#if me?.picture_url}
+              <img src={me.picture_url} alt={me.email ?? ''} referrerpolicy="no-referrer" />
+            {:else}
+              {userInitials}
+            {/if}
+          </button>
+          {#if avatarMenu}
+            <div class="avatar-menu" role="menu">
+              <span class="am-email">{me?.email ?? ''}</span>
+              <a role="menuitem" href="/app/profile" onclick={() => (avatarMenu = false)}>Profile &amp; CV</a>
+              <button role="menuitem" type="button" onclick={signOut}>Sign out</button>
+            </div>
           {/if}
-        </button>
+        </div>
       </div>
     </div>
   </header>
@@ -274,6 +287,16 @@
     font-family: inherit;
   }
   .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .avatar-wrap { position: relative; flex: none; }
+  .avatar-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; min-width: 190px;
+    background: #fff; border: 1px solid #e4e4e1; border-radius: 10px; padding: 6px;
+    box-shadow: 0 8px 24px rgba(20, 22, 26, 0.12); display: flex; flex-direction: column; }
+  .am-email { font-size: 11.5px; color: #8a9099; padding: 6px 9px 7px; border-bottom: 1px solid #f0f0ee;
+    margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .avatar-menu a, .avatar-menu button { text-align: left; font-family: inherit; font-size: 13px;
+    color: #16181c; background: none; border: 0; border-radius: 7px; padding: 7px 9px;
+    cursor: pointer; text-decoration: none; }
+  .avatar-menu a:hover, .avatar-menu button:hover { background: #f4f4f2; }
 
   /* Desktop-only beta notice — only shown on narrow viewports. */
   .narrow-note { display: none; }

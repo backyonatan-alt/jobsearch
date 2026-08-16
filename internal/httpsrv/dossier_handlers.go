@@ -358,7 +358,13 @@ func (s *Server) handleDossierRefresh(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	content, gerr := s.LLM.GenerateInterviewerBrief(gctx, app.Company, app.Role, req.InterviewerName, loc, req.CompanyURL, roundContext, priorDebriefs)
+	// The candidate's CV (when saved) drives the "make sure they hear" section.
+	var candidateCV string
+	if err := s.Pool.QueryRow(gctx, `SELECT coalesce(cv_text, '') FROM users WHERE id = $1`, u.ID).Scan(&candidateCV); err != nil {
+		s.Logger.Error("cv read for brief", "err", err) // non-fatal: prep works without it
+	}
+
+	content, gerr := s.LLM.GenerateInterviewerBrief(gctx, app.Company, app.Role, req.InterviewerName, loc, req.CompanyURL, roundContext, priorDebriefs, candidateCV)
 	if gerr != nil {
 		s.failGenerate(w, gctx, u.ID, start, gerr)
 		return
