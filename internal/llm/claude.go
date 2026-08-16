@@ -71,6 +71,17 @@ func TextBlock(s string) ContentBlock {
 	return ContentBlock{Type: "text", Text: s}
 }
 
+func DocumentBlock(mediaType, base64Data string) ContentBlock {
+	return ContentBlock{
+		Type: "document",
+		Source: &ImageSource{
+			Type:      "base64",
+			MediaType: mediaType,
+			Data:      base64Data,
+		},
+	}
+}
+
 func ImageBlock(mediaType, base64Data string) ContentBlock {
 	return ContentBlock{
 		Type:   "image",
@@ -559,6 +570,11 @@ Return ONLY a JSON object with this exact shape (no prose, no markdown fences):
   "avoid":     ["4 short, specific things that don't."],
   "questions": [
     {"q": "Question for the candidate to ask back.", "why": "Why it lands."}
+  ],
+  "make_sure_they_hear": [
+    "3-5 bullets. ONLY when the user message includes a Candidate CV — omit this key entirely otherwise.",
+    "Each bullet names ONE specific thing from the candidate's own CV they should make sure the interviewer hears in THIS round, and why it maps to what this person/team grades for.",
+    "Concrete and checkable — 'Don't let the call end without them knowing you X' — never generic advice like 'mention your experience'."
   ]
 }
 
@@ -567,6 +583,32 @@ If the interviewer is a generic name you can't find online, still return a usefu
 If after searching you genuinely can't find enough information, return: {"error": "could not find enough public information about this person"}.
 
 Output JSON only.`
+
+const cvExtractSystemPrompt = `You extract the plain text of a CV / resume from a document or image. Return ONLY the CV's text content, preserving section structure with simple line breaks. No commentary, no markdown formatting, no JSON. If the file is not a CV/resume, return exactly: NOT_A_CV`
+
+// ExtractCVText pulls plain text out of an uploaded CV (PDF or image) via
+// Haiku. mediaType "application/pdf" uses a document block; image/* uses a
+// vision block.
+func (c *Client) ExtractCVText(ctx context.Context, mediaType, base64Data string) (string, error) {
+	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	block := ImageBlock(mediaType, base64Data)
+	if mediaType == "application/pdf" {
+		block = DocumentBlock(mediaType, base64Data)
+	}
+	resp, err := c.CreateMessage(cctx, ModelHaiku, cvExtractSystemPrompt, []Message{
+		{Role: "user", Content: []ContentBlock{block, TextBlock("Extract this CV's text.")}},
+	}, 3000)
+	if err != nil {
+		return "", err
+	}
+	out := strings.TrimSpace(resp)
+	if out == "" || strings.Contains(out, "NOT_A_CV") {
+		return "", errors.New("that file doesn't look like a CV — try a PDF or a clear screenshot of it")
+	}
+	return out, nil
+}
 
 // companyGroundingPrompt assembles the user message with whatever disambiguation
 // signals we have. A linkedin.com job URL is dropped — it identifies the posting,
@@ -623,7 +665,7 @@ func (c *Client) GenerateCompanyBrief(ctx context.Context, company, role, locati
 
 // buildInterviewerPromptUser assembles the user message for a round's brief.
 // Split out so tests can pin what the model actually sees.
-func buildInterviewerPromptUser(company, role, interviewerName, location, companyURL, roundContext, priorDebriefs string) string {
+func buildInterviewerPromptUser(company, role, interviewerName, location, companyURL, roundContext, priorDebriefs, candidateCV string) string {
 	var user strings.Builder
 	fmt.Fprintf(&user, "Company: %s\nRole: %s\n", company, role)
 	if s := strings.TrimSpace(location); s != "" {
@@ -643,6 +685,12 @@ func buildInterviewerPromptUser(company, role, interviewerName, location, compan
 	if s := strings.TrimSpace(priorDebriefs); s != "" {
 		fmt.Fprintf(&user, "\nEarlier rounds in THIS process already happened — the candidate's own debriefs:\n%s\nUse these to tailor this round: build on what landed, shore up what felt shaky, anticipate follow-ups to what already came up, and don't re-tread ground already covered. Weave this into snapshot/lands/avoid/questions where it helps — do not invent a separate section.\n", s)
 	}
+	if s := strings.TrimSpace(candidateCV); s != "" {
+		if r := []rune(s); len(r) > 6000 {
+			s = string(r[:6000]) + "…"
+		}
+		fmt.Fprintf(&user, "\nCandidate CV (the candidate's own background — use it to fill \"make_sure_they_hear\" and to sharpen lands/questions; never quote it back verbatim):\n%s\n", s)
+	}
 	return user.String()
 }
 
@@ -652,11 +700,11 @@ func buildInterviewerPromptUser(company, role, interviewerName, location, compan
 // Assignment Presentation" — so the prep is tailored to the round's FORMAT.
 // priorDebriefs (may be empty) summarises how earlier rounds went so this round's
 // prep can build on what already happened — the debrief feed-forward loop.
-func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, interviewerName, location, companyURL, roundContext, priorDebriefs string) (json.RawMessage, error) {
+func (c *Client) GenerateInterviewerBrief(ctx context.Context, company, role, interviewerName, location, companyURL, roundContext, priorDebriefs, candidateCV string) (json.RawMessage, error) {
 	cctx, cancel := context.WithTimeout(ctx, 150*time.Second)
 	defer cancel()
 
-	user := buildInterviewerPromptUser(company, role, interviewerName, location, companyURL, roundContext, priorDebriefs)
+	user := buildInterviewerPromptUser(company, role, interviewerName, location, companyURL, roundContext, priorDebriefs, candidateCV)
 
 	resp, err := c.CreateMessage(cctx, ModelSonnet, interviewerBriefSystemPrompt, []Message{
 		{Role: "user", Content: user},

@@ -15,6 +15,7 @@
   let app = $state(null);
   let dossier = $state(null);
   let round = $state(null);
+  let me = $state(null);
   let loading = $state(true);
   let refreshing = $state(false);
   let refreshErr = $state('');
@@ -42,14 +43,16 @@
   async function load() {
     loading = true;
     try {
-      const [a, d, ivs] = await Promise.all([
+      const [a, d, ivs, meResp] = await Promise.all([
         call(`/api/applications/${id}`),
         call(`/api/applications/${id}/dossier?interview_id=${iid}`),
-        call(`/api/applications/${id}/interviews`).catch(() => [])
+        call(`/api/applications/${id}/interviews`).catch(() => []),
+        call('/api/me').catch(() => null)
       ]);
       if (!d) { goto(`/app/${id}`, { replaceState: true }); return; }
       app = toDisplayApp(a);
       dossier = d;
+      me = meResp;
       round = (ivs || []).find(x => String(x.id) === String(iid)) || null;
       const key = `${id}:${iid}`;
       if (openLogged !== key) {
@@ -135,6 +138,9 @@
   const signals = $derived(Array.isArray(content?.signals) ? content.signals : []);
   const lands = $derived(Array.isArray(content?.lands) ? content.lands : []);
   const avoid = $derived(Array.isArray(content?.avoid) ? content.avoid : []);
+  const mustHear = $derived(Array.isArray(content?.make_sure_they_hear) ? content.make_sure_they_hear : []);
+  // Hint only when there's genuinely a gap: no CV on file AND this brief predates one.
+  const showCVHint = $derived(!mustHear.length && me != null && !me.cv_chars);
   const questions = $derived(Array.isArray(content?.questions) ? content.questions : []);
   const tells = $derived(Array.isArray(content?.style?.tells) ? content.style.tells : []);
 
@@ -227,6 +233,22 @@
         {/if}
       </div>
     </div>
+
+    {#if mustHear.length}
+      <div class="mh-card">
+        <div class="mh-hd">Make sure they hear</div>
+        <p class="mh-sub">From your CV — don't leave this round without landing these:</p>
+        <div class="mh-list">
+          {#each mustHear as m, i (i)}
+            <div class="mh-row"><span class="mh-g">→</span>{m}</div>
+          {/each}
+        </div>
+      </div>
+    {:else if showCVHint}
+      <a class="mh-hint noprint" href="/app/profile">
+        ✦ Add your CV once and every brief gains a <b>"Make sure they hear"</b> section — what from <b>your</b> background to land in this round. Add it →
+      </a>
+    {/if}
 
     {#if signals.length}
       <div class="rule"></div>
@@ -351,6 +373,16 @@
   .sig-src { font-size: 12px; margin-left: 6px; }
   .sig-src.plain { color: #8a9099; }
 
+  .mh-card { background: #f5f9ff; border: 1px solid #cdddfb; border-radius: 14px; padding: 18px 22px; margin-top: 28px; }
+  .mh-hd { font-size: 13px; font-weight: 700; color: #16181c; }
+  .mh-sub { font-size: 12.5px; color: #4b5158; margin: 3px 0 10px; }
+  .mh-list { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; line-height: 1.55; color: #16181c; }
+  .mh-row { display: flex; gap: 9px; }
+  .mh-g { color: #2463eb; font-weight: 700; flex-shrink: 0; }
+  .mh-hint { display: block; margin-top: 28px; background: #f5f9ff; border: 1px dashed #cdddfb; border-radius: 12px;
+    padding: 12px 16px; font-size: 12.5px; color: #4b5158; text-decoration: none; }
+  .mh-hint:hover { border-color: #2463eb; }
+  .mh-hint b { color: #16181c; }
   .qcard { background: #fff; border: 1px solid #e8e8e5; border-radius: 14px; padding: 20px 24px; margin-top: 34px; }
   .q-hd { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
   .q-list { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; line-height: 1.6; color: #4b5158; }

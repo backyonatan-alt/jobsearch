@@ -118,10 +118,12 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	u, _ := userFromCtx(r.Context())
-	var prepUsed, prepLimit int
+	var prepUsed, prepLimit, cvChars int
+	var emailReminders bool
 	if err := s.Pool.QueryRow(r.Context(),
-		`SELECT prep_credits_used, prep_credits_limit FROM users WHERE id = $1`, u.ID,
-	).Scan(&prepUsed, &prepLimit); err != nil {
+		`SELECT prep_credits_used, prep_credits_limit, email_reminders, coalesce(length(cv_text), 0)
+		 FROM users WHERE id = $1`, u.ID,
+	).Scan(&prepUsed, &prepLimit, &emailReminders, &cvChars); err != nil {
 		s.Logger.Error("me prep credits read", "err", err) // non-fatal: credits default to 0/0
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -133,6 +135,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"onboarding_variant":  u.OnboardingVariant,
 		"prep_credits_used":   prepUsed,
 		"prep_credits_limit":  prepLimit,
+		"email_reminders":     emailReminders,
+		"cv_chars":            cvChars,
 	})
 }
 

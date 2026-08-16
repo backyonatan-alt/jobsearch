@@ -35,6 +35,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /unsubscribe", s.handleUnsubscribe)
 	mux.HandleFunc("GET /api/me", s.requireUser(s.handleMe))
 	mux.HandleFunc("POST /api/me/onboarded", s.requireUser(s.handleMarkOnboarded))
+	mux.HandleFunc("GET /api/me/cv", s.requireUser(s.handleCVGet))
+	mux.HandleFunc("PUT /api/me/cv", s.requireUser(s.handleCVPut))
+	mux.HandleFunc("POST /api/me/cv/extract", s.requireUser(s.handleCVExtract))
+	mux.HandleFunc("PUT /api/me/reminders", s.requireUser(s.handleRemindersPut))
 	mux.HandleFunc("POST /api/events", s.requireUser(s.handleEventCreate))
 	// Seed/clear the caller's own demo data — used by the first-run guided tour
 	// to populate the screens during the tour, then clear them on finish.

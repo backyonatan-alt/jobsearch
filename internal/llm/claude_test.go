@@ -66,6 +66,7 @@ func TestInterviewerPromptCarriesRoundContext(t *testing.T) {
 		"Tel Aviv", "https://www.hibob.com",
 		"Home Assignment Presentation — walk through the take-home and defend it",
 		"round 1 went strong",
+		"",
 	)
 	for _, want := range []string{
 		"Company: HiBob",
@@ -78,8 +79,31 @@ func TestInterviewerPromptCarriesRoundContext(t *testing.T) {
 		}
 	}
 
-	plain := buildInterviewerPromptUser("HiBob", "PM", "Adir", "", "", "", "")
+	plain := buildInterviewerPromptUser("HiBob", "PM", "Adir", "", "", "", "", "")
 	if strings.Contains(plain, "This round:") {
 		t.Errorf("empty round context should add no line:\n%s", plain)
+	}
+	if strings.Contains(plain, "Candidate CV") {
+		t.Errorf("empty CV should add no line:\n%s", plain)
+	}
+}
+
+// A saved CV must reach the model with the make_sure_they_hear instruction;
+// an oversized CV is truncated so it can't blow the prompt budget.
+func TestInterviewerPromptCarriesCandidateCV(t *testing.T) {
+	got := buildInterviewerPromptUser("HiBob", "PM", "Adir", "", "", "", "",
+		"Yonatan — 6y backend, led Maven Evals course for PMs")
+	for _, want := range []string{"Candidate CV", "Maven Evals course"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompt missing %q:\n%s", want, got)
+		}
+	}
+	long := strings.Repeat("x", 9000)
+	trunc := buildInterviewerPromptUser("HiBob", "PM", "Adir", "", "", "", "", long)
+	if strings.Contains(trunc, long) {
+		t.Error("oversized CV was not truncated")
+	}
+	if !strings.Contains(trunc, strings.Repeat("x", 6000)+"…") {
+		t.Error("truncated CV missing ellipsis marker at 6000 runes")
 	}
 }
