@@ -255,6 +255,11 @@ Ranked plan:
 5. **Reddit/communities, value-first** — answer "interview at X next week" threads with the
    actual methodology; tool in profile only. Slow, compounding, free ICP research.
 
+6. **Directory listings, passive** — first one live: **betas.co.il submitted Aug 17 2026**
+   (in review; `src=betas` tagged). Zero ongoing founder labor, small and bursty by nature —
+   count it as free baseline, never as a substitute for #1. Add further directories only if
+   `src:betas` shows real inflow.
+
 **Share links still ship** (read-only company brief, OG card, `?ref=`) — but as a *utility*
 for private sends (mentor, friend, coach), not as the growth engine. Every shared brief is a
 public demo, so §9 gates this too.

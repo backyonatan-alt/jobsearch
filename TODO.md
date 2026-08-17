@@ -2,6 +2,33 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 📣 Aug 17 2026 — betas.co.il listing submitted (distribution, passive channel)
+
+First directory listing. Submitted to `betas.co.il/submit` and **accepted into
+the review queue** (confirmation: "Pursuit is in the review queue", email to
+back.yonatan@gmail.com when status changes). Copy + assets in
+`docs/betas-submission.md` / `docs/betas/`.
+
+- **Link is tagged:** `https://pursuit-playbook.com/?src=betas&utm_source=betas&utm_medium=directory`
+  → first-party `login` event carries `src:betas`, GA4 sees the `utm_*` pair.
+- **Join mode = open**, not "collect tester applications" — signup is already
+  public (`OPEN_SIGNUP=true`); a second gate in front of one-click Google
+  sign-in only leaks the cohort.
+- Listed as: Web, desktop-only, English; ICP stated as "a round already
+  scheduled in the next two weeks"; offer = 10 free playbooks, no card.
+- Logo + cover uploaded manually (brand card, not a product screenshot).
+  **Swap in a real playbook screenshot with visible source links** when there's
+  a clean one — citations are the pitch, and the cover is the only place a
+  browser sees the product before clicking.
+
+**What to watch:** `src:betas` logins. This is a passive channel with no
+founder labor after approval, so treat any inflow as free baseline — but it
+does **not** substitute for the LinkedIn/warm-batch round (STRATEGY §8 #1),
+which is still the binding constraint per the Aug 13 read.
+
+**Next:** check the listing went live (email or `betas.co.il` board), then note
+first `src:betas` login in this file.
+
 ## 🔨 Aug 15 2026 — build sprint before distribution round 2 (user call)
 
 User decision: flip the Aug 13 order — build a small package first, **then**
