@@ -2,6 +2,26 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 📣 Aug 19 2026 — student email round 2 drafted (all years, "your feedback landed")
+
+Two Gmail drafts prepared for the user to review + send (BCC, addresses kept
+OUT of this repo): batch A = 84, batch B = 56 (Aug 4 batch B + the 7 Jul-13
+invitees not in the Aug 4 blast). **140 unique recipients** — the union of
+every prior student send, deduped. Hebrew, user's voice; message = "I got your
+feedback, the system is much better," naming the four shipped rails: target
+mode (no interview needed), CV-aware prep, pre-round reminder email,
+firsthand-report sources.
+
+Link fully tagged per playbook rule #7:
+`https://pursuit-playbook.com/?src=alum2&utm_source=alum&utm_medium=email&utm_campaign=round2`
+— `src=alum2` (not `alum`) so round-2 logins are separable first-party;
+GA source stays `alum`, campaign splits the rounds.
+
+**After the user sends:** this is the cohort that tests target mode, playbook
+CTA, reground, pre-round email, CV-aware prep (Aug 15 plan). Read plan: light
+read ~2 days post-send (signups by `src:alum2`, prepfirst mode split,
+`cv_save`), fuller read ~day 7 (reminder→return, debrief, trust ratings).
+
 ## 🔨 Aug 15 2026 — build sprint before distribution round 2 (user call)
 
 User decision: flip the Aug 13 order — build a small package first, **then**
