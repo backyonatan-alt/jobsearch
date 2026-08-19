@@ -2,9 +2,9 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
-## 📣 Aug 19 2026 — student email round 2 drafted (all years, "your feedback landed")
+## 📣 Aug 19 2026 — student email round 2 SENT (all years, "your feedback landed")
 
-Two Gmail drafts prepared for the user to review + send (BCC, addresses kept
+**Sent Aug 19 ~18:51 IL** (verified in Gmail), two BCC batches (addresses kept
 OUT of this repo): batch A = 84, batch B = 56 (Aug 4 batch B + the 7 Jul-13
 invitees not in the Aug 4 blast). **140 unique recipients** — the union of
 every prior student send, deduped. Hebrew, user's voice; message = "I got your
@@ -17,10 +17,13 @@ Link fully tagged per playbook rule #7:
 — `src=alum2` (not `alum`) so round-2 logins are separable first-party;
 GA source stays `alum`, campaign splits the rounds.
 
-**After the user sends:** this is the cohort that tests target mode, playbook
-CTA, reground, pre-round email, CV-aware prep (Aug 15 plan). Read plan: light
-read ~2 days post-send (signups by `src:alum2`, prepfirst mode split,
-`cv_save`), fuller read ~day 7 (reminder→return, debrief, trust ratings).
+This is the cohort that tests target mode, playbook CTA, reground, pre-round
+email, CV-aware prep (Aug 15 plan). Read plan (reminder triggers armed into
+the session): **light read Aug 21** — signups by `src:alum2`, prepfirst mode
+split (target vs interview), `cv_save`; **fuller read Aug 26** — reminder→
+`src:reminder` returns, debrief, trust ratings, zero-generate share vs the
+58% baseline. Note sent Wed evening: Thu is the only working day before the
+IL weekend, so treat the Aug 21 read as directional only.
 
 ## 🔨 Aug 15 2026 — build sprint before distribution round 2 (user call)
 
