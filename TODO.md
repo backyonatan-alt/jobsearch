@@ -18,12 +18,31 @@ Link fully tagged per playbook rule #7:
 GA source stays `alum`, campaign splits the rounds.
 
 This is the cohort that tests target mode, playbook CTA, reground, pre-round
-email, CV-aware prep (Aug 15 plan). Read plan (reminder triggers armed into
-the session): **light read Aug 21** — signups by `src:alum2`, prepfirst mode
-split (target vs interview), `cv_save`; **fuller read Aug 26** — reminder→
-`src:reminder` returns, debrief, trust ratings, zero-generate share vs the
-58% baseline. Note sent Wed evening: Thu is the only working day before the
-IL weekend, so treat the Aug 21 read as directional only.
+email, CV-aware prep (Aug 15 plan). Fuller read armed for **Aug 26** —
+reminder→`src:reminder` returns, debrief, trust ratings, zero-generate share
+vs the 58% baseline.
+
+### 📊 Aug 21 light read (~36h post-send; deploy-key aggregate, non-admin)
+
+- ⚠️ **The tagged link did not survive sending.** The email went out with a
+  bare `https://pursuit-playbook.com/app` — `src=alum2` + all `utm_*` were
+  edited out before send. Zero `alum2` logins is therefore *expected*, GA
+  will read Direct again, and this round is attribution-blind (cohort =
+  timing+domain inference only). Playbook rule #7 needs a stronger form:
+  **verify the link in the SENT copy**, not just the draft — this is the
+  second bare student send (Aug 4, now Aug 19).
+- **Top of funnel: 9 signups in ~36h** (2 bgu.ac.il, 7 gmail — students use
+  personal accounts) vs ~1–2/week baseline → effectively all from the send.
+  77 non-admin users total. Only Thu was a working day; IL weekend ahead.
+- **Activation: 3/9 created an app, same 3 reached a playbook** (33% vs 53%
+  baseline — early, weekend pending). Prepfirst: 10 prompt views → 3 submit
+  → 3 generate_ok, **zero errors, zero reground**. 3 skips.
+- **Target mode: toggled by 2 users, submitted by 0** — all 5 submits were
+  mode=interviewing. Watch on Aug 26 whether target-toggle → abandon is a
+  pattern (the toggle draws interest but doesn't convert?).
+- **New rails touched:** `cv_save` 1 user, `reminder_email_sent` 1 (first
+  organic pre-round reminder!), `interview_save` 2 users, `playbook_cta_click`
+  1. `dossier_open` 5 users / 14 opens.
 
 ## 🔨 Aug 15 2026 — build sprint before distribution round 2 (user call)
 

@@ -1,14 +1,21 @@
 name: backup
 
-# THROWAWAY OVERRIDE (branch only, reverted after one run): read-only
-# aggregate SQL for the Aug 21 light read of student email round 2.
-# No PII in output — counts and event names only (public logs).
+# Nightly Postgres backup: pg_dump on the VM (last 7 kept locally for fast
+# restores) + an ENCRYPTED copy stored off-VM as a workflow artifact.
+#
+# The repo is PUBLIC, so artifacts are downloadable by anyone — the dump is
+# always encrypted before upload (AES-256, PBKDF2). The passphrase is
+# BACKUP_PASSPHRASE if that secret is set, otherwise it's derived from
+# DEPLOY_SSH_KEY (sha256 of the secret's base64 value). Restore instructions:
+# deploy/README.md "Backups & restore".
 
 on:
+  schedule:
+    - cron: '23 2 * * *'
   workflow_dispatch:
 
 jobs:
-  read:
+  backup:
     runs-on: ubuntu-latest
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     steps:
@@ -19,58 +26,58 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Aggregate read (non-admin, since send 2026-08-19 15:45Z)
+      - name: Dump on the VM + verify TOC + rotate last 7
+        # pg_restore runs on the VM (same Postgres version as pg_dump) — the
+        # runner's client can be older and unable to read the archive header.
+        run: |
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            set -e
+            sudo install -d -o postgres -g postgres -m 700 /var/backups/pursuit
+            ts=$(date -u +%Y%m%d-%H%M%S)
+            f=/var/backups/pursuit/pursuit-$ts.dump
+            sudo -u postgres sh -c "pg_dump --format=custom jobsearch > $f"
+            sudo -u postgres pg_restore --list "$f" > /tmp/backup-toc.txt
+            for t in users applications interviews dossiers debriefs events invited_emails; do
+              grep -q "TABLE DATA public $t " /tmp/backup-toc.txt || { echo "missing table in dump: $t"; exit 1; }
+            done
+            echo "dump OK: $(grep -c "TABLE DATA" /tmp/backup-toc.txt) TABLE DATA entries"
+            rm -f /tmp/backup-toc.txt
+            sudo -u postgres sh -c "ls -1t /var/backups/pursuit/pursuit-*.dump | tail -n +8 | xargs -r rm --"
+            sudo -u postgres ls -lh /var/backups/pursuit/
+          '
+
+      - name: Fetch latest dump
         run: |
           ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "sudo -u postgres psql -d jobsearch -X -q" <<'SQL'
-          \pset footer off
-          \echo === signups since send, by domain ===
-          SELECT count(*) FILTER (WHERE email ILIKE '%bgu.ac.il') AS bgu,
-                 count(*) FILTER (WHERE email ILIKE '%gmail.com') AS gmail,
-                 count(*) AS total
-          FROM users WHERE NOT is_admin AND created_at >= '2026-08-19 15:45+00';
-          \echo === total users (all time, non-admin) ===
-          SELECT count(*) FROM users WHERE NOT is_admin;
-          \echo === login src since send (non-admin) ===
-          SELECT coalesce(e.props->>'src','(none)') AS src,
-                 count(DISTINCT e.user_id) AS users, count(*) AS logins
-          FROM events e JOIN users u ON u.id = e.user_id
-          WHERE NOT u.is_admin AND e.name = 'login'
-            AND e.created_at >= '2026-08-19 15:45+00'
-          GROUP BY 1 ORDER BY 2 DESC;
-          \echo === prepfirst events since send, by mode (non-admin) ===
-          SELECT e.name, coalesce(e.props->>'mode','') AS mode,
-                 count(DISTINCT e.user_id) AS users, count(*) AS n
-          FROM events e JOIN users u ON u.id = e.user_id
-          WHERE NOT u.is_admin AND e.created_at >= '2026-08-19 15:45+00'
-            AND e.name IN ('prepfirst_prompt_view','prepfirst_mode_toggle',
-                           'prepfirst_submit','prepfirst_generate_ok',
-                           'prepfirst_generate_error','prepfirst_skip',
-                           'prepfirst_reground_submit')
-          GROUP BY 1,2 ORDER BY 1,2;
-          \echo === generate errors since send: step/reason (non-admin) ===
-          SELECT e.props->>'step' AS step, left(e.props->>'reason', 60) AS reason,
-                 count(*) AS n
-          FROM events e JOIN users u ON u.id = e.user_id
-          WHERE NOT u.is_admin AND e.name = 'prepfirst_generate_error'
-            AND e.created_at >= '2026-08-19 15:45+00'
-          GROUP BY 1,2 ORDER BY 3 DESC;
-          \echo === key adoption events since send (non-admin) ===
-          SELECT e.name, count(DISTINCT e.user_id) AS users, count(*) AS n
-          FROM events e JOIN users u ON u.id = e.user_id
-          WHERE NOT u.is_admin AND e.created_at >= '2026-08-19 15:45+00'
-            AND e.name IN ('cv_save','reminder_email_sent','dossier_open',
-                           'dossier_refresh','application_create','interview_save',
-                           'debrief_save','identity_rejected',
-                           'identity_reresearch_submitted','playbook_cta_click',
-                           'brief_page_open')
-          GROUP BY 1 ORDER BY 1;
-          \echo === new-cohort activation (users created since send) ===
-          SELECT count(DISTINCT u.id) AS new_users_with_app
-          FROM users u JOIN applications a ON a.user_id = u.id
-          WHERE NOT u.is_admin AND u.created_at >= '2026-08-19 15:45+00';
-          SELECT count(DISTINCT e.user_id) AS new_users_reached_playbook
-          FROM events e JOIN users u ON u.id = e.user_id
-          WHERE NOT u.is_admin AND u.created_at >= '2026-08-19 15:45+00'
-            AND e.name IN ('prepfirst_generate_ok','dossier_refresh','brief_page_open');
-          SQL
+            'sudo -u postgres sh -c "cat \$(ls -1t /var/backups/pursuit/pursuit-*.dump | head -1)"' \
+            > pursuit.dump
+          ls -l pursuit.dump
+
+      - name: Sanity-check the fetched copy
+        run: |
+          test "$(stat -c%s pursuit.dump)" -gt 10000 || { echo "dump suspiciously small"; exit 1; }
+          head -c5 pursuit.dump | grep -q "PGDMP" || { echo "not a pg_dump custom archive"; exit 1; }
+
+      - name: Encrypt (never upload plaintext — public repo)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -n "$BACKUP_PASSPHRASE" ]; then
+            PASS="$BACKUP_PASSPHRASE"
+          else
+            PASS=$(printf %s "$DEPLOY_SSH_KEY" | sha256sum | cut -d' ' -f1)
+          fi
+          export PASS
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -in pursuit.dump -out pursuit.dump.enc -pass env:PASS
+          rm -f pursuit.dump
+          ls -l pursuit.dump.enc
+
+      - name: Upload encrypted artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: pursuit.dump.enc
+          retention-days: 30
+          if-no-files-found: error
