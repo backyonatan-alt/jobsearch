@@ -2,6 +2,46 @@
 
 Time-bound items. Cross off as completed. Things that don't have a date go in `CLAUDE.md` roadmap, not here.
 
+## 📊 Aug 23 2026 — round-2 email read (day 4 after the Aug 19 send)
+
+Deploy-key aggregate (throwaway backup.yml override on this branch, reverted).
+Send: **Aug 19 ~15:50 UTC, ~140 BGU addresses in two batches** ("עדכון: לקחתי
+את הפידבק שלכם") — pitched both re-activation of round-1 users and the four new
+features. **The link went out bare again** (`https://pursuit-playbook.com/app`,
+no `?src=`/utm — playbook rule #7 missed a second time), so the cohort is
+identified by signup timing only; login src since the send: 21 `(none)`, 1
+`betas`.
+
+- **Cohort 2 = 10 signups** (7 on Aug 19, 2 Aug 20, 1 Aug 22; ~7% of ~140 —
+  round 1 was ~15%). Funnel: **4/10 real app → 4/10 playbook (40%)**, 4 spent
+  credits, 2 added rounds, 0 debriefs, 1/10 returned on a later day so far.
+  Same decay curve as every send: DAU 9 → 5 → 1 → 2 → 1; top of funnel dry
+  again by Aug 21. Prepfirst: 11 prompt views → 4 submit → 4 generate_ok,
+  0 generate errors (reground path still unexercised).
+- **Re-activation flopped: 3 pre-existing users returned** since the send
+  (2 touched the playbook) out of ~130 round-1 recipients + 68 prior signups.
+  "Come back, it's better now" via email ≈ no pull.
+- **Every Aug-16 feature got its first real use** (small n, all new signal):
+  target mode **2 toggles / 2 users** (was 0 ever); playbook CTA 4 views /
+  2 clicks since send (3 clicks all-time); **first real `cv_save`** (1 user,
+  extract → save); **first real pre-round reminder emails sent** (2 sends /
+  1 user, with `round_date_add` working); 1 `practice_interest` click on the
+  voice fake-door.
+- **Trust ratings are no longer perfect: 2 `partly` landed** (all-time now
+  3 spot_on / 2 partly, n=5 of the ≥30 gate). 2 `debrief_save` / 1 user since
+  the send — a pre-existing user, and the debrief loop's first "prep was only
+  partly right" signal. Worth reading those debrief topics/notes on the next
+  admin pass.
+- All-time zero-credit share: 44/78 = **56%** (was 58% pre-fix) — moving the
+  right way, slowly.
+
+**Takeaway:** the sends convert new signups fine (40% to playbook without a
+single nudge) but don't re-activate dormant users, and each wave still dies in
+~48h. The new-feature rails all work; what's untested is whether the reminder
+email pulls anyone back (watch `src:reminder` logins — zero so far, only 1 user
+has scheduled rounds). Next distribution decision still per STRATEGY §8; and
+**tag the link next time** — that's two bare sends out of two.
+
 ## 🔨 Aug 15 2026 — build sprint before distribution round 2 (user call)
 
 User decision: flip the Aug 13 order — build a small package first, **then**
