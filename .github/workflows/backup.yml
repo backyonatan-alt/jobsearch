@@ -1,17 +1,10 @@
 name: backup
 
-# Nightly Postgres backup: pg_dump on the VM (last 7 kept locally for fast
-# restores) + an ENCRYPTED copy stored off-VM as a workflow artifact.
-#
-# The repo is PUBLIC, so artifacts are downloadable by anyone — the dump is
-# always encrypted before upload (AES-256, PBKDF2). The passphrase is
-# BACKUP_PASSPHRASE if that secret is set, otherwise it's derived from
-# DEPLOY_SSH_KEY (sha256 of the secret's base64 value). Restore instructions:
-# deploy/README.md "Backups & restore".
+# THROWAWAY branch-only override (claude/data-second-student-email-clj26j):
+# read-only aggregate SQL for the Aug 23 post-round-2-email read.
+# Aggregate counts only — logs are public. Revert before merge.
 
 on:
-  schedule:
-    - cron: '23 2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -26,58 +19,78 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Dump on the VM + verify TOC + rotate last 7
-        # pg_restore runs on the VM (same Postgres version as pg_dump) — the
-        # runner's client can be older and unable to read the archive header.
+      - name: Read-only aggregates
         run: |
-          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
-            set -e
-            sudo install -d -o postgres -g postgres -m 700 /var/backups/pursuit
-            ts=$(date -u +%Y%m%d-%H%M%S)
-            f=/var/backups/pursuit/pursuit-$ts.dump
-            sudo -u postgres sh -c "pg_dump --format=custom jobsearch > $f"
-            sudo -u postgres pg_restore --list "$f" > /tmp/backup-toc.txt
-            for t in users applications interviews dossiers debriefs events invited_emails; do
-              grep -q "TABLE DATA public $t " /tmp/backup-toc.txt || { echo "missing table in dump: $t"; exit 1; }
-            done
-            echo "dump OK: $(grep -c "TABLE DATA" /tmp/backup-toc.txt) TABLE DATA entries"
-            rm -f /tmp/backup-toc.txt
-            sudo -u postgres sh -c "ls -1t /var/backups/pursuit/pursuit-*.dump | tail -n +8 | xargs -r rm --"
-            sudo -u postgres ls -lh /var/backups/pursuit/
-          '
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'sudo -u postgres psql -d jobsearch -v ON_ERROR_STOP=1' <<'SQL'
+          \pset pager off
 
-      - name: Fetch latest dump
-        run: |
-          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            'sudo -u postgres sh -c "cat \$(ls -1t /var/backups/pursuit/pursuit-*.dump | head -1)"' \
-            > pursuit.dump
-          ls -l pursuit.dump
+          \echo '=== signups per day (since Aug 14, non-admin) ==='
+          SELECT created_at::date AS day, count(*) AS signups
+          FROM users WHERE NOT is_admin AND created_at >= '2026-08-14'
+          GROUP BY 1 ORDER BY 1;
 
-      - name: Sanity-check the fetched copy
-        run: |
-          test "$(stat -c%s pursuit.dump)" -gt 10000 || { echo "dump suspiciously small"; exit 1; }
-          head -c5 pursuit.dump | grep -q "PGDMP" || { echo "not a pg_dump custom archive"; exit 1; }
+          \echo '=== daily active users (any event, since Aug 14, non-admin) ==='
+          SELECT e.created_at::date AS day, count(DISTINCT e.user_id) AS dau
+          FROM events e JOIN users u ON u.id = e.user_id
+          WHERE NOT u.is_admin AND e.created_at >= '2026-08-14'
+          GROUP BY 1 ORDER BY 1;
 
-      - name: Encrypt (never upload plaintext — public repo)
-        env:
-          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: |
-          if [ -n "$BACKUP_PASSPHRASE" ]; then
-            PASS="$BACKUP_PASSPHRASE"
-          else
-            PASS=$(printf %s "$DEPLOY_SSH_KEY" | sha256sum | cut -d' ' -f1)
-          fi
-          export PASS
-          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
-            -in pursuit.dump -out pursuit.dump.enc -pass env:PASS
-          rm -f pursuit.dump
-          ls -l pursuit.dump.enc
+          \echo '=== cohort2 = non-admin users created >= 2026-08-19 15:45 UTC ==='
+          WITH cohort AS (
+            SELECT id FROM users
+            WHERE NOT is_admin AND created_at >= '2026-08-19 15:45+00'
+          )
+          SELECT
+            (SELECT count(*) FROM cohort) AS cohort_size,
+            (SELECT count(DISTINCT a.user_id) FROM applications a JOIN cohort c ON c.id = a.user_id
+              WHERE coalesce(a.notes,'') NOT LIKE '[demo]%') AS with_real_app,
+            (SELECT count(DISTINCT a.user_id) FROM dossiers d
+              JOIN applications a ON a.id = d.application_id JOIN cohort c ON c.id = a.user_id) AS with_playbook,
+            (SELECT count(DISTINCT i.user_id) FROM interviews i JOIN cohort c ON c.id = i.user_id) AS with_round,
+            (SELECT count(DISTINCT db.user_id) FROM debriefs db JOIN cohort c ON c.id = db.user_id) AS with_debrief,
+            (SELECT count(*) FROM users u JOIN cohort c ON c.id = u.id WHERE u.prep_credits_used > 0) AS spent_credit;
 
-      - name: Upload encrypted artifact (30-day retention)
-        uses: actions/upload-artifact@v4
-        with:
-          name: db-backup-${{ github.run_id }}
-          path: pursuit.dump.enc
-          retention-days: 30
-          if-no-files-found: error
+          \echo '=== cohort2 return: users with >1 distinct active day ==='
+          WITH cohort AS (
+            SELECT id FROM users WHERE NOT is_admin AND created_at >= '2026-08-19 15:45+00'
+          )
+          SELECT count(*) AS returned FROM (
+            SELECT e.user_id FROM events e JOIN cohort c ON c.id = e.user_id
+            GROUP BY e.user_id HAVING count(DISTINCT e.created_at::date) > 1
+          ) t;
+
+          \echo '=== pre-existing users (created < Aug 19 send, non-admin) active since the send ==='
+          SELECT count(DISTINCT e.user_id) AS returning_old_users,
+                 count(DISTINCT e.user_id) FILTER (WHERE e.name IN ('dossier_open','dossier_refresh')) AS touched_playbook
+          FROM events e JOIN users u ON u.id = e.user_id
+          WHERE NOT u.is_admin AND u.created_at < '2026-08-19 15:45+00'
+            AND e.created_at >= '2026-08-19 15:45+00';
+
+          \echo '=== event rollup since the send (non-admin): name / events / users ==='
+          SELECT e.name, count(*) AS n, count(DISTINCT e.user_id) AS users
+          FROM events e JOIN users u ON u.id = e.user_id
+          WHERE NOT u.is_admin AND e.created_at >= '2026-08-19 15:45+00'
+          GROUP BY 1 ORDER BY 2 DESC;
+
+          \echo '=== login src breakdown since the send (non-admin) ==='
+          SELECT coalesce(e.props->>'src','(none)') AS src, count(*) AS n, count(DISTINCT e.user_id) AS users
+          FROM events e JOIN users u ON u.id = e.user_id
+          WHERE NOT u.is_admin AND e.name = 'login' AND e.created_at >= '2026-08-19 15:45+00'
+          GROUP BY 1 ORDER BY 2 DESC;
+
+          \echo '=== all-time trust ratings (prep_accuracy) ==='
+          SELECT db.prep_accuracy, count(*) FROM debriefs db
+          JOIN users u ON u.id = db.user_id WHERE NOT u.is_admin
+          GROUP BY 1;
+
+          \echo '=== all-time zero-credit share (non-admin) ==='
+          SELECT count(*) FILTER (WHERE prep_credits_used = 0) AS zero_credit, count(*) AS total
+          FROM users WHERE NOT is_admin;
+
+          \echo '=== cv_save + reminder emails, all-time (non-admin) ==='
+          SELECT e.name, count(*) AS n, count(DISTINCT e.user_id) AS users
+          FROM events e LEFT JOIN users u ON u.id = e.user_id
+          WHERE (u.id IS NULL OR NOT u.is_admin)
+            AND e.name IN ('cv_save','reminder_email_sent','playbook_cta_view','playbook_cta_click','prepfirst_mode_toggle')
+          GROUP BY 1 ORDER BY 1;
+          SQL
