@@ -18,9 +18,47 @@ Link fully tagged per playbook rule #7:
 GA source stays `alum`, campaign splits the rounds.
 
 This is the cohort that tests target mode, playbook CTA, reground, pre-round
-email, CV-aware prep (Aug 15 plan). Fuller read armed for **Aug 26** —
-reminder→`src:reminder` returns, debrief, trust ratings, zero-generate share
-vs the 58% baseline.
+email, CV-aware prep (Aug 15 plan).
+
+### 📊 Aug 26 day-7 read (deploy-key aggregate, non-admin; cohort = signups ≥ Aug 19 15:45Z)
+
+- **Cohort funnel: 12 signups** (2 bgu, 10 gmail) **→ 5 app → 5 playbook →
+  5 spent a credit.** Activation 42% (53% baseline); once again *everyone*
+  who created an app reached a playbook. 1 generate error, 1 reground, no
+  wrong-company reports.
+- **The 58% zero-generate hole did NOT move: 7/12 (58%) spent nothing** —
+  identical to the pre-target-mode baseline (all-time now 44/80 = 55%).
+  **Target mode draws toggles but zero submits:** 3 users toggled to target
+  (4 toggles), all 10 submits were mode=interviewing. Toggle→abandon is now
+  a confirmed pattern, not noise. The fix shipped but doesn't convert —
+  investigate the target-mode form UX (what does a toggler see that makes
+  them bail?) before pouring more traffic into the same hole.
+- **Trust ratings finally moved — and broke the perfect streak: +3 debriefs
+  (2 users), all rated "partly".** All-time rated: 6 — 3 spot_on / 3 partly
+  (50% spot-on; gate needs ≥70% on ≥30). Worth personally reading the 3
+  partly debriefs (admin console) to see what prep missed — first concrete
+  quality signal from real users.
+- **Pre-round reminder loop is alive: 3 sent this week** (4 all-time). But
+  `src:reminder` logins = 0 — and structurally *had* to be 0: reminder
+  emails deep-link to `/app/.../brief/...?src=reminder` while `pursuit_src`
+  capture lived only on the homepage route. **Fixed on this branch**
+  (`app/+layout.svelte` now reads `?src=` on app deep links too; build
+  green, no visual change — needs merge+deploy before reminder returns can
+  be counted).
+- **Retention still the weak leg:** 1/12 multi-day, 2 active since Aug 23.
+  Consistent with occasion-driven use — most of the cohort has no live loop.
+- CV: `cv_save` 2 users all-time (both this week). `dossier_open` 7 users /
+  27 opens; `interview_save` 4 users / 7 (one-tap rounds getting real use).
+- Login src since send: `(none)` ×15, `betas` ×1 — all-bare send confirmed
+  end-to-end.
+
+**Recommendation (next distribution move):** the student list is exhausted
+(all 140 got round 2) → **LinkedIn post #2 is the next lever**, but do two
+cheap things first: (1) merge+deploy this branch so reminder-return and
+deep-link attribution actually measure; (2) a target-mode UX pass — 58%
+of every cohort lands there and the current escape hatch converts at 0/3.
+Post #2 link must be verified tagged **in the published post**, not the
+draft (rule #7, sharpened Aug 21).
 
 ### 📊 Aug 21 light read (~36h post-send; deploy-key aggregate, non-admin)
 

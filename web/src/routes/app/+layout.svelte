@@ -56,7 +56,18 @@
           && !sessionStorage.getItem('pursuit_login_tracked')) {
         sessionStorage.setItem('pursuit_login_tracked', '1');
         let src = '';
-        try { src = localStorage.getItem('pursuit_src') || ''; } catch {}
+        // Deep links (e.g. the pre-round reminder email's ?src=reminder) land
+        // on /app/* and never pass the homepage capture — read the param here
+        // too, or reminder returns can never show up in login src.
+        try {
+          const qs = new URLSearchParams(location.search).get('src');
+          if (qs) {
+            src = qs.slice(0, 40);
+            try { localStorage.setItem('pursuit_src', src); } catch {}
+          } else {
+            src = localStorage.getItem('pursuit_src') || '';
+          }
+        } catch {}
         track('login', src ? { method: 'google', src } : { method: 'google' });
         logEvent('login', src ? { src } : {});
       }
